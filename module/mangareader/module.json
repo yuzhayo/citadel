@@ -1,0 +1,8 @@
+{
+  "title": "Manga Reader",
+  "icon": "\uE736",
+  "route": "manga-reader",
+  "order": 10,
+  "entry": "Module.Mangareader.dll",
+  "type": "Module.Mangareader.MangaReaderModule"
+}

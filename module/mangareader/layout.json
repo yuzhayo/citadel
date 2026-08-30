@@ -1,0 +1,6 @@
+{
+  "slots": {
+    "LibraryPath": { "kind": "visibility", "visible": true },
+    "TitleGrid": { "kind": "visibility", "visible": true }
+  }
+}

@@ -1,0 +1,190 @@
+<UserControl x:Class="Module.Mangareader.MangaReaderView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:setting="clr-namespace:Citadel.Setting.Components;assembly=Citadel.Setting"
+             Background="{DynamicResource Bg}"
+             Foreground="{DynamicResource Fg}"
+             UseLayoutRounding="True"
+             SnapsToDevicePixels="True">
+    <UserControl.Resources>
+        <Style x:Key="InternalTabItemStyle" TargetType="{x:Type TabItem}">
+            <Setter Property="Background" Value="{DynamicResource TransparentBrush}" />
+            <Setter Property="Foreground" Value="{DynamicResource Body}" />
+            <Setter Property="Padding" Value="16,9" />
+            <Setter Property="Margin" Value="0,0,6,0" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="{x:Type TabItem}">
+                        <Border x:Name="Surface"
+                                Background="{TemplateBinding Background}"
+                                CornerRadius="{DynamicResource SidebarItemCornerRadius}"
+                                Padding="{TemplateBinding Padding}">
+                            <ContentPresenter ContentSource="Header"
+                                              HorizontalAlignment="Center"
+                                              VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsSelected" Value="True">
+                                <Setter TargetName="Surface" Property="Background" Value="{DynamicResource Selected}" />
+                                <Setter Property="Foreground" Value="{DynamicResource Accent}" />
+                            </Trigger>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Surface" Property="Background" Value="{DynamicResource Hover}" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="InternalTabControlStyle" TargetType="{x:Type TabControl}">
+            <Setter Property="Background" Value="{DynamicResource TransparentBrush}" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="{x:Type TabControl}">
+                        <Grid KeyboardNavigation.TabNavigation="Local">
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="*" />
+                            </Grid.RowDefinitions>
+                            <Border Padding="0,0,0,10"
+                                    BorderBrush="{DynamicResource Border}"
+                                    BorderThickness="0,0,0,1">
+                                <TabPanel IsItemsHost="True" />
+                            </Border>
+                            <ContentPresenter x:Name="PART_SelectedContentHost"
+                                              Grid.Row="1"
+                                              ContentSource="SelectedContent"
+                                              SnapsToDevicePixels="{TemplateBinding SnapsToDevicePixels}" />
+                        </Grid>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+    </UserControl.Resources>
+
+    <TabControl Style="{StaticResource InternalTabControlStyle}"
+                ItemContainerStyle="{StaticResource InternalTabItemStyle}">
+        <TabItem Header="Scanner">
+            <Grid Margin="0,16,0,0">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="*" />
+                </Grid.RowDefinitions>
+
+                <Border Grid.Row="0"
+                        Background="{DynamicResource Card}"
+                        BorderBrush="{DynamicResource Border}"
+                        BorderThickness="1"
+                        CornerRadius="{DynamicResource ShellCardRadius}"
+                        Padding="14">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+
+                        <setting:SettingField x:Name="LibraryPath"
+                                              Grid.Column="0"
+                                              Height="40"
+                                              Margin="0,0,8,0"
+                                              Placeholder="Choose the folder that contains manga title folders" />
+                        <setting:SettingButton x:Name="BrowseButton"
+                                               Grid.Column="1"
+                                               MinWidth="94"
+                                               Height="40"
+                                               Margin="0,0,8,0"
+                                               Click="BrowseButton_Click"
+                                               Content="Browse" />
+                        <setting:SettingButton x:Name="ScanButton"
+                                               Grid.Column="2"
+                                               MinWidth="82"
+                                               Height="40"
+                                               Click="ScanButton_Click"
+                                               Content="Scan" />
+                    </Grid>
+                </Border>
+
+                <TextBlock x:Name="StatusText"
+                           Grid.Row="1"
+                           Margin="4,10,4,10"
+                           Foreground="{DynamicResource Body}"
+                           FontSize="13"
+                           Text="Choose a library folder to begin." />
+
+                <Grid Grid.Row="2">
+                    <ScrollViewer VerticalScrollBarVisibility="Auto"
+                                  HorizontalScrollBarVisibility="Disabled"
+                                  PanningMode="VerticalOnly">
+                        <ItemsControl x:Name="TitleGrid">
+                            <ItemsControl.ItemsPanel>
+                                <ItemsPanelTemplate>
+                                    <WrapPanel Orientation="Horizontal" />
+                                </ItemsPanelTemplate>
+                            </ItemsControl.ItemsPanel>
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <setting:SettingButton Width="220"
+                                                           Height="132"
+                                                           Margin="0,0,12,12"
+                                                           Padding="16"
+                                                           Background="{DynamicResource Card}"
+                                                           HorizontalContentAlignment="Stretch"
+                                                           Tag="{Binding}"
+                                                           Click="TitleCard_Click">
+                                        <Grid>
+                                            <Grid.RowDefinitions>
+                                                <RowDefinition Height="*" />
+                                                <RowDefinition Height="Auto" />
+                                            </Grid.RowDefinitions>
+                                            <StackPanel VerticalAlignment="Center">
+                                                <TextBlock Text="&#xE736;"
+                                                           FontFamily="Segoe MDL2 Assets"
+                                                           FontSize="24"
+                                                           Foreground="{DynamicResource Accent}"
+                                                           Margin="0,0,0,10" />
+                                                <TextBlock Text="{Binding Title}"
+                                                           FontSize="15"
+                                                           FontWeight="SemiBold"
+                                                           Foreground="{DynamicResource Fg}"
+                                                           TextTrimming="CharacterEllipsis"
+                                                           ToolTip="{Binding Title}" />
+                                            </StackPanel>
+                                            <TextBlock Grid.Row="1"
+                                                       Text="{Binding ChapterSummary}"
+                                                       FontSize="12"
+                                                       Foreground="{DynamicResource Dim}" />
+                                        </Grid>
+                                    </setting:SettingButton>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </ScrollViewer>
+
+                    <Border x:Name="EmptyPanel"
+                            Background="{DynamicResource TransparentBrush}">
+                        <StackPanel HorizontalAlignment="Center"
+                                    VerticalAlignment="Center"
+                                    MaxWidth="420">
+                            <TextBlock x:Name="EmptyTitle"
+                                       Text="No manga scanned"
+                                       FontSize="18"
+                                       FontWeight="SemiBold"
+                                       Foreground="{DynamicResource Fg}"
+                                       HorizontalAlignment="Center" />
+                            <TextBlock x:Name="EmptyDetail"
+                                       Margin="0,8,0,0"
+                                       Text="Choose a library folder. Each child folder containing CBZ files becomes one title card."
+                                       TextWrapping="Wrap"
+                                       TextAlignment="Center"
+                                       Foreground="{DynamicResource Body}" />
+                        </StackPanel>
+                    </Border>
+                </Grid>
+            </Grid>
+        </TabItem>
+    </TabControl>
+</UserControl>
