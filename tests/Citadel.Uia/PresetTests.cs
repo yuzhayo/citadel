@@ -136,7 +136,7 @@ public class PresetTests : IDisposable
         Assert.All(store.All, preset => Assert.False(string.IsNullOrWhiteSpace(preset.Id)));
 
         var components = System.IO.Path.Combine(
-            RepositoryRoot(), "setting", "Citadel.Setting", "Components");
+            RepositoryRoot(), "setting", "Components");
         Assert.True(File.Exists(System.IO.Path.Combine(components, $"{control}.xaml")));
         Assert.True(File.Exists(System.IO.Path.Combine(components, $"{control}.xaml.cs")));
     }

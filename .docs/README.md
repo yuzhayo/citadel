@@ -20,7 +20,7 @@ the composition root that connects `Citadel.Searcher` to the module gate.
 
 Read `module/README.md`, copy `module/blank/`, rename its manifest/project, and
 implement the view inside the new screen folder. New screen-specific code stays
-in that folder. Reusable controls belong in `setting/Citadel.Setting/Components/`.
+in that folder. Reusable controls belong in `setting/Components/`.
 
 ## Commands
 

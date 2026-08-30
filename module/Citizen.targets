@@ -73,7 +73,7 @@
   <ItemGroup>
     <ProjectReference Include="$(CitadelRoot)core\Citadel.Core\Citadel.Core.csproj" Private="false" />
     <ProjectReference Include="$(CitadelRoot)core\Citadel.Contract\Citadel.Contract.csproj" Private="false" />
-    <ProjectReference Include="$(CitadelRoot)setting\Citadel.Setting\Citadel.Setting.csproj" Private="false" />
+    <ProjectReference Include="$(CitadelRoot)setting\Citadel.Setting.csproj" Private="false" />
   </ItemGroup>
 
   <ItemGroup>

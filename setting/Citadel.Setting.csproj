@@ -11,8 +11,8 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\core\Citadel.Core\Citadel.Core.csproj" />
-    <ProjectReference Include="..\..\core\Citadel.Contract\Citadel.Contract.csproj" />
+    <ProjectReference Include="..\core\Citadel.Core\Citadel.Core.csproj" />
+    <ProjectReference Include="..\core\Citadel.Contract\Citadel.Contract.csproj" />
   </ItemGroup>
 
   <ItemGroup>
