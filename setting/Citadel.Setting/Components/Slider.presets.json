@@ -1,0 +1,7 @@
+{
+  "control": "Slider",
+  "presets": [
+    { "id": "metric-px", "label": "Pixel metric", "values": { "min": 0, "max": 400, "step": 1 } },
+    { "id": "opacity", "label": "Opacity", "values": { "min": 0, "max": 1, "step": 0.05 } }
+  ]
+}

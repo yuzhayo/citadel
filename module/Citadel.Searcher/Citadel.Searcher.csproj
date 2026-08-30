@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Searching is module logic, not core logic, so it lives at
+    module/ root: shared by every screen, owned by none.
+
+    Contract and nothing else. Contract references Core transitively, which means
+    Core's types are *reachable* here — that is not permission to use them. The
+    rule is about the declared reference: if this project used Citadel.Core.Log
+    directly, swapping the searcher for a package feed or a test double would
+    drag Core's logging along with it. App supplies a logging callback instead.
+  -->
+  <ItemGroup>
+    <ProjectReference Include="..\..\core\Citadel.Contract\Citadel.Contract.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Citadel.Uia" />
+  </ItemGroup>
+
+</Project>

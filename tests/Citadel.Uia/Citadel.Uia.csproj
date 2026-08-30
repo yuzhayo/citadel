@@ -1,0 +1,74 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    This project drives the built shell and pins contract and gate behavior that
+    a screenshot cannot. Real-window AutomationId evidence can additionally
+    come from an external UI Automation inspector.
+  -->
+  <PropertyGroup>
+    <IsPackable>false</IsPackable>
+    <UseWPF>true</UseWPF>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="coverlet.collector" Version="6.0.4" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
+    <PackageReference Include="xunit" Version="2.9.3" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="3.1.4" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\core\Citadel.Core\Citadel.Core.csproj" />
+    <ProjectReference Include="..\..\core\Citadel.Contract\Citadel.Contract.csproj" />
+    <ProjectReference Include="..\..\core\Citadel.Ui\Citadel.Ui.csproj" />
+    <ProjectReference Include="..\..\setting\Citadel.Setting\Citadel.Setting.csproj" />
+    <ProjectReference Include="..\..\core\Citadel.Shell\Citadel.Shell.csproj" />
+    <ProjectReference Include="..\..\module\Citadel.Searcher\Citadel.Searcher.csproj" />
+  </ItemGroup>
+
+  <!--
+    Two build-ordering dependencies, neither a code dependency:
+
+    module/blank      the real citizen, deployed by Citizen.targets. Tests copy
+                      its deployed folder, so the suite exercises exactly what
+                      the app discovers.
+    Citadel.Uia.Citizen  a test-only citizen with distinct routes and one private
+                      managed dependency. blank has neither, and both are needed
+                      to test route ownership and AssemblyDependencyResolver.
+
+    ReferenceOutputAssembly=false: the tests load these through the loader, the
+    way the app does, not by referencing their types. The screen is not in
+    Citadel.slnx — a citizen is built directly, and that is what keeps "a new
+    screen changes nothing outside module/" true.
+  -->
+  <ItemGroup>
+    <ProjectReference Include="..\..\module\blank\Module.Blank.csproj"
+                      ReferenceOutputAssembly="false"
+                      AdditionalProperties="Configuration=$(Configuration)"
+                      BuildReference="false"
+                      Private="false" />
+    <ProjectReference Include="..\Citadel.Uia.Citizen\Citadel.Uia.Citizen.csproj"
+                      ReferenceOutputAssembly="false"
+                      Private="false" />
+  </ItemGroup>
+
+  <!--
+    A solution build assigns Debug to ProjectReference nodes that are not listed
+    in the solution, even when Citadel.Uia itself is Release. Keep the references
+    above for restore discovery, but build the runtime screen explicitly with
+    the test project's configuration so a clean CI runner deploys it to
+    the same Shell output ModuleFolder reads.
+  -->
+  <Target Name="BuildRuntimeCitizensForTests" BeforeTargets="CoreCompile">
+    <MSBuild
+        Projects="..\..\module\blank\Module.Blank.csproj"
+        Targets="Build"
+        Properties="Configuration=$(Configuration)"
+        BuildInParallel="true" />
+  </Target>
+
+  <ItemGroup>
+    <Using Include="Xunit" />
+  </ItemGroup>
+
+</Project>

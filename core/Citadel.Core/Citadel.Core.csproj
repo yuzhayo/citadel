@@ -1,0 +1,9 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- No WPF, no other Citadel projects: Citadel.Core references nothing. -->
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Citadel.Core.Tests" />
+  </ItemGroup>
+
+</Project>

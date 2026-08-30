@@ -1,0 +1,44 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    A citizen that exists only for tests, and deliberately does NOT import
+    Citizen.targets: that would deploy it into the Shell's runtime module folder
+    and it would show up in the real app. Tests copy from this project's own
+    output into a temp folder instead.
+
+    Two things module/blank cannot provide:
+
+    - **Distinct routes.** IModule.Route is a property, and the searcher verifies
+      it equals the manifest route, so a second route needs a second type.
+    - **A private managed dependency.** blank has none, so it cannot prove
+      AssemblyDependencyResolver resolves one — the only ALC rule with no other
+      way to exercise it.
+
+    EnableDynamicLoading is what emits the .deps.json the resolver reads and
+    copies the private dependency beside the DLL.
+  -->
+  <PropertyGroup>
+    <UseWPF>true</UseWPF>
+    <RootNamespace>Citadel.Uia.Citizen</RootNamespace>
+    <AssemblyName>Module.Fixture</AssemblyName>
+    <EnableDynamicLoading>true</EnableDynamicLoading>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\core\Citadel.Core\Citadel.Core.csproj" Private="false" />
+    <ProjectReference Include="..\..\core\Citadel.Contract\Citadel.Contract.csproj" Private="false" />
+  </ItemGroup>
+
+  <!--
+    The private dependency. A local project, not a NuGet package: any package the
+    test host also uses would already be in the default context, and the resolver
+    would never be asked — the test would pass while proving nothing.
+    PrivateAssets="all" keeps it from flowing to Citadel.Uia's own output.
+  -->
+  <ItemGroup>
+    <ProjectReference Include="..\Citadel.Uia.Citizen.Dependency\Citadel.Uia.Citizen.Dependency.csproj"
+                      PrivateAssets="all" />
+  </ItemGroup>
+
+</Project>

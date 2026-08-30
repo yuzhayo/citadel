@@ -1,0 +1,38 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <UseWPF>true</UseWPF>
+    <UseWindowsForms>true</UseWindowsForms>
+    <ApplicationDefinition>App.xaml</ApplicationDefinition>
+    <ApplicationIcon>Assets\Citadel.ico</ApplicationIcon>
+    <StartupObject>Citadel.Shell.Program</StartupObject>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <None Remove="Assets\Citadel.ico" />
+    <Resource Include="Assets\Citadel.ico" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Keep this version identical to .config/dotnet-tools.json. -->
+    <PackageReference Include="Velopack" Version="1.2.0" />
+  </ItemGroup>
+
+  <!--
+    App is the composition root — the single place allowed to know both sides. This is the only project under core/ permitted to
+    reference the searcher, and .agents/hooks/check-project-refs.mjs encodes it.
+  -->
+  <ItemGroup>
+    <ProjectReference Include="..\Citadel.Core\Citadel.Core.csproj" />
+    <ProjectReference Include="..\Citadel.Contract\Citadel.Contract.csproj" />
+    <ProjectReference Include="..\Citadel.Ui\Citadel.Ui.csproj" />
+    <ProjectReference Include="..\..\setting\Citadel.Setting\Citadel.Setting.csproj" />
+    <ProjectReference Include="..\..\module\Citadel.Searcher\Citadel.Searcher.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Citadel.Uia" />
+  </ItemGroup>
+
+</Project>

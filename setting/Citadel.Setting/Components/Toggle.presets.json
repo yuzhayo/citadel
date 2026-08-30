@@ -1,0 +1,6 @@
+{
+  "control": "Toggle",
+  "presets": [
+    { "id": "on-off", "label": "On/Off", "values": { "label": "Enabled" } }
+  ]
+}

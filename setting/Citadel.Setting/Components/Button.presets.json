@@ -1,0 +1,7 @@
+{
+  "control": "Button",
+  "presets": [
+    { "id": "primary-action", "label": "Primary action", "values": { "label": "Save", "width": 120 } },
+    { "id": "danger-action", "label": "Danger action", "values": { "label": "Delete", "width": 120 } }
+  ]
+}

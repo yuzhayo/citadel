@@ -1,0 +1,27 @@
+# Generated build and test output.
+bin/
+obj/
+TestResults/
+artifacts/
+Releases/
+
+# Editor and IDE local state.
+.vs/
+.idea/
+*.user
+*.suo
+
+# Local agent tooling and configuration; never publish with the application.
+.agents/
+.claude/
+.qoder/
+.mcp.json
+AGENTS.local.md
+
+# Build-debug leftovers such as full_build.log, full_eval.xml, and csproj.bak.
+*.log
+*.bak
+*_eval.xml
+
+# Runtime log, if Log is ever pointed at the repo instead of %AppData%.
+log.txt

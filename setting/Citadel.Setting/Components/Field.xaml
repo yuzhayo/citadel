@@ -1,0 +1,39 @@
+<Control
+    x:Class="Citadel.Setting.Components.SettingField"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:local="clr-namespace:Citadel.Setting.Components"
+    Background="{DynamicResource Bg}"
+    FontSize="{DynamicResource SettingBodyFontSize}"
+    Foreground="{DynamicResource Fg}">
+    <Control.Template>
+        <ControlTemplate TargetType="{x:Type local:SettingField}">
+            <Border
+                Background="{TemplateBinding Background}"
+                BorderBrush="{DynamicResource Border}"
+                BorderThickness="1"
+                CornerRadius="{DynamicResource SidebarItemCornerRadius}"
+                Padding="{DynamicResource SettingControlPadding}">
+                <Grid>
+                    <TextBlock
+                        x:Name="PlaceholderText"
+                        Foreground="{DynamicResource Dim}"
+                        Text="{TemplateBinding Placeholder}"
+                        Visibility="Collapsed" />
+                    <TextBox
+                        Background="{DynamicResource TransparentBrush}"
+                        BorderThickness="0"
+                        CaretBrush="{DynamicResource Fg}"
+                        Foreground="{TemplateBinding Foreground}"
+                        Padding="0"
+                        Text="{Binding Text, RelativeSource={RelativeSource TemplatedParent}, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                </Grid>
+            </Border>
+            <ControlTemplate.Triggers>
+                <DataTrigger Binding="{Binding Text, RelativeSource={RelativeSource Self}}" Value="">
+                    <Setter TargetName="PlaceholderText" Property="Visibility" Value="Visible" />
+                </DataTrigger>
+            </ControlTemplate.Triggers>
+        </ControlTemplate>
+    </Control.Template>
+</Control>

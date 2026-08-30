@@ -1,0 +1,15 @@
+{
+  "control": "Table",
+  "presets": [
+    {
+      "id": "balance-table",
+      "label": "Balance",
+      "values": { "columns": ["Account", "Currency", "Balance"], "descending": true }
+    },
+    {
+      "id": "screen-table",
+      "label": "Installed screens",
+      "values": { "columns": ["Title", "Order"], "descending": false }
+    }
+  ]
+}

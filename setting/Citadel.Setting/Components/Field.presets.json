@@ -1,0 +1,7 @@
+{
+  "control": "Field",
+  "presets": [
+    { "id": "search-field", "label": "Search", "values": { "placeholder": "Search", "width": 240 } },
+    { "id": "name-field", "label": "Name", "values": { "placeholder": "Name", "width": 200 } }
+  ]
+}

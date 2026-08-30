@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    The whole build for a screen: import Citizen.targets and declare nothing
+    else. References, deployment, and the shared-assembly check all come from
+    there.
+
+    This project is NOT in Citadel.slnx and must not be added to it — a screen
+    is built directly (`dotnet build module/blank/Module.Blank.csproj`), which is
+    what makes "add a screen without editing anything outside module/" true.
+  -->
+  <Import Project="..\Citizen.targets" />
+
+</Project>

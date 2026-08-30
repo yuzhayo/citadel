@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    A private dependency for the test-only citizen, and nothing else.
+
+    It has to be a local project rather than a NuGet package: every candidate
+    package the test host might use is already in the default context —
+    Newtonsoft.Json, for one, arrives transitively through
+    Microsoft.NET.Test.Sdk. A dependency the default context can satisfy proves
+    nothing about AssemblyDependencyResolver, because the resolver would never
+    be asked.
+  -->
+  <PropertyGroup>
+    <AssemblyName>Citizen.PrivateDependency</AssemblyName>
+    <RootNamespace>Citizen.PrivateDependency</RootNamespace>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+</Project>

@@ -1,0 +1,128 @@
+<Window
+    x:Class="Citadel.Shell.MainWindow"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:controls="clr-namespace:Citadel.Ui.Controls;assembly=Citadel.Ui"
+    Title=""
+    Icon="Assets/Citadel.ico"
+    Background="{DynamicResource Bg}"
+    Foreground="{DynamicResource Fg}"
+    WindowStartupLocation="CenterScreen">
+
+    <!--
+      No size literals: Width/Height take their initial values from tokens;
+      MinWidth/MinHeight remain live constraints. Initial size deliberately
+      stops following after load so an unrelated token edit cannot undo a
+      user's manual resize. v0 hardcoded 1180x720 / 900x560 in XAML.
+    -->
+    <Grid x:Name="ShellRoot" Background="{DynamicResource Bg}">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="{DynamicResource AppHeaderHeightGridLength}" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+        <Border
+            x:Name="AppHeader"
+            Grid.Row="0"
+            AutomationProperties.AutomationId="AppHeader"
+            Background="{DynamicResource BgRail}"
+            BorderBrush="{DynamicResource Border}"
+            BorderThickness="{DynamicResource AppHeaderBorderThickness}">
+            <Grid Margin="{DynamicResource AppHeaderPaddingThickness}">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="{DynamicResource TitleXGridLength}" />
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+
+                <!--
+                  Mirror SidebarEntryTemplate's two-column geometry: the glyph
+                  is centered in Rail while the title begins at TitleX. This
+                  keeps the hamburger on the same axis as nav glyphs when the
+                  sidebar is collapsed without moving collapse ownership out of
+                  AppHeader.
+                -->
+                <Grid
+                    Grid.Column="0"
+                    Width="{DynamicResource Rail}"
+                    HorizontalAlignment="Left">
+                    <controls:RailButton
+                        x:Name="CollapseToggle"
+                        Width="{DynamicResource HeaderButtonSize}"
+                        Height="{DynamicResource HeaderButtonSize}"
+                        AutomationProperties.AutomationId="CollapseToggle"
+                        AutomationProperties.Name="Collapse sidebar"
+                        FontFamily="{DynamicResource IconFontFamily}"
+                        Content="&#xE700;" />
+                </Grid>
+
+                <TextBlock
+                    x:Name="AppBrand"
+                    Grid.Column="1"
+                    VerticalAlignment="Center"
+                    AutomationProperties.AutomationId="AppBrand"
+                    FontFamily="{DynamicResource NavFontFamily}"
+                    FontSize="{DynamicResource AppBrandFontSize}"
+                    FontWeight="Bold"
+                    Foreground="{DynamicResource Accent}"
+                    Text="CITADEL"
+                    Visibility="Hidden" />
+            </Grid>
+        </Border>
+
+        <Grid
+            x:Name="Workspace"
+            Grid.Row="1"
+            Margin="{DynamicResource ShellPaddingThickness}">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="{DynamicResource ShellGapGridLength}" />
+                <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+
+            <controls:Sidebar
+                x:Name="Sidebar"
+                Grid.Column="0"
+                AutomationProperties.AutomationId="SidebarCard" />
+
+            <Border
+                x:Name="ContentCard"
+                Grid.Column="2"
+                AutomationProperties.AutomationId="ContentCard"
+                ClipToBounds="True"
+                Style="{DynamicResource ShellCardStyle}">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="{DynamicResource ContentHeaderHeightGridLength}" />
+                        <RowDefinition Height="*" />
+                    </Grid.RowDefinitions>
+
+                    <Border
+                        Grid.Row="0"
+                        Background="{DynamicResource BgRail}"
+                        BorderBrush="{DynamicResource Border}"
+                        BorderThickness="{DynamicResource ContentHeaderBorderThickness}"
+                        CornerRadius="{DynamicResource ContentHeaderCornerRadius}">
+                        <TextBlock
+                            x:Name="ContentHeader"
+                            Padding="{DynamicResource ContentHeaderPaddingThickness}"
+                            VerticalAlignment="Center"
+                            AutomationProperties.AutomationId="ContentHeader"
+                            FontFamily="{DynamicResource NavFontFamily}"
+                            FontSize="{DynamicResource ContentHeaderFontSize}"
+                            FontWeight="SemiBold"
+                            Foreground="{DynamicResource Fg}"
+                            Text="Settings"
+                            TextTrimming="CharacterEllipsis"
+                            TextWrapping="NoWrap" />
+                    </Border>
+
+                    <ContentControl
+                        x:Name="Host"
+                        Grid.Row="1"
+                        Background="{DynamicResource Bg}" />
+                </Grid>
+            </Border>
+        </Grid>
+    </Grid>
+</Window>

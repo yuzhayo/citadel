@@ -1,0 +1,145 @@
+<Project>
+
+  <!--
+    Shared build logic for every screen folder. It lives at module/ root because
+    it is shared by every screen and owned by none; a shared
+    build file inside one screen's folder would break the promise that deleting
+    that folder is clean.
+
+    A screen imports it and gets three things: the right references, deployment
+    into the runtime module folder, and a build failure if the deployment would
+    break assembly identity.
+
+    Deployment target is the *Shell's* output, not this project's — that is the
+    folder the searcher watches (AppContext.BaseDirectory/module). A citizen is
+    built directly with `dotnet build`, never added to Citadel.slnx, so nothing
+    outside module/ changes when a screen is added.
+  -->
+
+  <PropertyGroup>
+    <CitadelRoot Condition="'$(CitadelRoot)' == ''">$([MSBuild]::NormalizeDirectory('$(MSBuildThisFileDirectory)..'))</CitadelRoot>
+
+    <!--
+      The runtime folder is named after the *source folder*, not the project, so
+      the three things a reader has to keep apart line up: module/blank is the
+      source, Module.Blank.dll is the build output, and module/blank beside the
+      exe is the deployment. Copying the folder is what makes a new screen, so
+      the folder name is the identity that matters.
+    -->
+    <CitizenName Condition="'$(CitizenName)' == ''">$([System.IO.Path]::GetFileName($(MSBuildProjectDirectory)))</CitizenName>
+
+    <!--
+      The assembly name is derived from the folder, and this is load-bearing.
+
+      WPF bakes a resource URI like `/Module.Blank;component/blankview.xaml` into
+      InitializeComponent at compile time, and resolves it at runtime through a
+      process-wide lookup keyed by *simple assembly name* — across every load
+      context. Two citizen folders shipping assemblies with the same simple name
+      therefore fight over one resource key, and whichever loses throws "does not
+      have a resource identified by the URI" from its own view. Reproduced by
+      driving the real app: a `blank` folder and a hand-copied second folder both
+      carrying Module.Blank.dll.
+
+      Deriving the name from the folder makes that structurally impossible for any
+      citizen built through this file: copy module/blank to module/blank2, rebuild,
+      and you get Module.Blank2.dll with its own resource key. A citizen may still
+      override AssemblyName, in which case uniqueness is its own problem.
+    -->
+    <CitizenAssemblyName Condition="'$(CitizenAssemblyName)' == ''">Module.$([System.Char]::ToUpperInvariant($(CitizenName.Substring(0,1))))$(CitizenName.Substring(1))</CitizenAssemblyName>
+    <AssemblyName Condition="'$(AssemblyName)' == ''">$(CitizenAssemblyName)</AssemblyName>
+    <RootNamespace Condition="'$(RootNamespace)' == ''">$(CitizenAssemblyName)</RootNamespace>
+
+    <!--
+      EnableDynamicLoading is what makes AssemblyDependencyResolver work: it
+      emits a .deps.json next to the citizen and copies its private dependencies
+      locally. Without it the resolver has no dependency graph to read and every
+      private dependency silently fails to resolve. Deployment therefore includes
+      the manifest, layout, entry DLL, and its dependency metadata.
+    -->
+    <EnableDynamicLoading Condition="'$(EnableDynamicLoading)' == ''">true</EnableDynamicLoading>
+
+    <TargetFramework Condition="'$(TargetFramework)' == ''">net10.0-windows</TargetFramework>
+    <UseWPF Condition="'$(UseWPF)' == ''">true</UseWPF>
+    <Nullable Condition="'$(Nullable)' == ''">enable</Nullable>
+    <ImplicitUsings Condition="'$(ImplicitUsings)' == ''">enable</ImplicitUsings>
+  </PropertyGroup>
+
+  <!--
+    A citizen may reference Core, Contract and Setting, and never Shell or Ui.
+    Private=false is what keeps those three out of the deployed
+    folder: one private copy of Citadel.Contract means a second IModule type and
+    the cast in Loader fails.
+  -->
+  <ItemGroup>
+    <ProjectReference Include="$(CitadelRoot)core\Citadel.Core\Citadel.Core.csproj" Private="false" />
+    <ProjectReference Include="$(CitadelRoot)core\Citadel.Contract\Citadel.Contract.csproj" Private="false" />
+    <ProjectReference Include="$(CitadelRoot)setting\Citadel.Setting\Citadel.Setting.csproj" Private="false" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="module.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="layout.json" Condition="Exists('layout.json')" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <PropertyGroup>
+    <CitizenRuntimeRoot>$(CitadelRoot)core\Citadel.Shell\bin\$(Configuration)\$(TargetFramework)\module\</CitizenRuntimeRoot>
+    <CitizenRuntimeFolder>$(CitizenRuntimeRoot)$(CitizenName)\</CitizenRuntimeFolder>
+  </PropertyGroup>
+
+  <!--
+    Deploy after build. Everything the loader needs and nothing shared:
+      module.json / layout.json  identity and presentation
+      entry DLL + PDB            the screen itself
+      .deps.json                 the resolver's dependency graph
+      private dependency DLLs    resolved through that graph
+  -->
+  <Target Name="DeployCitizen" AfterTargets="Build" DependsOnTargets="ComputeCitizenPayload">
+    <MakeDir Directories="$(CitizenRuntimeFolder)" />
+    <Copy SourceFiles="@(CitizenPayload)"
+          DestinationFolder="$(CitizenRuntimeFolder)"
+          SkipUnchangedFiles="true" />
+    <Message Importance="high"
+             Text="Citizen '$(CitizenName)' deployed to $(CitizenRuntimeFolder)" />
+  </Target>
+
+  <Target Name="ComputeCitizenPayload">
+    <ItemGroup>
+      <CitizenPayload Include="$(TargetPath)" />
+      <CitizenPayload Include="$(TargetDir)$(TargetName).pdb" Condition="Exists('$(TargetDir)$(TargetName).pdb')" />
+      <CitizenPayload Include="$(TargetDir)$(TargetName).deps.json" Condition="Exists('$(TargetDir)$(TargetName).deps.json')" />
+      <CitizenPayload Include="$(TargetDir)module.json" Condition="Exists('$(TargetDir)module.json')" />
+      <CitizenPayload Include="$(TargetDir)layout.json" Condition="Exists('$(TargetDir)layout.json')" />
+
+      <!--
+        Private dependencies: whatever the SDK copied locally that is not a
+        shared Citadel assembly. Private=false already excludes the three shared
+        ones from ReferenceCopyLocalPaths, so this both deploys real private deps
+        and stays empty for a citizen that has none.
+      -->
+      <CitizenPayload Include="@(ReferenceCopyLocalPaths)"
+                      Condition="'%(Extension)' == '.dll' And !$([System.String]::Copy('%(Filename)').StartsWith('Citadel.'))" />
+    </ItemGroup>
+  </Target>
+
+  <!--
+    Private=false is a convention; this is the enforcement. A shared Citadel DLL
+    in a citizen folder breaks the IModule cast at load time with a message that
+    blames the citizen, and the failure surfaces at runtime rather than at build.
+    Fail here instead, where the cause is obvious.
+
+    Checked against the deployed folder rather than the build output, because the
+    deployed folder is what the loader actually reads — a stale copy from an
+    earlier build would otherwise pass.
+  -->
+  <Target Name="VerifyCitizenIsolation" AfterTargets="DeployCitizen">
+    <ItemGroup>
+      <SharedAssemblyName Include="Citadel.Core;Citadel.Contract;Citadel.Setting;Citadel.Ui;Citadel.Shell" />
+      <DeployedSharedAssembly Include="$(CitizenRuntimeFolder)%(SharedAssemblyName.Identity).dll"
+                              Condition="Exists('$(CitizenRuntimeFolder)%(SharedAssemblyName.Identity).dll')" />
+    </ItemGroup>
+
+    <Error Condition="'@(DeployedSharedAssembly)' != ''"
+           Text="Citizen '$(CitizenName)' deployed shared Citadel assemblies: @(DeployedSharedAssembly->'%(Filename)%(Extension)', ', '). A screen must reference Citadel.Core, Citadel.Contract and Citadel.Setting with Private=false; a private copy defines a second IModule type and the cast fails at load. Delete $(CitizenRuntimeFolder) and rebuild." />
+  </Target>
+
+</Project>

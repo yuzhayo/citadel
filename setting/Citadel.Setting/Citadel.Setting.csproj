@@ -1,0 +1,31 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    setting/ is always present, never discovered, and has no module.json — which
+    is why core is allowed to reference it. It references Core
+    and Contract and nothing else: not Shell, not the searcher, not module/.
+    App populates its seams.
+  -->
+  <PropertyGroup>
+    <UseWPF>true</UseWPF>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\core\Citadel.Core\Citadel.Core.csproj" />
+    <ProjectReference Include="..\..\core\Citadel.Contract\Citadel.Contract.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Citadel.Uia" />
+  </ItemGroup>
+
+  <!--
+    Presets ship beside their control and are read from the output folder at
+    runtime. Gallery writes back to these files, which is why the app must run
+    from a writable folder for preset editing to work.
+  -->
+  <ItemGroup>
+    <None Include="Components\*.presets.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+</Project>

@@ -1,0 +1,7 @@
+{
+  "title": "Blank",
+  "route": "blank",
+  "order": 999,
+  "entry": "Module.Blank.dll",
+  "type": "Module.Blank.BlankModule"
+}

@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <UseWPF>true</UseWPF>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Citadel.Core\Citadel.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Citadel.Ui.Tests" />
+    <InternalsVisibleTo Include="Citadel.Uia" />
+  </ItemGroup>
+
+</Project>

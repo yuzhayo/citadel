@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Contract references WPF on purpose: IModule.CreateView returns
+    FrameworkElement. Only Citadel.Core is WPF-free.
+
+    Assembly name and namespace are independent. Compatibility with existing
+    citizens depends on the namespace staying Citadel.Core.Modules.
+  -->
+  <PropertyGroup>
+    <UseWPF>true</UseWPF>
+    <RootNamespace>Citadel.Core.Modules</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Citadel.Core\Citadel.Core.csproj" />
+  </ItemGroup>
+
+</Project>

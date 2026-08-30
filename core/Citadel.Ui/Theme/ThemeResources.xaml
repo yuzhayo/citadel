@@ -1,0 +1,247 @@
+<ResourceDictionary
+    x:Class="Citadel.Ui.Theme.ThemeResources"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:controls="clr-namespace:Citadel.Ui.Controls"
+    xmlns:sys="clr-namespace:System;assembly=System.Runtime">
+
+    <!-- Token defaults. Bind(Tokens, Lifetime) replaces these resources live. -->
+    <sys:Double x:Key="Rail">58</sys:Double>
+    <sys:Double x:Key="Row">40</sys:Double>
+    <sys:Double x:Key="IconSlot">20</sys:Double>
+    <sys:Double x:Key="TitleX">49</sys:Double>
+    <sys:Double x:Key="FullDefault">192</sys:Double>
+    <sys:Double x:Key="FullMin">50</sys:Double>
+    <sys:Double x:Key="FullMax">320</sys:Double>
+
+    <GridLength x:Key="RailGridLength">58</GridLength>
+    <GridLength x:Key="RowGridLength">40</GridLength>
+    <GridLength x:Key="TitleXGridLength">49</GridLength>
+
+    <!-- Shell composition resources; these are not persisted tokens. -->
+    <sys:Double x:Key="AppHeaderHeight">52</sys:Double>
+    <sys:Double x:Key="ContentHeaderHeight">52</sys:Double>
+    <sys:Double x:Key="HeaderButtonSize">40</sys:Double>
+    <sys:Double x:Key="AppBrandFontSize">18</sys:Double>
+    <sys:Double x:Key="ContentHeaderFontSize">16</sys:Double>
+    <GridLength x:Key="AppHeaderHeightGridLength">52</GridLength>
+    <GridLength x:Key="ContentHeaderHeightGridLength">52</GridLength>
+    <GridLength x:Key="ShellGapGridLength">10</GridLength>
+
+    <SolidColorBrush x:Key="BgRail" Color="#121211" />
+    <SolidColorBrush x:Key="Bg" Color="#171716" />
+    <SolidColorBrush x:Key="Fg" Color="#D6D6D3" />
+    <SolidColorBrush x:Key="Dim" Color="#8A8886" />
+    <SolidColorBrush x:Key="Accent" Color="#C9A96A" />
+    <SolidColorBrush x:Key="Hover" Color="#232320" />
+    <SolidColorBrush x:Key="Selected" Color="#2E2D29" />
+    <SolidColorBrush x:Key="Border" Color="#2A2926" />
+    <SolidColorBrush x:Key="Card" Color="#1E1D1B" />
+    <SolidColorBrush x:Key="Body" Color="#B5B3AE" />
+
+    <!-- Non-token primitives keep templates literal-free. -->
+    <SolidColorBrush x:Key="TransparentBrush" Color="Transparent" />
+    <Thickness x:Key="ZeroThickness">0</Thickness>
+    <Thickness x:Key="ShellBorderThickness">1</Thickness>
+    <Thickness x:Key="AppHeaderBorderThickness">0,0,0,1</Thickness>
+    <Thickness x:Key="ContentHeaderBorderThickness">0,0,0,1</Thickness>
+    <Thickness x:Key="ShellPaddingThickness">10</Thickness>
+    <Thickness x:Key="AppHeaderPaddingThickness">10,0</Thickness>
+    <Thickness x:Key="HeaderButtonMargin">0,0,4,0</Thickness>
+    <Thickness x:Key="ContentHeaderPaddingThickness">16,0</Thickness>
+    <Thickness x:Key="SidebarMainInset">0,9,0,0</Thickness>
+    <Thickness x:Key="SidebarPinInset">0,0,0,9</Thickness>
+    <Thickness x:Key="SidebarItemInset">10,1,10,1</Thickness>
+    <CornerRadius x:Key="ControlCornerRadius">8</CornerRadius>
+    <CornerRadius x:Key="ShellCardRadius">12</CornerRadius>
+    <CornerRadius x:Key="ContentHeaderCornerRadius">11,11,0,0</CornerRadius>
+    <CornerRadius x:Key="SidebarItemCornerRadius">10</CornerRadius>
+    <sys:Double x:Key="DisabledOpacity">0.45</sys:Double>
+    <sys:Double x:Key="NavFontSize">14</sys:Double>
+    <sys:Double x:Key="SidebarIconFontSize">15</sys:Double>
+    <sys:Double x:Key="SidebarIconOffsetX">0</sys:Double>
+    <FontFamily x:Key="NavFontFamily">Segoe UI</FontFamily>
+    <FontFamily x:Key="IconFontFamily">Segoe MDL2 Assets</FontFamily>
+
+    <Style x:Key="ShellCardStyle" TargetType="{x:Type Border}">
+        <Setter Property="Background" Value="{DynamicResource Bg}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource Border}" />
+        <Setter Property="BorderThickness" Value="{DynamicResource ShellBorderThickness}" />
+        <Setter Property="CornerRadius" Value="{DynamicResource ShellCardRadius}" />
+        <Setter Property="SnapsToDevicePixels" Value="True" />
+    </Style>
+
+    <Style x:Key="SidebarListItemStyle" TargetType="{x:Type ListBoxItem}">
+        <Setter Property="Height" Value="{DynamicResource Row}" />
+        <Setter Property="Padding" Value="{DynamicResource ZeroThickness}" />
+        <Setter Property="Margin" Value="{DynamicResource ZeroThickness}" />
+        <Setter Property="BorderThickness" Value="{DynamicResource ZeroThickness}" />
+        <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+        <Setter Property="VerticalContentAlignment" Value="Stretch" />
+        <Setter Property="Background" Value="{DynamicResource TransparentBrush}" />
+        <Setter Property="AutomationProperties.AutomationId" Value="{Binding Route}" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="{x:Type ListBoxItem}">
+                    <Grid>
+                        <Border
+                            x:Name="Surface"
+                            Margin="{DynamicResource SidebarItemInset}"
+                            Background="{TemplateBinding Background}"
+                            CornerRadius="{DynamicResource SidebarItemCornerRadius}" />
+                        <ContentPresenter
+                            HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
+                            VerticalAlignment="{TemplateBinding VerticalContentAlignment}" />
+                    </Grid>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="Surface" Property="Background" Value="{DynamicResource Hover}" />
+                        </Trigger>
+                        <Trigger Property="IsSelected" Value="True">
+                            <Setter TargetName="Surface" Property="Background" Value="{DynamicResource Selected}" />
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <Style x:Key="SidebarListStyle" TargetType="{x:Type ListBox}">
+        <Setter Property="Padding" Value="{DynamicResource ZeroThickness}" />
+        <Setter Property="BorderThickness" Value="{DynamicResource ZeroThickness}" />
+        <Setter Property="Background" Value="{DynamicResource TransparentBrush}" />
+        <Setter Property="ScrollViewer.HorizontalScrollBarVisibility" Value="Disabled" />
+        <Setter Property="ScrollViewer.VerticalScrollBarVisibility" Value="Auto" />
+        <Setter Property="ScrollViewer.CanContentScroll" Value="True" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="{x:Type ListBox}">
+                    <ScrollViewer
+                        Focusable="False"
+                        CanContentScroll="{TemplateBinding ScrollViewer.CanContentScroll}"
+                        HorizontalScrollBarVisibility="{TemplateBinding ScrollViewer.HorizontalScrollBarVisibility}"
+                        VerticalScrollBarVisibility="{TemplateBinding ScrollViewer.VerticalScrollBarVisibility}">
+                        <ItemsPresenter />
+                    </ScrollViewer>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <DataTemplate x:Key="SidebarEntryTemplate" DataType="{x:Type controls:NavEntry}">
+        <Grid
+            Height="{DynamicResource Row}"
+            ClipToBounds="True"
+            TextOptions.TextFormattingMode="Display">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="{DynamicResource TitleXGridLength}" />
+                <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+            <Grid
+                Width="{DynamicResource Rail}"
+                HorizontalAlignment="Left">
+                <Grid
+                    Width="{DynamicResource IconSlot}"
+                    Height="{DynamicResource IconSlot}"
+                    HorizontalAlignment="Center"
+                    VerticalAlignment="Center"
+                    ClipToBounds="True"
+                    Tag="NavIcon">
+                    <TextBlock
+                        HorizontalAlignment="Center"
+                        VerticalAlignment="Center"
+                        FontFamily="{DynamicResource IconFontFamily}"
+                        FontSize="{DynamicResource SidebarIconFontSize}"
+                        Foreground="{DynamicResource Fg}"
+                        Text="{Binding Icon}"
+                        TextAlignment="Center">
+                        <TextBlock.RenderTransform>
+                            <TranslateTransform X="{DynamicResource SidebarIconOffsetX}" />
+                        </TextBlock.RenderTransform>
+                    </TextBlock>
+                </Grid>
+            </Grid>
+            <Border
+                Grid.Column="1"
+                ClipToBounds="True"
+                Opacity="{Binding TitleOpacity, RelativeSource={RelativeSource AncestorType={x:Type controls:Sidebar}}}"
+                Tag="NavTitleHost">
+                <TextBlock
+                    VerticalAlignment="Center"
+                    FontFamily="{Binding TitleFontFamily, RelativeSource={RelativeSource AncestorType={x:Type controls:Sidebar}}}"
+                    FontSize="{Binding TitleFontSize, RelativeSource={RelativeSource AncestorType={x:Type controls:Sidebar}}}"
+                    Foreground="{DynamicResource Fg}"
+                    Text="{Binding Title}"
+                    TextTrimming="CharacterEllipsis" />
+            </Border>
+        </Grid>
+    </DataTemplate>
+
+    <Style TargetType="{x:Type controls:Sidebar}">
+        <Setter Property="TitleFontFamily" Value="{DynamicResource NavFontFamily}" />
+        <Setter Property="TitleFontSize" Value="{DynamicResource NavFontSize}" />
+        <Setter Property="HorizontalAlignment" Value="Left" />
+        <Setter Property="VerticalAlignment" Value="Stretch" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="{x:Type controls:Sidebar}">
+                    <Border
+                        Width="{TemplateBinding CurrentWidth}"
+                        HorizontalAlignment="Left"
+                        Background="{DynamicResource BgRail}"
+                        ClipToBounds="True"
+                        CornerRadius="{DynamicResource ShellCardRadius}">
+                        <Grid>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="*" />
+                                <RowDefinition Height="Auto" />
+                            </Grid.RowDefinitions>
+
+                            <ListBox
+                                x:Name="PART_NavList"
+                                Grid.Row="0"
+                                Margin="{DynamicResource SidebarMainInset}"
+                                AutomationProperties.AutomationId="NavList"
+                                Background="{DynamicResource TransparentBrush}"
+                                BorderThickness="{DynamicResource ZeroThickness}"
+                                Padding="{DynamicResource ZeroThickness}"
+                                Style="{DynamicResource SidebarListStyle}"
+                                ItemContainerStyle="{DynamicResource SidebarListItemStyle}"
+                                ItemTemplate="{DynamicResource SidebarEntryTemplate}"
+                                ItemsSource="{Binding MainEntries, RelativeSource={RelativeSource TemplatedParent}}"
+                                ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                                ScrollViewer.VerticalScrollBarVisibility="Auto"
+                                SelectedValue="{Binding SelectedRoute, RelativeSource={RelativeSource TemplatedParent}, Mode=TwoWay}"
+                                SelectedValuePath="Route" />
+
+                            <ListBox
+                                x:Name="PART_PinList"
+                                Grid.Row="1"
+                                Margin="{DynamicResource SidebarPinInset}"
+                                AutomationProperties.AutomationId="PinList"
+                                Background="{DynamicResource TransparentBrush}"
+                                BorderThickness="{DynamicResource ZeroThickness}"
+                                Padding="{DynamicResource ZeroThickness}"
+                                Style="{DynamicResource SidebarListStyle}"
+                                ItemContainerStyle="{DynamicResource SidebarListItemStyle}"
+                                ItemTemplate="{DynamicResource SidebarEntryTemplate}"
+                                ItemsSource="{Binding PinnedEntries, RelativeSource={RelativeSource TemplatedParent}}"
+                                ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                                ScrollViewer.VerticalScrollBarVisibility="Disabled"
+                                SelectedValue="{Binding SelectedRoute, RelativeSource={RelativeSource TemplatedParent}, Mode=TwoWay}"
+                                SelectedValuePath="Route" />
+
+                            <!-- Outline overlays the card so its 1 DIP stroke never shifts row geometry. -->
+                            <Border
+                                Grid.RowSpan="2"
+                                IsHitTestVisible="False"
+                                BorderBrush="{DynamicResource Border}"
+                                BorderThickness="{DynamicResource ShellBorderThickness}"
+                                CornerRadius="{DynamicResource ShellCardRadius}" />
+                        </Grid>
+                    </Border>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+</ResourceDictionary>
