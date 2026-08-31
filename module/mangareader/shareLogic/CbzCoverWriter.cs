@@ -8,13 +8,18 @@ namespace Module.Mangareader.ShareLogic;
 public sealed record CoverBakeResult(
     string ChapterPath,
     string BackupPath,
-    string CoverEntryName);
+    string CoverEntryName)
+{
+    public IReadOnlyList<ReleasedArchiveProcess> ReleasedProcesses { get; init; } =
+        Array.Empty<ReleasedArchiveProcess>();
+}
 
 public sealed class CbzCoverWriter
 {
     public const string GeneratedCoverEntryName = "!00000-citadel-cover.png";
 
     private readonly string _backupRoot;
+    private readonly ArchiveLockCoordinator _lockCoordinator = new();
 
     public CbzCoverWriter()
     {
@@ -63,17 +68,57 @@ public sealed class CbzCoverWriter
                 pngBytes,
                 cancellationToken);
             cancellationToken.ThrowIfCancellationRequested();
-            File.Move(temporaryPath, chapter.FilePath, overwrite: true);
+            var releasedProcesses = ReplaceOriginal(
+                temporaryPath,
+                chapter.FilePath,
+                cancellationToken);
+
+            return new CoverBakeResult(
+                chapter.FilePath,
+                backupPath,
+                GeneratedCoverEntryName)
+            {
+                ReleasedProcesses = releasedProcesses,
+            };
         }
         finally
         {
             if (File.Exists(temporaryPath)) File.Delete(temporaryPath);
         }
+    }
 
-        return new CoverBakeResult(
-            chapter.FilePath,
-            backupPath,
-            GeneratedCoverEntryName);
+    private IReadOnlyList<ReleasedArchiveProcess> ReplaceOriginal(
+        string temporaryPath,
+        string chapterPath,
+        CancellationToken cancellationToken)
+    {
+        var released = new Dictionary<int, ReleasedArchiveProcess>();
+        Exception? lastFailure = null;
+
+        for (var attempt = 0; attempt < 3; attempt++)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            try
+            {
+                File.Move(temporaryPath, chapterPath, overwrite: true);
+                return released.Values.ToArray();
+            }
+            catch (Exception exception) when (exception is IOException
+                or UnauthorizedAccessException)
+            {
+                lastFailure = exception;
+                foreach (var process in _lockCoordinator.ReleaseForReplacement(
+                             chapterPath,
+                             cancellationToken))
+                {
+                    released[process.ProcessId] = process;
+                }
+            }
+        }
+
+        throw new IOException(
+            "The rebuilt chapter could not replace the original after releasing file locks.",
+            lastFailure);
     }
 
     private string CreateBackup(string chapterPath)

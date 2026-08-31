@@ -18,6 +18,7 @@ public partial class ReaderWindow : Window
     private readonly SemaphoreSlim _chapterLoadGate = new(1, 1);
     private readonly ObservableCollection<ChapterSurfaceModel> _surfaces = new();
     private readonly int _initialChapterIndex;
+    private ReaderZoomController? _zoomController;
 
     private ChapterRenderRequest? _fullRequest;
     private ChapterRenderRequest? _previousRequest;
@@ -38,8 +39,24 @@ public partial class ReaderWindow : Window
         _activeChapterIndex = _initialChapterIndex;
 
         InitializeComponent();
+        _zoomController = new ReaderZoomController(
+            ReaderScroller,
+            () => ZoomScale,
+            scale => ZoomScale = scale);
         ChapterList.ItemsSource = _surfaces;
         UpdateWindowTitle();
+    }
+
+    public static readonly DependencyProperty ZoomScaleProperty = DependencyProperty.Register(
+        nameof(ZoomScale),
+        typeof(double),
+        typeof(ReaderWindow),
+        new PropertyMetadata(ReaderZoomController.DefaultScale));
+
+    public double ZoomScale
+    {
+        get => (double)GetValue(ZoomScaleProperty);
+        private set => SetValue(ZoomScaleProperty, value);
     }
 
     private async void ReaderWindow_Loaded(object sender, RoutedEventArgs e)
@@ -307,7 +324,7 @@ public partial class ReaderWindow : Window
             return container.ActualHeight;
         }
 
-        return surface.SurfaceHeight;
+        return surface.SurfaceHeight * ZoomScale;
     }
 
     private void UpdateSurfaceRoles()
@@ -378,8 +395,11 @@ public partial class ReaderWindow : Window
         CloseAfterErrorButton.Visibility = Visibility.Visible;
     }
 
-    private async void ReaderScroller_ScrollChanged(object sender, ScrollChangedEventArgs e) =>
+    private async void ReaderScroller_ScrollChanged(object sender, ScrollChangedEventArgs e)
+    {
+        if (_zoomController?.IsApplying == true) return;
         await EvaluateActiveSurfaceAsync();
+    }
 
     private void ReaderScroller_SizeChanged(object sender, SizeChangedEventArgs e)
     {
@@ -388,11 +408,24 @@ public partial class ReaderWindow : Window
 
     private void ReaderWindow_PreviewKeyDown(object sender, KeyEventArgs e)
     {
+        if ((Keyboard.Modifiers & ModifierKeys.Control) != 0
+            && e.Key is Key.D0 or Key.NumPad0)
+        {
+            _zoomController?.Reset();
+            e.Handled = true;
+            return;
+        }
+
         if (e.Key == Key.Escape)
         {
             Close();
             e.Handled = true;
         }
+    }
+
+    private void ReaderWindow_PreviewMouseWheel(object sender, MouseWheelEventArgs e)
+    {
+        if (_zoomController?.HandleMouseWheel(e) == true) e.Handled = true;
     }
 
     private void UpdateWindowTitle() =>
@@ -403,6 +436,8 @@ public partial class ReaderWindow : Window
     private void ReaderWindow_Closed(object? sender, EventArgs e)
     {
         _closed = true;
+        _zoomController?.Dispose();
+        _zoomController = null;
         _loadCancellation.Cancel();
         ChapterList.ItemsSource = null;
         _surfaces.Clear();

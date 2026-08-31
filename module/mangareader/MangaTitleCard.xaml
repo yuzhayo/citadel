@@ -3,8 +3,8 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:local="clr-namespace:Module.Mangareader"
         Width="220"
-        Height="318"
-        Padding="10"
+        Height="330"
+        Padding="0"
         Background="{DynamicResource Card}"
         BorderThickness="0"
         Foreground="{DynamicResource Fg}"
@@ -15,74 +15,94 @@
         <ControlTemplate TargetType="{x:Type local:MangaTitleCard}">
             <Border x:Name="Surface"
                     Background="{TemplateBinding Background}"
+                    BorderBrush="{DynamicResource Border}"
+                    BorderThickness="{TemplateBinding BorderThickness}"
                     CornerRadius="{DynamicResource SidebarItemCornerRadius}"
+                    ClipToBounds="True"
                     Padding="{TemplateBinding Padding}">
                 <ContentPresenter HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
                                   VerticalAlignment="{TemplateBinding VerticalContentAlignment}" />
             </Border>
             <ControlTemplate.Triggers>
                 <Trigger Property="IsMouseOver" Value="True">
-                    <Setter TargetName="Surface" Property="Background" Value="{DynamicResource Hover}" />
+                    <Setter TargetName="Surface" Property="Opacity" Value="0.94" />
                 </Trigger>
                 <Trigger Property="IsKeyboardFocused" Value="True">
                     <Setter TargetName="Surface" Property="BorderBrush" Value="{DynamicResource Accent}" />
-                    <Setter TargetName="Surface" Property="BorderThickness" Value="1" />
+                    <Setter TargetName="Surface" Property="BorderThickness" Value="2" />
                 </Trigger>
             </ControlTemplate.Triggers>
         </ControlTemplate>
     </Button.Template>
 
-    <Grid>
-        <Grid.RowDefinitions>
-            <RowDefinition Height="190" />
-            <RowDefinition Height="Auto" />
-            <RowDefinition Height="Auto" />
-            <RowDefinition Height="*" />
-        </Grid.RowDefinitions>
-        <Border Background="{DynamicResource Bg}"
-                BorderBrush="{DynamicResource Border}"
-                BorderThickness="1"
-                CornerRadius="{DynamicResource SidebarItemCornerRadius}"
-                ClipToBounds="True">
-            <Grid>
-                <TextBlock Text="&#xE736;"
-                           FontFamily="Segoe MDL2 Assets"
-                           FontSize="32"
-                           Foreground="{DynamicResource Dim}"
-                           HorizontalAlignment="Center"
-                           VerticalAlignment="Center" />
-                <Image Source="{Binding Cover}"
-                       Stretch="UniformToFill"
-                       HorizontalAlignment="Stretch"
-                       VerticalAlignment="Stretch"
-                       RenderOptions.BitmapScalingMode="Fant" />
+    <Grid Background="{DynamicResource Bg}" ClipToBounds="True">
+        <TextBlock Text="&#xE736;"
+                   FontFamily="Segoe MDL2 Assets"
+                   FontSize="36"
+                   Foreground="{DynamicResource Dim}"
+                   HorizontalAlignment="Center"
+                   VerticalAlignment="Center" />
+
+        <Image Source="{Binding Cover}"
+               Stretch="Fill"
+               HorizontalAlignment="Stretch"
+               VerticalAlignment="Stretch"
+               RenderOptions.BitmapScalingMode="Fant" />
+
+        <Border Margin="9"
+                Padding="8,4"
+                HorizontalAlignment="Right"
+                VerticalAlignment="Top"
+                Background="#D9111215"
+                CornerRadius="10">
+            <TextBlock Text="{Binding ChapterCountText}"
+                       FontSize="11"
+                       FontWeight="SemiBold"
+                       Foreground="White" />
+        </Border>
+
+        <Border Height="92"
+                VerticalAlignment="Bottom">
+            <Border.Background>
+                <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
+                    <GradientStop Offset="0" Color="#00000000" />
+                    <GradientStop Offset="0.34" Color="#B0000000" />
+                    <GradientStop Offset="1" Color="#F2000000" />
+                </LinearGradientBrush>
+            </Border.Background>
+            <Grid Margin="10,22,10,8">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="40" />
+                    <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
+                <TextBlock Grid.Row="0"
+                           Text="{Binding Title}"
+                           Height="38"
+                           FontSize="15"
+                           FontWeight="SemiBold"
+                           Foreground="White"
+                           LineHeight="19"
+                           TextWrapping="Wrap"
+                           ClipToBounds="True"
+                           VerticalAlignment="Top"
+                           ToolTip="{Binding Title}" />
+                <TextBlock Grid.Row="1"
+                           Text="{Binding ProgressText}"
+                           FontSize="11"
+                           Foreground="#FFD2D2D2"
+                           TextTrimming="CharacterEllipsis">
+                    <TextBlock.Style>
+                        <Style TargetType="{x:Type TextBlock}">
+                            <Setter Property="Visibility" Value="Visible" />
+                            <Style.Triggers>
+                                <Trigger Property="Text" Value="">
+                                    <Setter Property="Visibility" Value="Collapsed" />
+                                </Trigger>
+                            </Style.Triggers>
+                        </Style>
+                    </TextBlock.Style>
+                </TextBlock>
             </Grid>
         </Border>
-        <TextBlock Grid.Row="1"
-                   Margin="2,10,2,0"
-                   Text="{Binding Title}"
-                   FontSize="15"
-                   FontWeight="SemiBold"
-                   Foreground="{DynamicResource Fg}"
-                   TextTrimming="CharacterEllipsis"
-                   ToolTip="{Binding Title}" />
-        <TextBlock Grid.Row="2"
-                   Margin="2,4,2,0"
-                   Text="{Binding BadgeText}"
-                   FontSize="12"
-                   Foreground="{DynamicResource Accent}" />
-        <StackPanel Grid.Row="3"
-                    Margin="2,7,2,0"
-                    VerticalAlignment="Top">
-            <TextBlock Text="{Binding DetailLine1}"
-                       FontSize="11"
-                       Foreground="{DynamicResource Body}"
-                       TextTrimming="CharacterEllipsis" />
-            <TextBlock Text="{Binding DetailLine2}"
-                       Margin="0,2,0,0"
-                       FontSize="11"
-                       Foreground="{DynamicResource Dim}"
-                       TextTrimming="CharacterEllipsis" />
-        </StackPanel>
     </Grid>
 </Button>

@@ -95,8 +95,10 @@ work; it does not change Citadel Core or the shared module contract.
 - [x] Keep Cover Builder in its own tab and files.
 - [x] Select a scanned title and accept either a local image path or an HTTP(S)
       image URL.
-- [x] Download URL sources with a bounded size and validate every source as an
-      image before touching a chapter.
+- [x] Keep URL handling as an explicit two-step flow: `Fetch` downloads with a
+      bounded size, validates and converts the image, then saves it under
+      Manga Reader LocalAppData. Enable `Bake cover` for that URL only after a
+      successful fetch; local image paths remain directly bakeable.
 - [x] Convert the chosen source to one deterministic generated PNG page and
       place it first in the earliest naturally sorted chapter.
 - [x] Stream the rewritten CBZ through a same-folder temporary file, preserve
@@ -108,26 +110,31 @@ work; it does not change Citadel Core or the shared module contract.
 - [x] Refresh the title cover after a successful bake.
 - [x] Keep source loading, archive writing, and Cover Builder UI in separate
       files.
+- [x] If another user application locks the first chapter during replacement,
+      use Windows Restart Manager to close that exact locker (forcing an
+      unresponsive app only after the normal shutdown request). Never stop
+      Citadel, Explorer, a Windows service, or a critical process; no private
+      archive dependency is needed for ordinary CBZ files.
 
 ## Deferred — define one by one before implementation
 
 - [ ] Persist the selected library path.
-- [ ] Add a shared card-presentation sub-feature under `shareLogic/`:
+- [x] Add a shared card-presentation sub-feature under `shareLogic/`:
       normalize underscores in folder titles to spaces for display only, collapse
       repeated whitespace, and expose the compact Library/History card data.
-- [ ] Render Library and History covers in one fixed `2:3` frame with no empty
+- [x] Render Library and History covers in one fixed `2:3` frame with no empty
       bands or crop; allow slight stretch so every card remains uniform.
-- [ ] Move the normalized title into a fixed-height bottom cover overlay with a
+- [x] Move the normalized title into a fixed-height bottom cover overlay with a
       dark gradient, top-align it within a maximum of two wrapped lines, and
-      ellipsize any overflow. Remove `First chapter` and `Latest chapter` from
+      clip any overflow after the second line. Remove `First chapter` and `Latest chapter` from
       the cards; retain chapter count and History's `Last read` progress only.
-- [ ] Add session-only `Ctrl + mouse wheel` zoom inside `Reader/`: ordinary
+- [x] Add session-only `Ctrl + mouse wheel` zoom inside `Reader/`: ordinary
       wheel input must keep scrolling; zoom the joined chapter surface without
       resizing the reader window or scaling reader chrome/overlays.
-- [ ] Keep the content point beneath the pointer anchored while zooming, clamp
+- [x] Keep the content point beneath the pointer anchored while zooming, clamp
       the zoom range, coalesce rapid wheel input, and avoid re-decoding chapter
-      images for each zoom step. Define reset/fit-mode interaction before
-      implementation.
+      images for each zoom step. Clamp it to `50%–300%` in `10%` steps and use
+      `Ctrl+0` to reset to `100%`; future fit modes remain separately deferred.
 - [ ] Add the temporary three-zone active-page overlay:
       Previous / Menu / Next; hide visuals while retaining hit areas.
 - [ ] Define Previous and Next behavior for each reading mode.

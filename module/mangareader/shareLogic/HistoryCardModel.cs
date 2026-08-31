@@ -25,15 +25,13 @@ public sealed class HistoryCardModel : INotifyPropertyChanged, IDisposable
 
     public DateTimeOffset LastOpenedUtc { get; }
 
-    public string Title => Manga.Title;
+    public string Title => TitleCard.Title;
 
     public BitmapSource? Cover => TitleCard.Cover;
 
-    public string BadgeText => $"Last read · {Chapter.Title}";
+    public string ChapterCountText => TitleCard.ChapterCountText;
 
-    public string DetailLine1 => LastOpenedUtc.ToLocalTime().ToString("dd MMM yyyy");
-
-    public string DetailLine2 => LastOpenedUtc.ToLocalTime().ToString("HH:mm");
+    public string ProgressText => $"Last read · {Chapter.Title}";
 
     public event PropertyChangedEventHandler? PropertyChanged;
 

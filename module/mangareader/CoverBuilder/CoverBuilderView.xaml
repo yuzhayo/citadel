@@ -46,7 +46,7 @@
                                    FontSize="20"
                                    FontWeight="SemiBold" />
                         <TextBlock Margin="0,6,0,14"
-                                   Text="Choose a scanned title, then use a local image path or an HTTP(S) URL. The generated cover becomes the first page of its earliest chapter."
+                                   Text="Choose a scanned title. Local images can be baked directly; HTTP(S) images must be fetched to Citadel storage first."
                                    TextWrapping="Wrap"
                                    Foreground="{DynamicResource Body}" />
 
@@ -68,13 +68,22 @@
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="*" />
                                 <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="Auto" />
                             </Grid.ColumnDefinitions>
                             <setting:SettingField x:Name="SourceField"
                                                   Height="40"
                                                   Margin="0,0,8,0"
                                                   Placeholder="C:\covers\title.jpg or https://example.com/cover.jpg" />
-                            <setting:SettingButton x:Name="BrowseSourceButton"
+                            <setting:SettingButton x:Name="FetchButton"
                                                    Grid.Column="1"
+                                                   MinWidth="92"
+                                                   Height="40"
+                                                   Margin="0,0,8,0"
+                                                   Content="Fetch"
+                                                   IsEnabled="False"
+                                                   Click="FetchButton_Click" />
+                            <setting:SettingButton x:Name="BrowseSourceButton"
+                                                   Grid.Column="2"
                                                    MinWidth="92"
                                                    Height="40"
                                                    Content="Browse"

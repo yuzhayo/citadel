@@ -1,3 +1,4 @@
+using System.IO;
 using System.Windows;
 using System.Windows.Controls;
 using Microsoft.Win32;
@@ -9,11 +10,17 @@ public partial class CoverBuilderView : UserControl, IDisposable
 {
     private readonly CoverBuilderService _service = new();
     private CancellationTokenSource? _operationCancellation;
+    private FetchedCoverResult? _fetchedCover;
     private string? _resultStatus;
     private bool _settingLibrary;
+    private bool _busy;
     private bool _disposed;
 
-    public CoverBuilderView() => InitializeComponent();
+    public CoverBuilderView()
+    {
+        InitializeComponent();
+        SourceField.TextChanged += SourceField_TextChanged;
+    }
 
     public event EventHandler<CoverBakedEventArgs>? CoverBaked;
 
@@ -51,11 +58,74 @@ public partial class CoverBuilderView : UserControl, IDisposable
         if (accepted == true) SourceField.Text = dialog.FileName;
     }
 
+    private void SourceField_TextChanged(string text)
+    {
+        var source = text.Trim();
+        if (_fetchedCover is not null
+            && !string.Equals(
+                source,
+                _fetchedCover.SourceUrl,
+                StringComparison.Ordinal))
+        {
+            _fetchedCover = null;
+        }
+
+        _resultStatus = null;
+        UpdateAvailability();
+    }
+
     private void TitlePicker_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
         if (!_settingLibrary) _resultStatus = null;
         UpdateAvailability();
         e.Handled = true;
+    }
+
+    private async void FetchButton_Click(object sender, RoutedEventArgs e)
+    {
+        var sourceUrl = SourceField.Text.Trim();
+        if (!CoverSourceLoader.TryGetRemoteUri(sourceUrl, out _))
+        {
+            StatusText.Text = "Enter a complete HTTP(S) image URL before fetching.";
+            return;
+        }
+
+        var cancellation = BeginOperation();
+        _fetchedCover = null;
+        _resultStatus = null;
+        StatusText.Text = "Fetching and validating the cover image...";
+
+        try
+        {
+            var fetched = await _service.FetchAsync(sourceUrl, cancellation.Token);
+            if (_disposed || !ReferenceEquals(_operationCancellation, cancellation)) return;
+            if (!string.Equals(
+                SourceField.Text.Trim(),
+                fetched.SourceUrl,
+                StringComparison.Ordinal))
+            {
+                return;
+            }
+
+            _fetchedCover = fetched;
+            _resultStatus = $"Fetch complete. Saved locally: {fetched.LocalPath}";
+            StatusText.Text = _resultStatus;
+        }
+        catch (OperationCanceledException) when (cancellation.IsCancellationRequested)
+        {
+        }
+        catch (Exception exception)
+        {
+            if (!_disposed && ReferenceEquals(_operationCancellation, cancellation))
+            {
+                _resultStatus = $"Fetch failed: {exception.GetBaseException().Message}";
+                StatusText.Text = _resultStatus;
+            }
+        }
+        finally
+        {
+            EndOperation(cancellation);
+        }
     }
 
     private async void BakeButton_Click(object sender, RoutedEventArgs e)
@@ -69,22 +139,45 @@ public partial class CoverBuilderView : UserControl, IDisposable
             return;
         }
 
-        _operationCancellation?.Cancel();
-        var cancellation = new CancellationTokenSource();
-        _operationCancellation = cancellation;
+        var localPath = source;
+        string sourceLabel;
+        if (CoverSourceLoader.TryGetRemoteUri(source, out _))
+        {
+            if (_fetchedCover is null
+                || !string.Equals(
+                    source,
+                    _fetchedCover.SourceUrl,
+                    StringComparison.Ordinal))
+            {
+                StatusText.Text = "Fetch this URL successfully before baking the cover.";
+                return;
+            }
+
+            localPath = _fetchedCover.LocalPath;
+            sourceLabel = _fetchedCover.SourceLabel;
+        }
+        else
+        {
+            sourceLabel = Path.GetFileName(localPath);
+        }
+
+        var cancellation = BeginOperation();
         _resultStatus = null;
-        SetBusy(true);
-        StatusText.Text = "Validating cover and rebuilding the first chapter...";
+        StatusText.Text = "Validating the local cover and rebuilding the first chapter...";
 
         try
         {
-            var result = await _service.BuildAsync(
+            var result = await _service.BuildFromLocalAsync(
                 selected.Manga,
-                source,
+                localPath,
                 cancellation.Token);
             if (_disposed || !ReferenceEquals(_operationCancellation, cancellation)) return;
 
-            _resultStatus = $"Cover baked from {result.Source.SourceLabel}. Backup: {result.Bake.BackupPath}";
+            var released = result.Bake.ReleasedProcesses.Count == 0
+                ? string.Empty
+                : $" Closed {string.Join(", ", result.Bake.ReleasedProcesses.Select(
+                    process => $"{process.DisplayName} (PID {process.ProcessId})"))} to release the chapter.";
+            _resultStatus = $"Cover baked from {sourceLabel}.{released} Backup: {result.Bake.BackupPath}";
             StatusText.Text = _resultStatus;
             CoverBaked?.Invoke(
                 this,
@@ -97,41 +190,65 @@ public partial class CoverBuilderView : UserControl, IDisposable
         {
             if (!_disposed && ReferenceEquals(_operationCancellation, cancellation))
             {
-                StatusText.Text = $"Cover was not changed: {exception.GetBaseException().Message}";
+                _resultStatus = $"Bake failed; cover was not changed: {exception.GetBaseException().Message}";
+                StatusText.Text = _resultStatus;
             }
         }
         finally
         {
-            if (ReferenceEquals(_operationCancellation, cancellation))
-            {
-                _operationCancellation = null;
-                if (!_disposed) SetBusy(false);
-            }
-            cancellation.Dispose();
+            EndOperation(cancellation);
         }
     }
 
     private void UpdateAvailability()
     {
         var hasTitle = TitlePicker.SelectedItem is MangaTitleCardModel;
-        BakeButton.IsEnabled = hasTitle && _operationCancellation is null;
+        var source = SourceField.Text.Trim();
+        var isRemote = CoverSourceLoader.TryGetRemoteUri(source, out _);
+        var fetchedRemote = isRemote
+            && _fetchedCover is not null
+            && string.Equals(source, _fetchedCover.SourceUrl, StringComparison.Ordinal)
+            && File.Exists(_fetchedCover.LocalPath);
+        var sourceReady = source.Length > 0 && (!isRemote || fetchedRemote);
+
+        TitlePicker.IsEnabled = !_busy;
+        SourceField.IsEnabled = !_busy;
+        BrowseSourceButton.IsEnabled = !_busy;
+        FetchButton.IsEnabled = !_busy && isRemote;
+        BakeButton.IsEnabled = !_busy && hasTitle && sourceReady;
         StatusText.Text = _resultStatus ?? (hasTitle
-            ? "Ready. The earliest chapter will receive the generated cover page."
+            ? isRemote && !fetchedRemote
+                ? "Fetch the URL to local storage before baking."
+                : "Ready. The earliest chapter will receive the generated cover page."
             : "Scan a Library to load titles.");
     }
 
-    private void SetBusy(bool busy)
+    private CancellationTokenSource BeginOperation()
     {
-        TitlePicker.IsEnabled = !busy;
-        SourceField.IsEnabled = !busy;
-        BrowseSourceButton.IsEnabled = !busy;
-        BakeButton.IsEnabled = !busy && TitlePicker.SelectedItem is MangaTitleCardModel;
+        _operationCancellation?.Cancel();
+        var cancellation = new CancellationTokenSource();
+        _operationCancellation = cancellation;
+        _busy = true;
+        UpdateAvailability();
+        return cancellation;
+    }
+
+    private void EndOperation(CancellationTokenSource cancellation)
+    {
+        if (ReferenceEquals(_operationCancellation, cancellation))
+        {
+            _operationCancellation = null;
+            _busy = false;
+            if (!_disposed) UpdateAvailability();
+        }
+        cancellation.Dispose();
     }
 
     public void Dispose()
     {
         if (_disposed) return;
         _disposed = true;
+        SourceField.TextChanged -= SourceField_TextChanged;
         _operationCancellation?.Cancel();
         _operationCancellation = null;
     }
