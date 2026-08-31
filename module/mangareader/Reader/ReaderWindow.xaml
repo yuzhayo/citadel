@@ -25,14 +25,16 @@
                       IsDeferredScrollingEnabled="False"
                       PanningMode="VerticalOnly"
                       Background="#05060A"
+                      ScrollChanged="ReaderScroller_ScrollChanged"
                       SizeChanged="ReaderScroller_SizeChanged">
-            <ItemsControl x:Name="PageList"
-                          HorizontalAlignment="Center"
+            <ItemsControl x:Name="ChapterList"
+                          HorizontalAlignment="Stretch"
                           Background="#05060A">
                 <ItemsControl.ItemContainerStyle>
                     <Style TargetType="{x:Type ContentPresenter}">
                         <Setter Property="HorizontalAlignment" Value="Stretch" />
                         <Setter Property="SnapsToDevicePixels" Value="True" />
+                        <Setter Property="Panel.ZIndex" Value="{Binding ZIndex}" />
                     </Style>
                 </ItemsControl.ItemContainerStyle>
                 <ItemsControl.ItemsPanel>
@@ -42,12 +44,45 @@
                 </ItemsControl.ItemsPanel>
                 <ItemsControl.ItemTemplate>
                     <DataTemplate>
-                        <Image Source="{Binding Bitmap}"
-                               Stretch="Uniform"
-                               HorizontalAlignment="Stretch"
-                               VerticalAlignment="Top"
-                               SnapsToDevicePixels="True"
-                               RenderOptions.BitmapScalingMode="Fant" />
+                        <Grid Background="#05060A">
+                            <ItemsControl ItemsSource="{Binding Pages}"
+                                          Width="{Binding SurfaceWidth}"
+                                          HorizontalAlignment="Center">
+                                <ItemsControl.ItemContainerStyle>
+                                    <Style TargetType="{x:Type ContentPresenter}">
+                                        <Setter Property="HorizontalAlignment" Value="Stretch" />
+                                        <Setter Property="SnapsToDevicePixels" Value="True" />
+                                    </Style>
+                                </ItemsControl.ItemContainerStyle>
+                                <ItemsControl.ItemsPanel>
+                                    <ItemsPanelTemplate>
+                                        <StackPanel Orientation="Vertical" />
+                                    </ItemsPanelTemplate>
+                                </ItemsControl.ItemsPanel>
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <Image Source="{Binding Bitmap}"
+                                               Width="{Binding DisplayWidth}"
+                                               Height="{Binding DisplayHeight}"
+                                               Stretch="Uniform"
+                                               HorizontalAlignment="Center"
+                                               VerticalAlignment="Top"
+                                               SnapsToDevicePixels="True">
+                                            <Image.Style>
+                                                <Style TargetType="{x:Type Image}">
+                                                    <Setter Property="RenderOptions.BitmapScalingMode" Value="Fant" />
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding Quality}" Value="Preview">
+                                                            <Setter Property="RenderOptions.BitmapScalingMode" Value="LowQuality" />
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </Image.Style>
+                                        </Image>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </Grid>
                     </DataTemplate>
                 </ItemsControl.ItemTemplate>
             </ItemsControl>

@@ -1,4 +1,4 @@
-namespace Module.Mangareader.Logic;
+namespace Module.Mangareader.ShareLogic;
 
 /// <summary>Orders Chapter 2 before Chapter 10 without assuming a filename pattern.</summary>
 public sealed class NaturalStringComparer : IComparer<string>

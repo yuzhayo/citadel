@@ -4,6 +4,7 @@ using System.Windows;
 using System.Windows.Automation;
 using System.Windows.Controls;
 using Citadel.Core.Crl;
+using Citadel.Core.Modules;
 using Citadel.Core.Rpl;
 using Citadel.Core.Tokens;
 using Citadel.Shell;
@@ -201,6 +202,25 @@ public class MainWindowTests : IDisposable
     }
 
     [Fact]
+    public void OptionalCitizenHeaderAction_AppearsAndClearsWithItsRoute()
+    {
+        WithWindow((window, fixture) =>
+        {
+            var action = new Button { Content = "Refresh" };
+            fixture.Gate.Register(Fake.Descriptor(
+                "alpha",
+                create: _ => new HeaderActionView(action)));
+            fixture.Main.Pump();
+
+            window.Router.Navigate("alpha");
+            Assert.Same(action, window.ContentHeaderActionElement.Content);
+
+            window.Router.Navigate(Router.FallbackRoute);
+            Assert.Null(window.ContentHeaderActionElement.Content);
+        });
+    }
+
+    [Fact]
     public void FailedCitizenView_DoesNotLeaveItsTitleInTheHeader()
     {
         WithWindow((window, fixture) =>
@@ -338,6 +358,12 @@ public class MainWindowTests : IDisposable
             foreach (var descendant in Descendants<T>(child)) yield return descendant;
         }
     }
+}
+
+internal sealed class HeaderActionView(FrameworkElement action)
+    : Border, IContentHeaderActionProvider
+{
+    public FrameworkElement CreateContentHeaderAction() => action;
 }
 
 /// <summary>Everything a MainWindow needs, with a manual main queue.</summary>

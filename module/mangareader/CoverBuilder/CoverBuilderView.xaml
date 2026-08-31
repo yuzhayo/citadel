@@ -1,0 +1,123 @@
+<UserControl x:Class="Module.Mangareader.CoverBuilderView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:setting="clr-namespace:Citadel.Setting.Components;assembly=Citadel.Setting"
+             Background="{DynamicResource Bg}"
+             Foreground="{DynamicResource Fg}">
+    <ScrollViewer Margin="0,16,0,0"
+                  VerticalScrollBarVisibility="Auto"
+                  HorizontalScrollBarVisibility="Disabled">
+        <StackPanel MaxWidth="920"
+                    HorizontalAlignment="Left">
+            <Border Background="{DynamicResource Card}"
+                    BorderBrush="{DynamicResource Border}"
+                    BorderThickness="1"
+                    CornerRadius="{DynamicResource ShellCardRadius}"
+                    Padding="16">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="150" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+
+                    <Border Width="132"
+                            Height="180"
+                            HorizontalAlignment="Left"
+                            Background="{DynamicResource Bg}"
+                            BorderBrush="{DynamicResource Border}"
+                            BorderThickness="1"
+                            CornerRadius="{DynamicResource SidebarItemCornerRadius}"
+                            ClipToBounds="True">
+                        <Grid>
+                            <TextBlock Text="&#xE736;"
+                                       FontFamily="Segoe MDL2 Assets"
+                                       FontSize="30"
+                                       Foreground="{DynamicResource Dim}"
+                                       HorizontalAlignment="Center"
+                                       VerticalAlignment="Center" />
+                            <Image Source="{Binding ElementName=TitlePicker, Path=SelectedItem.Cover}"
+                                   Stretch="UniformToFill"
+                                   RenderOptions.BitmapScalingMode="Fant" />
+                        </Grid>
+                    </Border>
+
+                    <StackPanel Grid.Column="1">
+                        <TextBlock Text="Cover Builder"
+                                   FontSize="20"
+                                   FontWeight="SemiBold" />
+                        <TextBlock Margin="0,6,0,14"
+                                   Text="Choose a scanned title, then use a local image path or an HTTP(S) URL. The generated cover becomes the first page of its earliest chapter."
+                                   TextWrapping="Wrap"
+                                   Foreground="{DynamicResource Body}" />
+
+                        <TextBlock Margin="0,0,0,5"
+                                   Text="Title"
+                                   FontSize="12"
+                                   Foreground="{DynamicResource Dim}" />
+                        <ComboBox x:Name="TitlePicker"
+                                  Height="40"
+                                  Style="{DynamicResource SettingComboBoxStyle}"
+                                  DisplayMemberPath="Title"
+                                  SelectionChanged="TitlePicker_SelectionChanged" />
+
+                        <TextBlock Margin="0,12,0,5"
+                                   Text="Local path or image URL"
+                                   FontSize="12"
+                                   Foreground="{DynamicResource Dim}" />
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <setting:SettingField x:Name="SourceField"
+                                                  Height="40"
+                                                  Margin="0,0,8,0"
+                                                  Placeholder="C:\covers\title.jpg or https://example.com/cover.jpg" />
+                            <setting:SettingButton x:Name="BrowseSourceButton"
+                                                   Grid.Column="1"
+                                                   MinWidth="92"
+                                                   Height="40"
+                                                   Content="Browse"
+                                                   Click="BrowseSourceButton_Click" />
+                        </Grid>
+                    </StackPanel>
+                </Grid>
+            </Border>
+
+            <Border Margin="0,12,0,0"
+                    Background="{DynamicResource Card}"
+                    BorderBrush="{DynamicResource Border}"
+                    BorderThickness="1"
+                    CornerRadius="{DynamicResource ShellCardRadius}"
+                    Padding="16">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <StackPanel>
+                        <TextBlock Text="Safe archive update"
+                                   FontWeight="SemiBold" />
+                        <TextBlock Margin="0,5,16,0"
+                                   Text="The original CBZ is backed up under Citadel LocalAppData. The chapter is replaced only after the new archive is complete."
+                                   TextWrapping="Wrap"
+                                   Foreground="{DynamicResource Body}" />
+                        <TextBlock x:Name="StatusText"
+                                   Margin="0,9,16,0"
+                                   Text="Scan a Library to load titles."
+                                   TextWrapping="Wrap"
+                                   Foreground="{DynamicResource Accent}" />
+                    </StackPanel>
+                    <setting:SettingButton x:Name="BakeButton"
+                                           Grid.Column="1"
+                                           MinWidth="132"
+                                           Height="40"
+                                           VerticalAlignment="Center"
+                                           Content="Bake cover"
+                                           IsEnabled="False"
+                                           Click="BakeButton_Click" />
+                </Grid>
+            </Border>
+        </StackPanel>
+    </ScrollViewer>
+</UserControl>

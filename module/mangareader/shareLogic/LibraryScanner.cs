@@ -1,6 +1,6 @@
 using System.IO;
 
-namespace Module.Mangareader.Logic;
+namespace Module.Mangareader.ShareLogic;
 
 public sealed class LibraryScanner
 {

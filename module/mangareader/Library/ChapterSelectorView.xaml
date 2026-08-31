@@ -1,0 +1,156 @@
+<UserControl x:Class="Module.Mangareader.ChapterSelectorView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:setting="clr-namespace:Citadel.Setting.Components;assembly=Citadel.Setting"
+             Background="{DynamicResource Bg}"
+             Foreground="{DynamicResource Fg}"
+             Visibility="Collapsed"
+             Focusable="True"
+             PreviewKeyDown="View_PreviewKeyDown">
+    <UserControl.Resources>
+        <Style TargetType="{x:Type ListBoxItem}">
+            <Setter Property="Background" Value="{DynamicResource TransparentBrush}" />
+            <Setter Property="Foreground" Value="{DynamicResource Fg}" />
+            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+            <Setter Property="AutomationProperties.Name" Value="{Binding Title}" />
+            <Setter Property="Padding" Value="12,10" />
+            <Setter Property="Margin" Value="0,0,0,4" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="{x:Type ListBoxItem}">
+                        <Border x:Name="Surface"
+                                Background="{TemplateBinding Background}"
+                                CornerRadius="{DynamicResource SidebarItemCornerRadius}"
+                                Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="Stretch"
+                                              VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Surface" Property="Background" Value="{DynamicResource Hover}" />
+                            </Trigger>
+                            <Trigger Property="IsSelected" Value="True">
+                                <Setter TargetName="Surface" Property="Background" Value="{DynamicResource Selected}" />
+                                <Setter Property="Foreground" Value="{DynamicResource Accent}" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+    </UserControl.Resources>
+
+    <Border Background="{DynamicResource Bg}"
+            BorderBrush="{DynamicResource Border}"
+            BorderThickness="1"
+            CornerRadius="{DynamicResource ShellCardRadius}"
+            Padding="16">
+        <Grid>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="*" />
+                <RowDefinition Height="Auto" />
+            </Grid.RowDefinitions>
+
+            <Grid Grid.Row="0">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="104" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+                <setting:SettingButton Width="38"
+                                       Height="38"
+                                       Margin="0,0,12,0"
+                                       ToolTip="Back to Library"
+                                       AutomationProperties.Name="Back to Library"
+                                       Click="BackButton_Click">
+                    <TextBlock Text="&#xE72B;"
+                               FontFamily="Segoe MDL2 Assets"
+                               FontSize="14" />
+                </setting:SettingButton>
+                <Border Grid.Column="1"
+                        Width="92"
+                        Height="126"
+                        Background="{DynamicResource Card}"
+                        BorderBrush="{DynamicResource Border}"
+                        BorderThickness="1"
+                        CornerRadius="{DynamicResource SidebarItemCornerRadius}"
+                        ClipToBounds="True">
+                    <Grid>
+                        <TextBlock Text="&#xE736;"
+                                   FontFamily="Segoe MDL2 Assets"
+                                   FontSize="26"
+                                   Foreground="{DynamicResource Dim}"
+                                   HorizontalAlignment="Center"
+                                   VerticalAlignment="Center" />
+                        <Image Source="{Binding Cover}"
+                               Stretch="UniformToFill"
+                               RenderOptions.BitmapScalingMode="Fant" />
+                    </Grid>
+                </Border>
+                <StackPanel Grid.Column="2" Margin="12,2,0,0">
+                    <TextBlock Text="{Binding Title}"
+                               FontSize="21"
+                               FontWeight="SemiBold"
+                               Foreground="{DynamicResource Fg}"
+                               TextWrapping="Wrap" />
+                    <TextBlock Margin="0,6,0,0"
+                               Text="{Binding ChapterSummary}"
+                               Foreground="{DynamicResource Accent}" />
+                    <TextBlock Margin="0,10,0,0"
+                               Text="{Binding FolderPath}"
+                               FontSize="11"
+                               Foreground="{DynamicResource Dim}"
+                               TextTrimming="CharacterEllipsis"
+                               ToolTip="{Binding FolderPath}" />
+                </StackPanel>
+            </Grid>
+
+            <TextBlock Grid.Row="1"
+                       Margin="2,15,2,8"
+                       Text="Choose a chapter"
+                       FontSize="14"
+                       FontWeight="SemiBold" />
+
+            <ListBox x:Name="ChapterList"
+                     Grid.Row="2"
+                     ItemsSource="{Binding Manga.Chapters}"
+                     Background="{DynamicResource Card}"
+                     BorderBrush="{DynamicResource Border}"
+                     BorderThickness="1"
+                     Padding="6"
+                     ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                     ScrollViewer.VerticalScrollBarVisibility="Auto"
+                     SelectionChanged="ChapterList_SelectionChanged"
+                     MouseDoubleClick="ChapterList_MouseDoubleClick">
+                <ListBox.ItemTemplate>
+                    <DataTemplate>
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Text="{Binding Title}"
+                                       FontWeight="SemiBold"
+                                       TextTrimming="CharacterEllipsis" />
+                            <TextBlock Grid.Column="1"
+                                       Margin="14,0,0,0"
+                                       Text="Open"
+                                       Foreground="{DynamicResource Dim}" />
+                        </Grid>
+                    </DataTemplate>
+                </ListBox.ItemTemplate>
+            </ListBox>
+
+            <setting:SettingButton x:Name="OpenButton"
+                                   Grid.Row="3"
+                                   MinWidth="128"
+                                   Height="38"
+                                   Margin="0,14,0,0"
+                                   HorizontalAlignment="Right"
+                                   Content="Open chapter"
+                                   Click="OpenButton_Click" />
+        </Grid>
+    </Border>
+</UserControl>

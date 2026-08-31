@@ -1,15 +1,15 @@
+using System.Windows.Automation;
 using System.Windows;
 using System.Windows.Controls;
+using Citadel.Core.Modules;
 using Citadel.Core.Rpl;
-using Microsoft.Win32;
-using Module.Mangareader.Logic;
+using Citadel.Setting.Components;
+using Module.Mangareader.ShareLogic;
 
 namespace Module.Mangareader;
 
-public partial class MangaReaderView : UserControl
+public partial class MangaReaderView : UserControl, IContentHeaderActionProvider
 {
-    private readonly LibraryScanner _scanner = new();
-    private CancellationTokenSource? _scanCancellation;
     private ReaderWindow? _readerWindow;
     private bool _disposed;
 
@@ -20,107 +20,72 @@ public partial class MangaReaderView : UserControl
         lifetime.Add(DisposeView);
     }
 
-    private async void BrowseButton_Click(object sender, RoutedEventArgs e)
+    private void LibraryTab_TitlesChanged(object? sender, LibraryChangedEventArgs e)
     {
-        var dialog = new OpenFolderDialog
-        {
-            Title = "Choose manga library folder",
-            Multiselect = false,
-        };
-
-        var owner = Window.GetWindow(this);
-        var accepted = owner is null
-            ? dialog.ShowDialog()
-            : dialog.ShowDialog(owner);
-
-        if (accepted != true) return;
-
-        LibraryPath.Text = dialog.FolderName;
-        await ScanLibraryAsync();
+        HistoryTab.SetLibrary(e.Titles);
+        CoverBuilderTab.SetLibrary(e.Titles);
     }
 
-    private async void ScanButton_Click(object sender, RoutedEventArgs e) =>
-        await ScanLibraryAsync();
+    private void OpenChapterRequested(object? sender, OpenChapterRequestedEventArgs e) =>
+        OpenReader(e.Title, e.Chapter);
 
-    private async Task ScanLibraryAsync()
+    public FrameworkElement CreateContentHeaderAction()
     {
-        if (_disposed) return;
-
-        var path = LibraryPath.Text.Trim();
-        if (path.Length == 0)
+        var button = new SettingButton
         {
-            ShowEmpty(
-                "No library selected",
-                "Choose the folder that contains one child folder per manga title.");
-            StatusText.Text = "A library path is required.";
-            return;
-        }
+            Width = 34,
+            Height = 30,
+            Padding = new Thickness(0),
+            ToolTip = "Refresh Manga Reader library",
+            Content = new TextBlock
+            {
+                Text = "\uE72C",
+                FontFamily = new System.Windows.Media.FontFamily("Segoe MDL2 Assets"),
+                FontSize = 14,
+            },
+        };
+        AutomationProperties.SetName(button, "Refresh Manga Reader library");
+        button.Click += RefreshButton_Click;
+        return button;
+    }
 
-        var previous = _scanCancellation;
-        var cancellation = new CancellationTokenSource();
-        _scanCancellation = cancellation;
-        previous?.Cancel();
-        previous?.Dispose();
-
-        SetBusy(true);
-        StatusText.Text = "Scanning title folders...";
-
+    private async void RefreshButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (_disposed || sender is not Button refresh) return;
+        refresh.IsEnabled = false;
         try
         {
-            var titles = await _scanner.ScanAsync(path, cancellation.Token);
-            if (_disposed || !ReferenceEquals(_scanCancellation, cancellation)) return;
-
-            TitleGrid.ItemsSource = titles;
-            if (titles.Count == 0)
-            {
-                ShowEmpty(
-                    "No CBZ titles found",
-                    "The selected folder must contain child folders with CBZ files inside them.");
-                StatusText.Text = "Scan complete — no CBZ files were found.";
-                return;
-            }
-
-            EmptyPanel.Visibility = Visibility.Collapsed;
-            var chapterCount = titles.Sum(title => title.ChapterCount);
-            StatusText.Text = $"{titles.Count} titles · {chapterCount} chapters";
-        }
-        catch (OperationCanceledException) when (cancellation.IsCancellationRequested)
-        {
-        }
-        catch (Exception exception)
-        {
-            if (_disposed || !ReferenceEquals(_scanCancellation, cancellation)) return;
-
-            TitleGrid.ItemsSource = null;
-            ShowEmpty("Could not scan the library", exception.GetBaseException().Message);
-            StatusText.Text = "Scan failed.";
+            await LibraryTab.RefreshAsync();
+            HistoryTab.Refresh();
         }
         finally
         {
-            if (ReferenceEquals(_scanCancellation, cancellation))
-            {
-                _scanCancellation = null;
-                cancellation.Dispose();
-                if (!_disposed) SetBusy(false);
-            }
+            if (!_disposed) refresh.IsEnabled = true;
         }
     }
 
-    private void TitleCard_Click(object sender, RoutedEventArgs e)
+    private async void CoverBuilderTab_CoverBaked(object? sender, CoverBakedEventArgs e)
     {
-        if (_disposed
-            || sender is not FrameworkElement { Tag: MangaTitle title }
-            || title.Chapters.Count == 0)
-        {
-            return;
-        }
+        if (_disposed) return;
+        await LibraryTab.RefreshAsync();
+        HistoryTab.Refresh();
+    }
+
+    private void OpenReader(MangaTitle title, ChapterInfo chapter)
+    {
+        if (_disposed) return;
 
         _readerWindow?.Close();
+        HistoryTab.Record(title, chapter);
 
-        var reader = new ReaderWindow(title, title.Chapters[0]);
+        var reader = new ReaderWindow(title, chapter);
         var owner = Window.GetWindow(this);
         if (owner is not null) reader.Owner = owner;
 
+        reader.ActiveChapterChanged += (_, change) =>
+        {
+            if (!_disposed) HistoryTab.Record(change.Title, change.Chapter);
+        };
         reader.Closed += (_, _) =>
         {
             if (ReferenceEquals(_readerWindow, reader)) _readerWindow = null;
@@ -130,24 +95,10 @@ public partial class MangaReaderView : UserControl
         reader.Show();
     }
 
-    private void ShowEmpty(string title, string detail)
-    {
-        EmptyTitle.Text = title;
-        EmptyDetail.Text = detail;
-        EmptyPanel.Visibility = Visibility.Visible;
-    }
-
-    private void SetBusy(bool busy)
-    {
-        BrowseButton.IsEnabled = !busy;
-        ScanButton.IsEnabled = !busy;
-    }
-
     private void DisposeView()
     {
         if (!Dispatcher.CheckAccess())
         {
-            _scanCancellation?.Cancel();
             if (!Dispatcher.HasShutdownStarted) Dispatcher.BeginInvoke(DisposeView);
             return;
         }
@@ -155,10 +106,9 @@ public partial class MangaReaderView : UserControl
         if (_disposed) return;
         _disposed = true;
 
-        _scanCancellation?.Cancel();
-        _scanCancellation?.Dispose();
-        _scanCancellation = null;
-
+        LibraryTab.Dispose();
+        HistoryTab.Dispose();
+        CoverBuilderTab.Dispose();
         _readerWindow?.Close();
         _readerWindow = null;
     }

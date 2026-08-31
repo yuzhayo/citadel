@@ -103,18 +103,27 @@
                         BorderBrush="{DynamicResource Border}"
                         BorderThickness="{DynamicResource ContentHeaderBorderThickness}"
                         CornerRadius="{DynamicResource ContentHeaderCornerRadius}">
-                        <TextBlock
-                            x:Name="ContentHeader"
-                            Padding="{DynamicResource ContentHeaderPaddingThickness}"
-                            VerticalAlignment="Center"
-                            AutomationProperties.AutomationId="ContentHeader"
-                            FontFamily="{DynamicResource NavFontFamily}"
-                            FontSize="{DynamicResource ContentHeaderFontSize}"
-                            FontWeight="SemiBold"
-                            Foreground="{DynamicResource Fg}"
-                            Text="Settings"
-                            TextTrimming="CharacterEllipsis"
-                            TextWrapping="NoWrap" />
+                        <Grid>
+                            <TextBlock
+                                x:Name="ContentHeader"
+                                Margin="0,0,52,0"
+                                Padding="{DynamicResource ContentHeaderPaddingThickness}"
+                                VerticalAlignment="Center"
+                                AutomationProperties.AutomationId="ContentHeader"
+                                FontFamily="{DynamicResource NavFontFamily}"
+                                FontSize="{DynamicResource ContentHeaderFontSize}"
+                                FontWeight="SemiBold"
+                                Foreground="{DynamicResource Fg}"
+                                Text="Settings"
+                                TextTrimming="CharacterEllipsis"
+                                TextWrapping="NoWrap" />
+                            <ContentControl
+                                x:Name="ContentHeaderAction"
+                                Margin="0,0,12,0"
+                                HorizontalAlignment="Right"
+                                VerticalAlignment="Center"
+                                AutomationProperties.AutomationId="ContentHeaderAction" />
+                        </Grid>
                     </Border>
 
                     <ContentControl

@@ -1,5 +1,6 @@
 using System.Windows;
 using System.Windows.Controls;
+using Citadel.Core;
 using Citadel.Core.Crl;
 using Citadel.Core.Modules;
 using Citadel.Core.Rpl;
@@ -90,6 +91,8 @@ public partial class MainWindow : Window
 
     internal TextBlock ContentHeaderElement => ContentHeader;
 
+    internal ContentControl ContentHeaderActionElement => ContentHeaderAction;
+
     private void ApplyWindowTokens()
     {
         MinWidth = _tokens.Number("WindowMinW");
@@ -142,6 +145,24 @@ public partial class MainWindow : Window
     {
         Sidebar.SelectedRoute = route;
         ContentHeader.Text = ResolveRouteTitle(route);
+        RefreshContentHeaderAction();
+    }
+
+    private void RefreshContentHeaderAction()
+    {
+        ContentHeaderAction.Content = null;
+        if (Router.CurrentView is not IContentHeaderActionProvider provider) return;
+
+        try
+        {
+            ContentHeaderAction.Content = provider.CreateContentHeaderAction()
+                ?? throw new InvalidOperationException("header action provider returned null");
+        }
+        catch (Exception exception)
+        {
+            ContentHeaderAction.Content = null;
+            Log.Main($"[Shell] content header action skipped: {exception.Message}");
+        }
     }
 
     private void OnRegistryChanged()

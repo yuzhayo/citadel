@@ -7,7 +7,7 @@ work; it does not change Citadel Core or the shared module contract.
 
 - [x] Register `Manga Reader` as an independently built citizen.
 - [x] Keep all source under `module/mangareader/`.
-- [x] Provide an internal tab container with `Scanner` as the first tab.
+- [x] Provide an internal tab container with `Library` as the first tab.
 - [x] Let the user choose or type a manga-library path.
 - [x] Scan immediate child folders and create one title card for each folder
       that contains CBZ files.
@@ -18,7 +18,7 @@ work; it does not change Citadel Core or the shared module contract.
       reader and scrollbar become interactive.
 - [x] Render the complete chapter in one non-virtualized vertical page stack.
 - [x] Keep decode work off the UI thread and freeze bitmaps before presentation.
-- [x] Cancel scanning/loading and close the popup when the screen lifetime ends.
+- [x] Cancel scanning/loading and close the reader window when the screen lifetime ends.
 - [x] Show explicit empty, loading, and error states.
 
 ## Runtime proof — completed
@@ -27,18 +27,107 @@ work; it does not change Citadel Core or the shared module contract.
 - [x] CBZ smoke: one title, one chapter, three decoded pages.
 - [x] Natural page order smoke: `page-1`, `page-2`, `page-10`.
 - [x] Shell discovery: route `manga-reader` registered successfully.
-- [x] Visible runtime: Scanner cards and a real CBZ chapter opened normally.
-- [ ] User judgment: drag-scroll smoothness on representative long chapters.
+- [x] Visible runtime: Library cards and a real CBZ chapter opened normally.
+- [x] User judgment: drag-scroll is smooth on a representative long chapter.
+
+## Natural-width directional cache — approved plan
+
+- [x] Remove the fixed reader-column width.
+- [x] Read each page's native pixel dimensions before choosing its render size.
+- [x] Never upscale a full-quality page beyond its native pixel width.
+- [x] Downscale proportionally only when a page is wider than the available
+      fullscreen viewport; never distort its aspect ratio.
+- [x] Centre different natural page widths inside the fullscreen dark gutter.
+- [x] Persist screen-sized and preview-sized render results under
+      `%LocalAppData%\Citadel\MangaReader\cache` using a source fingerprint.
+- [x] Keep a maximum of three connected chapter surfaces with distinct role
+      z-index values: previous, active, next.
+- [x] Keep the active chapter fully decoded.
+- [x] Preload the next chapter fully and aggressively before the boundary.
+- [x] Demote the previous chapter to a low-resolution full preview while
+      retaining a small full-quality tail at the chapter boundary.
+- [x] When reading direction reverses, promote the previous chapter to full
+      quality before continuing backward and demote forward work.
+- [x] Preserve page dimensions in every quality tier so replacing preview with
+      full quality never changes the scrollbar extent.
+- [x] Preserve the visible scroll position when inserting or removing a chapter
+      above the viewport.
+- [x] Release chapter references as soon as they leave the three-surface window.
+- [x] Verify Debug/Release build, cache reuse, chapter rotation, and visible
+      natural-width rendering before requesting user judgment.
+
+## Library covers and chapter selector — approved plan
+
+- [x] Use the first supported image from the first naturally sorted chapter as
+      the title cover; a missing or broken cover must not hide the title.
+- [x] Decode only a card-sized cover off the UI thread, freeze it before
+      presentation, and reuse the module render cache when possible.
+- [x] Keep title metadata local and deterministic: folder title, chapter count,
+      first chapter, latest chapter, and folder path.
+- [x] Show the cover and compact metadata on each Library card.
+- [x] Rename the first tab from `Scanner` to `Library`.
+- [x] Open the title-detail selector as an overlay inside the Library content
+      area; only the reader owns a separate window.
+- [x] List every chapter in natural order and open the exact selected chapter in
+      the existing rolling reader window.
+- [x] Cancel unfinished cover work and dismiss the selector when the screen
+      lifetime ends.
+- [x] Verify the module build and the visible card → selector → chosen chapter
+      path before requesting user judgment.
+
+## History — approved plan
+
+- [x] Keep each tab in a same-named source folder (`Library/`, `History/`,
+      `CoverBuilder/`) and the dedicated reader surface in `Reader/`, while
+      cross-feature code stays in root-owned `shareLogic/` and reusable UI
+      stays at the Manga Reader root.
+- [x] Keep History in its own tab so Library ordering remains predictable.
+- [x] Persist the last opened chapter and timestamp under the Manga Reader's
+      LocalAppData folder.
+- [x] Reuse the title-card treatment while ordering History by most recently
+      opened and labelling each card with `Last read`.
+- [x] Resume the recorded chapter from a History card without adding another
+      screen or window.
+- [x] Keep History logic and presentation in their own files.
+
+## Cover Builder — approved plan
+
+- [x] Keep Cover Builder in its own tab and files.
+- [x] Select a scanned title and accept either a local image path or an HTTP(S)
+      image URL.
+- [x] Download URL sources with a bounded size and validate every source as an
+      image before touching a chapter.
+- [x] Convert the chosen source to one deterministic generated PNG page and
+      place it first in the earliest naturally sorted chapter.
+- [x] Stream the rewritten CBZ through a same-folder temporary file, preserve
+      all other entries, and replace the original only after completion.
+- [x] Save a recoverable original CBZ backup under the module's LocalAppData
+      before replacement.
+- [x] Add a refresh action beside the Manga Reader content-header title so
+      Library, History, and Cover Builder can reload the latest library state.
+- [x] Refresh the title cover after a successful bake.
+- [x] Keep source loading, archive writing, and Cover Builder UI in separate
+      files.
 
 ## Deferred — define one by one before implementation
 
 - [ ] Persist the selected library path.
-- [ ] Decide cover extraction and title metadata.
-- [ ] Decide chapter selection from a title with multiple CBZ files.
-- [ ] Add the maximum-three rolling chapter surfaces:
-      `A B` -> `A B C` -> `B C D`.
-- [ ] Fully prepare the next chapter before automatic boundary crossing.
-- [ ] Preserve scroll position atomically when the three-chapter window rotates.
+- [ ] Add a shared card-presentation sub-feature under `shareLogic/`:
+      normalize underscores in folder titles to spaces for display only, collapse
+      repeated whitespace, and expose the compact Library/History card data.
+- [ ] Render Library and History covers in one fixed `2:3` frame with no empty
+      bands or crop; allow slight stretch so every card remains uniform.
+- [ ] Move the normalized title into a fixed-height bottom cover overlay with a
+      dark gradient, top-align it within a maximum of two wrapped lines, and
+      ellipsize any overflow. Remove `First chapter` and `Latest chapter` from
+      the cards; retain chapter count and History's `Last read` progress only.
+- [ ] Add session-only `Ctrl + mouse wheel` zoom inside `Reader/`: ordinary
+      wheel input must keep scrolling; zoom the joined chapter surface without
+      resizing the reader window or scaling reader chrome/overlays.
+- [ ] Keep the content point beneath the pointer anchored while zooming, clamp
+      the zoom range, coalesce rapid wheel input, and avoid re-decoding chapter
+      images for each zoom step. Define reset/fit-mode interaction before
+      implementation.
 - [ ] Add the temporary three-zone active-page overlay:
       Previous / Menu / Next; hide visuals while retaining hit areas.
 - [ ] Define Previous and Next behavior for each reading mode.
