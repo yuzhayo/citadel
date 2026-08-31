@@ -5,45 +5,35 @@
              xmlns:setting="clr-namespace:Citadel.Setting.Components;assembly=Citadel.Setting"
              Background="{DynamicResource Bg}"
              Foreground="{DynamicResource Fg}">
-    <Grid Margin="0,16,0,0">
+    <Grid>
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
         </Grid.RowDefinitions>
 
-        <Border Grid.Row="0"
-                Background="{DynamicResource Card}"
-                BorderBrush="{DynamicResource Border}"
-                BorderThickness="1"
-                CornerRadius="{DynamicResource ShellCardRadius}"
-                Padding="14">
-            <Grid>
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="*" />
-                    <ColumnDefinition Width="Auto" />
-                    <ColumnDefinition Width="Auto" />
-                </Grid.ColumnDefinitions>
+        <setting:SettingActionCard Grid.Row="0">
+            <setting:SettingActionCard.Content>
                 <setting:SettingField x:Name="LibraryPath"
-                                      Grid.Column="0"
                                       Height="40"
-                                      Margin="0,0,8,0"
                                       Placeholder="Choose the folder that contains manga title folders" />
-                <setting:SettingButton x:Name="BrowseButton"
-                                       Grid.Column="1"
-                                       MinWidth="94"
-                                       Height="40"
-                                       Margin="0,0,8,0"
-                                       Click="BrowseButton_Click"
-                                       Content="Browse" />
-                <setting:SettingButton x:Name="ScanButton"
-                                       Grid.Column="2"
-                                       MinWidth="82"
-                                       Height="40"
-                                       Click="ScanButton_Click"
-                                       Content="Scan" />
-            </Grid>
-        </Border>
+            </setting:SettingActionCard.Content>
+            <setting:SettingActionCard.ActionContent>
+                <StackPanel Orientation="Horizontal">
+                    <setting:SettingButton x:Name="BrowseButton"
+                                           MinWidth="94"
+                                           Height="40"
+                                           Margin="0,0,8,0"
+                                           Click="BrowseButton_Click"
+                                           Content="Browse" />
+                    <setting:SettingButton x:Name="ScanButton"
+                                           MinWidth="82"
+                                           Height="40"
+                                           Click="ScanButton_Click"
+                                           Content="Scan" />
+                </StackPanel>
+            </setting:SettingActionCard.ActionContent>
+        </setting:SettingActionCard>
 
         <TextBlock x:Name="StatusText"
                    Grid.Row="1"

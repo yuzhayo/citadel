@@ -79,9 +79,16 @@ public sealed class PyHost : IDisposable
         => await SendAsync("ping", null, DefaultTimeout, cancellationToken).ConfigureAwait(false);
 
     public async Task<JsonObject> OpenSessionAsync(
-        string profile, string? startUrl, CancellationToken cancellationToken = default)
+        string profile,
+        string? startUrl,
+        bool headless = false,
+        CancellationToken cancellationToken = default)
     {
-        var parameters = new JsonObject { ["profile"] = profile };
+        var parameters = new JsonObject
+        {
+            ["profile"] = profile,
+            ["headless"] = headless,
+        };
         if (!string.IsNullOrWhiteSpace(startUrl))
         {
             parameters["start_url"] = startUrl;
@@ -90,6 +97,48 @@ public sealed class PyHost : IDisposable
         return await SendAsync("session.open", parameters, DefaultTimeout, cancellationToken)
             .ConfigureAwait(false);
     }
+
+    public async Task<JsonObject> InspectGoogleAsync(
+        string sessionId,
+        CancellationToken cancellationToken = default)
+        => await SendAsync(
+                "google.inspect",
+                new JsonObject { ["session"] = sessionId },
+                DefaultTimeout,
+                cancellationToken)
+            .ConfigureAwait(false);
+
+    public async Task<JsonObject> NavigateSessionAsync(
+        string sessionId,
+        string url,
+        CancellationToken cancellationToken = default)
+        => await SendAsync(
+                "session.navigate",
+                new JsonObject
+                {
+                    ["session"] = sessionId,
+                    ["url"] = url,
+                },
+                DefaultTimeout,
+                cancellationToken)
+            .ConfigureAwait(false);
+
+    public async Task<JsonObject> RelogGoogleAsync(
+        string sessionId,
+        string email,
+        string password,
+        CancellationToken cancellationToken = default)
+        => await SendAsync(
+                "google.relogin",
+                new JsonObject
+                {
+                    ["session"] = sessionId,
+                    ["email"] = email,
+                    ["password"] = password,
+                },
+                DefaultTimeout,
+                cancellationToken)
+            .ConfigureAwait(false);
 
     public async Task<JsonObject> VerifySessionAsync(
         string sessionId, CancellationToken cancellationToken = default)

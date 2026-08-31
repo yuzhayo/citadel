@@ -252,6 +252,53 @@ class PyHostCancellationTest(unittest.IsolatedAsyncioTestCase):
         self.assertIn("s1", host.sessions)
         await host._drop_session("s1")
 
+    async def test_navigate_accepts_http_url_and_keeps_session(self):
+        class Page:
+            url = "about:blank"
+
+            async def goto(self, url, **_kwargs):
+                self.url = url
+
+        host = PYHOST_MODULE._Host()
+        host.sessions["s1"] = {
+            "profile": "probe",
+            "cm": object(),
+            "ctx": object(),
+            "page": Page(),
+            "dir": "unused",
+        }
+        response = await PYHOST_MODULE._handle(host, {
+            "id": 1,
+            "cmd": "session.navigate",
+            "session": "s1",
+            "url": "https://github.com/",
+        })
+
+        self.assertTrue(response["ok"])
+        self.assertEqual(response["url"], "https://github.com/")
+        self.assertIn("s1", host.sessions)
+        host.sessions.clear()
+
+    async def test_navigate_rejects_non_http_url(self):
+        host = PYHOST_MODULE._Host()
+        host.sessions["s1"] = {
+            "profile": "probe",
+            "cm": object(),
+            "ctx": object(),
+            "page": object(),
+            "dir": "unused",
+        }
+        response = await PYHOST_MODULE._handle(host, {
+            "id": 1,
+            "cmd": "session.navigate",
+            "session": "s1",
+            "url": "file:///C:/secret.txt",
+        })
+
+        self.assertEqual(response["error"]["code"], "BAD_URL")
+        self.assertIn("s1", host.sessions)
+        host.sessions.clear()
+
     async def test_verify_closed_browser_forgets_session(self):
         class Context:
             async def __aexit__(self, *_args):
@@ -310,6 +357,255 @@ class PyHostCancellationTest(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(response["ok"])
         self.assertFalse(response["alive"])
         await host._drop_session("s1")
+
+    async def test_open_forwards_headless_mode(self):
+        captured = {}
+
+        class Page:
+            async def goto(self, *_args, **_kwargs):
+                return None
+
+        class Context:
+            pages = [Page()]
+
+            async def __aexit__(self, *_args):
+                return None
+
+        class CamoufoxContext:
+            async def __aenter__(self):
+                return Context()
+
+            async def __aexit__(self, *_args):
+                return None
+
+        def factory(**kwargs):
+            captured.update(kwargs)
+            return CamoufoxContext()
+
+        with tempfile.TemporaryDirectory(prefix="CitadelHeadless-") as root:
+            host = PYHOST_MODULE._Host()
+            host.credenz = root
+            with mock.patch.dict(sys.modules, self._fake_camoufox(factory)):
+                response = await PYHOST_MODULE._handle(host, {
+                    "id": 1,
+                    "cmd": "session.open",
+                    "profile": "probe",
+                    "headless": True,
+                })
+            self.assertTrue(response["ok"])
+            self.assertTrue(response["headless"])
+            self.assertTrue(captured["headless"])
+            await host._drop_session(response["session"])
+
+    async def test_google_inspect_detects_email(self):
+        class Context:
+            async def __aexit__(self, *_args):
+                return None
+
+            async def storage_state(self, **_kwargs):
+                return None
+
+        class Page:
+            url = "https://myaccount.google.com/"
+
+            async def goto(self, *_args, **_kwargs):
+                return None
+
+            async def wait_for_timeout(self, _milliseconds):
+                return None
+
+            async def evaluate(self, _script):
+                return ["Google Account: Example (User.Name@gmail.com)"]
+
+        host = PYHOST_MODULE._Host()
+        host.sessions["s1"] = {
+            "profile": "probe",
+            "cm": Context(),
+            "ctx": Context(),
+            "page": Page(),
+            "dir": "unused",
+            "headless": True,
+        }
+        response = await PYHOST_MODULE._handle(host, {
+            "id": 1,
+            "cmd": "google.inspect",
+            "session": "s1",
+        })
+
+        self.assertTrue(response["ok"])
+        self.assertEqual(response["state"], "active")
+        self.assertEqual(response["email"], "user.name@gmail.com")
+        await host._drop_session("s1")
+
+    async def test_google_inspect_signed_out_has_no_identity(self):
+        class Context:
+            async def __aexit__(self, *_args):
+                return None
+
+        class Page:
+            url = "https://accounts.google.com/v3/signin/identifier"
+
+            async def goto(self, *_args, **_kwargs):
+                return None
+
+            async def wait_for_timeout(self, _milliseconds):
+                return None
+
+        host = PYHOST_MODULE._Host()
+        host.sessions["s1"] = {
+            "profile": "probe",
+            "cm": Context(),
+            "ctx": object(),
+            "page": Page(),
+            "dir": "unused",
+            "headless": True,
+        }
+        response = await PYHOST_MODULE._handle(host, {
+            "id": 1,
+            "cmd": "google.inspect",
+            "session": "s1",
+        })
+
+        self.assertTrue(response["ok"])
+        self.assertEqual(response["state"], "signed_out")
+        self.assertIsNone(response["email"])
+        await host._drop_session("s1")
+
+    async def test_google_relogin_refuses_headless_session(self):
+        host = PYHOST_MODULE._Host()
+        host.sessions["s1"] = {
+            "profile": "probe",
+            "cm": object(),
+            "ctx": object(),
+            "page": object(),
+            "dir": "unused",
+            "headless": True,
+        }
+        response = await PYHOST_MODULE._handle(host, {
+            "id": 1,
+            "cmd": "google.relogin",
+            "session": "s1",
+            "email": "user@gmail.com",
+            "password": "secret-not-echoed",
+        })
+
+        self.assertEqual(response["error"]["code"], "HEADLESS_RELOGIN")
+        self.assertNotIn("secret-not-echoed", json.dumps(response))
+        host.sessions.clear()
+
+    async def test_google_relogin_returns_action_required_for_challenge(self):
+        class Locator:
+            def __init__(self, visible=True):
+                self.first = self
+                self.visible = visible
+
+            async def is_visible(self, **_kwargs):
+                return self.visible
+
+            async def fill(self, _value):
+                return None
+
+            async def click(self):
+                return None
+
+            async def press(self, _key):
+                return None
+
+        class Page:
+            url = "https://accounts.google.com/signin/challenge/selection"
+
+            async def goto(self, *_args, **_kwargs):
+                return None
+
+            def locator(self, _selector):
+                return Locator()
+
+            async def wait_for_selector(self, *_args, **_kwargs):
+                raise RuntimeError("challenge shown before password")
+
+        host = PYHOST_MODULE._Host()
+        host.sessions["s1"] = {
+            "profile": "probe",
+            "cm": object(),
+            "ctx": object(),
+            "page": Page(),
+            "dir": "unused",
+            "headless": False,
+        }
+        response = await PYHOST_MODULE._handle(host, {
+            "id": 1,
+            "cmd": "google.relogin",
+            "session": "s1",
+            "email": "user@gmail.com",
+            "password": "secret-not-echoed",
+        })
+
+        self.assertTrue(response["ok"])
+        self.assertEqual(response["state"], "action_required")
+        self.assertNotIn("secret-not-echoed", json.dumps(response))
+        host.sessions.clear()
+
+    async def test_google_relogin_active_returns_matching_email(self):
+        class Locator:
+            def __init__(self):
+                self.first = self
+
+            async def is_visible(self, **_kwargs):
+                return True
+
+            async def fill(self, _value):
+                return None
+
+            async def click(self):
+                return None
+
+            async def press(self, _key):
+                return None
+
+        class Context:
+            async def storage_state(self, **_kwargs):
+                return None
+
+        class Page:
+            url = "https://accounts.google.com/signin/v2/challenge/pwd"
+
+            async def goto(self, *_args, **_kwargs):
+                return None
+
+            def locator(self, _selector):
+                return Locator()
+
+            async def wait_for_selector(self, *_args, **_kwargs):
+                return None
+
+            async def wait_for_timeout(self, _milliseconds):
+                self.url = "https://myaccount.google.com/"
+
+            async def evaluate(self, _script):
+                return ["Google Account: User (user@gmail.com)"]
+
+        host = PYHOST_MODULE._Host()
+        host.sessions["s1"] = {
+            "profile": "probe",
+            "cm": object(),
+            "ctx": Context(),
+            "page": Page(),
+            "dir": "unused",
+            "headless": False,
+        }
+        response = await PYHOST_MODULE._handle(host, {
+            "id": 1,
+            "cmd": "google.relogin",
+            "session": "s1",
+            "email": "user@gmail.com",
+            "password": "secret-not-echoed",
+        })
+
+        self.assertTrue(response["ok"])
+        self.assertEqual(response["state"], "active")
+        self.assertEqual(response["email"], "user@gmail.com")
+        self.assertNotIn("secret-not-echoed", json.dumps(response))
+        host.sessions.clear()
 
 
 class PyHostLifecycleTest(unittest.TestCase):

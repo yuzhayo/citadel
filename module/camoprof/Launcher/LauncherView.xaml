@@ -6,170 +6,129 @@
              Foreground="{DynamicResource Fg}"
              UseLayoutRounding="True"
              SnapsToDevicePixels="True">
-    <UserControl.Resources>
-        <Style x:Key="ProfileListItemStyle" TargetType="{x:Type ListBoxItem}">
-            <Setter Property="Background" Value="{DynamicResource TransparentBrush}" />
-            <Setter Property="Foreground" Value="{DynamicResource Fg}" />
-            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
-            <Setter Property="Padding" Value="10,8" />
-            <Setter Property="Margin" Value="0,0,0,4" />
-            <Setter Property="Template">
-                <Setter.Value>
-                    <ControlTemplate TargetType="{x:Type ListBoxItem}">
-                        <Border x:Name="Surface"
-                                Background="{TemplateBinding Background}"
-                                CornerRadius="{DynamicResource SidebarItemCornerRadius}"
-                                Padding="{TemplateBinding Padding}">
-                            <ContentPresenter />
-                        </Border>
-                        <ControlTemplate.Triggers>
-                            <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="Surface" Property="Background" Value="{DynamicResource Hover}" />
-                            </Trigger>
-                            <Trigger Property="IsSelected" Value="True">
-                                <Setter TargetName="Surface" Property="Background" Value="{DynamicResource Selected}" />
-                            </Trigger>
-                            <Trigger Property="IsKeyboardFocusWithin" Value="True">
-                                <Setter TargetName="Surface" Property="TextElement.Foreground" Value="{DynamicResource Fg}" />
-                            </Trigger>
-                        </ControlTemplate.Triggers>
-                    </ControlTemplate>
-                </Setter.Value>
-            </Setter>
-        </Style>
-    </UserControl.Resources>
-
-    <Grid Margin="4,14,4,4">
+    <Grid>
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
-            <RowDefinition Height="Auto" />
+            <RowDefinition Height="5" />
             <RowDefinition Height="*" />
-            <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
 
-        <Grid>
-            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                <TextBlock Text="Check browser"
-                           FontWeight="SemiBold"
+        <setting:SettingActionCard>
+            <setting:SettingActionCard.Content>
+                <StackPanel>
+                    <StackPanel Orientation="Horizontal">
+                        <setting:SettingButton x:Name="AddProfileButton"
+                                               Content="Add Profile"
+                                               Click="AddProfileButton_Click"
+                                               AutomationProperties.Name="Add resident browser profile" />
+                        <setting:SettingToggle x:Name="CheckModeToggle"
+                                               Margin="12,0,0,0"
+                                               Content="Show browser while checking"
+                                               IsChecked="True"
+                                               ToolTip="Off uses a temporary headless browser; relog always opens headed"
+                                               AutomationProperties.Name="Show browser while checking" />
+                    </StackPanel>
+                    <TextBlock x:Name="StatusText"
+                               Margin="0,8,0,0"
+                               Foreground="{DynamicResource Body}"
+                               TextWrapping="Wrap"
+                               Visibility="Collapsed"
+                               AutomationProperties.LiveSetting="Polite" />
+                </StackPanel>
+            </setting:SettingActionCard.Content>
+            <setting:SettingActionCard.ActionContent>
+                <StackPanel Orientation="Horizontal">
+                    <TextBlock x:Name="NetworkText"
+                               Margin="0,0,12,0"
+                               VerticalAlignment="Center"
+                               Foreground="{DynamicResource Body}"
+                               Text="Network: checking" />
+                    <setting:SettingButton x:Name="RefreshButton"
+                                           Content="Refresh"
+                                           Click="RefreshButton_Click"
+                                           AutomationProperties.Name="Refresh CamoProf profiles" />
+                </StackPanel>
+            </setting:SettingActionCard.ActionContent>
+        </setting:SettingActionCard>
+
+        <Border Grid.Row="2"
+                Margin="5,0,5,5"
+                Padding="0"
+                Style="{DynamicResource SettingCardStyle}">
+            <Grid>
+                <setting:SettingTable x:Name="ProfileTable"
+                                      AutomationProperties.Name="CamoProf resident profiles">
+                    <setting:SettingTable.InteractiveColumns>
+                        <DataGridTemplateColumn Header="Profile"
+                                                MinWidth="140">
+                            <DataGridTemplateColumn.CellTemplate>
+                                <DataTemplate>
+                                    <TextBlock Text="{Binding Name}"
+                                               FontWeight="SemiBold"
+                                               TextTrimming="CharacterEllipsis"
+                                               ToolTip="{Binding Name}" />
+                                </DataTemplate>
+                            </DataGridTemplateColumn.CellTemplate>
+                        </DataGridTemplateColumn>
+
+                        <DataGridTemplateColumn Header="Google"
+                                                MinWidth="190">
+                            <DataGridTemplateColumn.CellTemplate>
+                                <DataTemplate>
+                                    <setting:SettingButton Content="{Binding GoogleLabel}"
+                                                           Tag="{Binding}"
+                                                           ToolTip="{Binding GoogleDetail}"
+                                                           Click="CheckGoogle_Click"
+                                                           AutomationProperties.Name="Check Google resident profile" />
+                                </DataTemplate>
+                            </DataGridTemplateColumn.CellTemplate>
+                        </DataGridTemplateColumn>
+
+                        <DataGridTemplateColumn Header="GitHub"
+                                                MinWidth="130">
+                            <DataGridTemplateColumn.CellTemplate>
+                                <DataTemplate>
+                                    <setting:SettingButton Content="Open"
+                                                           Tag="{Binding}"
+                                                           Click="OpenGitHub_Click"
+                                                           AutomationProperties.Name="Open GitHub in resident profile" />
+                                </DataTemplate>
+                            </DataGridTemplateColumn.CellTemplate>
+                        </DataGridTemplateColumn>
+
+                        <DataGridTemplateColumn Header="Action"
+                                                MinWidth="170">
+                            <DataGridTemplateColumn.CellTemplate>
+                                <DataTemplate>
+                                    <setting:SettingTableActions>
+                                        <setting:SettingTableActions.PrimaryContent>
+                                            <setting:SettingButton Content="{Binding ActionLabel}"
+                                                                    Tag="{Binding}"
+                                                                    Click="LaunchClose_Click"
+                                                                    AutomationProperties.Name="{Binding ActionLabel}" />
+                                        </setting:SettingTableActions.PrimaryContent>
+                                        <setting:SettingTableActions.SecondaryContent>
+                                            <setting:SettingButton Content="Delete"
+                                                                    Tag="{Binding}"
+                                                                    Click="DeleteProfile_Click"
+                                                                    AutomationProperties.Name="Delete resident profile" />
+                                        </setting:SettingTableActions.SecondaryContent>
+                                    </setting:SettingTableActions>
+                                </DataTemplate>
+                            </DataGridTemplateColumn.CellTemplate>
+                        </DataGridTemplateColumn>
+                    </setting:SettingTable.InteractiveColumns>
+                </setting:SettingTable>
+
+                <TextBlock x:Name="EmptyText"
+                           HorizontalAlignment="Center"
                            VerticalAlignment="Center"
-                           Margin="0,0,12,0" />
-                <setting:SettingToggle x:Name="CheckModeToggle"
-                                       Content="Show browser while checking"
-                                       IsChecked="True"
-                                       IsEnabled="False"
-                                       ToolTip="Provider checks will be connected later"
-                                       AutomationProperties.Name="Show browser while checking; provider checks not connected" />
-            </StackPanel>
-            <setting:SettingButton x:Name="RefreshButton"
-                                   Content="Refresh"
-                                   HorizontalAlignment="Right"
-                                   Click="RefreshButton_Click"
-                                   AutomationProperties.Name="Refresh CamoProf profiles" />
-        </Grid>
-
-        <TextBlock Grid.Row="1"
-                   Margin="0,8,0,12"
-                   Foreground="{DynamicResource Body}"
-                   FontSize="12"
-                   Text="Provider checks will be connected later. Verify Google remains available for an open browser." />
-
-        <Grid Grid.Row="2">
-            <ScrollViewer HorizontalScrollBarVisibility="Auto"
-                          VerticalScrollBarVisibility="Disabled">
-                <Grid MinWidth="760">
-                    <Grid.RowDefinitions>
-                        <RowDefinition Height="Auto" />
-                        <RowDefinition Height="*" />
-                    </Grid.RowDefinitions>
-
-                    <Border Padding="10,7"
-                            BorderBrush="{DynamicResource Border}"
-                            BorderThickness="0,0,0,1">
-                        <Grid>
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="*" MinWidth="220" />
-                                <ColumnDefinition Width="105" />
-                                <ColumnDefinition Width="105" />
-                                <ColumnDefinition Width="270" />
-                            </Grid.ColumnDefinitions>
-                            <TextBlock Grid.Column="0" Text="Profile" Foreground="{DynamicResource Body}" />
-                            <TextBlock Grid.Column="1" Text="Google" Foreground="{DynamicResource Body}" />
-                            <TextBlock Grid.Column="2" Text="GitHub" Foreground="{DynamicResource Body}" />
-                            <TextBlock Grid.Column="3" Text="Action" Foreground="{DynamicResource Body}" />
-                        </Grid>
-                    </Border>
-
-                    <ListBox x:Name="ProfileList"
-                             Grid.Row="1"
-                             ItemsSource="{Binding}"
-                             ItemContainerStyle="{StaticResource ProfileListItemStyle}"
-                             Background="{DynamicResource TransparentBrush}"
-                             BorderThickness="0"
-                             ScrollViewer.HorizontalScrollBarVisibility="Disabled"
-                             ScrollViewer.VerticalScrollBarVisibility="Auto"
-                             AutomationProperties.Name="CamoProf launcher profiles">
-                        <ListBox.ItemTemplate>
-                            <DataTemplate>
-                                <Grid>
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="*" MinWidth="210" />
-                                        <ColumnDefinition Width="105" />
-                                        <ColumnDefinition Width="105" />
-                                        <ColumnDefinition Width="270" />
-                                    </Grid.ColumnDefinitions>
-                                    <StackPanel Grid.Column="0" VerticalAlignment="Center">
-                                        <TextBlock Text="{Binding Name}" FontWeight="SemiBold" />
-                                        <TextBlock Text="{Binding LastWrite}"
-                                                   Foreground="{DynamicResource Body}"
-                                                   FontSize="11" />
-                                    </StackPanel>
-                                    <setting:SettingButton Grid.Column="1"
-                                                           Width="82"
-                                                           Content="Check"
-                                                           IsEnabled="False"
-                                                           ToolTip="Google check will be connected later"
-                                                           AutomationProperties.Name="Google check not connected" />
-                                    <setting:SettingButton Grid.Column="2"
-                                                           Width="82"
-                                                           Content="Check"
-                                                           IsEnabled="False"
-                                                           ToolTip="GitHub check will be connected later"
-                                                           AutomationProperties.Name="GitHub check not connected" />
-                                    <StackPanel Grid.Column="3" Orientation="Horizontal">
-                                        <setting:SettingButton Content="{Binding ActionLabel}"
-                                                               Tag="{Binding}"
-                                                               MinWidth="76"
-                                                               Click="LaunchClose_Click"
-                                                               AutomationProperties.Name="{Binding ActionLabel}" />
-                                        <setting:SettingButton Content="Verify Google"
-                                                               Tag="{Binding}"
-                                                               Margin="8,0,0,0"
-                                                               IsEnabled="{Binding CanVerify}"
-                                                               Click="VerifyGoogle_Click"
-                                                               AutomationProperties.Name="Verify Google login" />
-                                    </StackPanel>
-                                </Grid>
-                            </DataTemplate>
-                        </ListBox.ItemTemplate>
-                    </ListBox>
-                </Grid>
-            </ScrollViewer>
-
-            <TextBlock x:Name="EmptyText"
-                       HorizontalAlignment="Center"
-                       VerticalAlignment="Center"
-                       FontSize="16"
-                       FontWeight="SemiBold"
-                       Text="No profiles saved — add one in Editor."
-                       Visibility="Collapsed" />
-        </Grid>
-
-        <TextBlock x:Name="StatusText"
-                   Grid.Row="3"
-                   Margin="0,10,0,0"
-                   Foreground="{DynamicResource Body}"
-                   FontSize="12"
-                   TextWrapping="Wrap"
-                   Text="Launch opens an interactive browser. Navigating away closes CamoProf browsers." />
+                           FontSize="16"
+                           FontWeight="SemiBold"
+                           IsHitTestVisible="False"
+                           Text="No profiles saved."
+                           Visibility="Collapsed" />
+            </Grid>
+        </Border>
     </Grid>
 </UserControl>

@@ -125,6 +125,9 @@ public class PresetTests : IDisposable
     [InlineData("Toggle")]
     [InlineData("Slider")]
     [InlineData("Table")]
+    [InlineData("Tabs")]
+    [InlineData("Toolbar")]
+    [InlineData("PasswordField")]
     public void EveryShippedControl_HasItsPairedPresetsFile(string control)
     {
         var path = PresetStore.PathFor(control);
@@ -139,6 +142,18 @@ public class PresetTests : IDisposable
             RepositoryRoot(), "setting", "Components");
         Assert.True(File.Exists(System.IO.Path.Combine(components, $"{control}.xaml")));
         Assert.True(File.Exists(System.IO.Path.Combine(components, $"{control}.xaml.cs")));
+    }
+
+    [Fact]
+    public void SharedDialog_LoadsItsWindowStyleWithoutAParseFailure()
+    {
+        Sta.Run(() =>
+        {
+            var dialog = new SettingDialog();
+
+            Assert.NotNull(dialog.Style);
+            Assert.Equal(WindowStartupLocation.CenterOwner, dialog.WindowStartupLocation);
+        });
     }
 
     /// <summary>And none of the shipped ones may name a route.</summary>

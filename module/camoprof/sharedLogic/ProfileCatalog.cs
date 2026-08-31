@@ -1,12 +1,13 @@
 using System.IO;
 using System.Text.RegularExpressions;
 using CitadelBridge;
+using Module.Camoprof.Providers.Google;
 
 namespace Module.Camoprof.SharedLogic;
 
 /// <summary>
-/// CamoProf's profile filesystem boundary. Both Launcher and Editor use the
-/// same validated root and deterministic ordering.
+/// CamoProf's profile filesystem boundary. Launcher uses one validated root
+/// for scan and safe deletion.
 /// </summary>
 internal sealed class ProfileCatalog
 {
@@ -15,18 +16,18 @@ internal sealed class ProfileCatalog
         RegexOptions.Compiled | RegexOptions.CultureInvariant);
 
     private readonly string _root = CredenzPath.ProfilesRoot();
+    private readonly GoogleCredentialStore _credentials;
 
-    public bool IsValidName(string name)
+    public ProfileCatalog(GoogleCredentialStore credentials)
+        => _credentials = credentials;
+
+    private static bool IsValidName(string name)
         => ProfileName.IsMatch(name) && name is not "." and not "..";
 
-    public bool Exists(string name)
-        => IsValidName(name) && Directory.Exists(Path.Combine(_root, name));
-
     public Task<IReadOnlyList<ProfileEntry>> ScanAsync(
-        bool includeSize,
         CancellationToken cancellationToken = default)
         => Task.Run<IReadOnlyList<ProfileEntry>>(
-            () => Scan(includeSize, cancellationToken),
+            () => Scan(cancellationToken),
             cancellationToken);
 
     public Task DeleteAsync(string name, CancellationToken cancellationToken = default)
@@ -49,7 +50,7 @@ internal sealed class ProfileCatalog
             cancellationToken);
     }
 
-    private List<ProfileEntry> Scan(bool includeSize, CancellationToken cancellationToken)
+    private List<ProfileEntry> Scan(CancellationToken cancellationToken)
     {
         var rows = new List<ProfileEntry>();
         if (!Directory.Exists(_root))
@@ -63,10 +64,12 @@ internal sealed class ProfileCatalog
         {
             cancellationToken.ThrowIfCancellationRequested();
             var info = new DirectoryInfo(directory);
+            var account = _credentials.TryLoad(info.Name);
             rows.Add(new ProfileEntry(
                 info.Name,
-                info.LastWriteTime.ToString("yyyy-MM-dd HH:mm"),
-                includeSize ? FormatSize(DirectorySize(directory)) : string.Empty));
+                account?.Email ?? info.Name,
+                account?.Email,
+                account is not null));
         }
 
         return rows;
@@ -86,24 +89,4 @@ internal sealed class ProfileCatalog
 
         return target;
     }
-
-    private static long DirectorySize(string directory)
-    {
-        try
-        {
-            return new DirectoryInfo(directory)
-                .EnumerateFiles("*", SearchOption.AllDirectories)
-                .Sum(file => file.Length);
-        }
-        catch (Exception)
-        {
-            return -1; // a live browser can lock files; size is cosmetic
-        }
-    }
-
-    private static string FormatSize(long bytes)
-        => bytes < 0 ? "—"
-            : bytes < 1L << 20 ? (bytes / 1024.0).ToString("0.#") + " KB"
-            : bytes < 1L << 30 ? (bytes / 1048576.0).ToString("0.#") + " MB"
-            : (bytes / 1073741824.0).ToString("0.##") + " GB";
 }

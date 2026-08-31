@@ -1,25 +1,25 @@
 using System.Windows;
 using System.Windows.Controls;
 using Citadel.Core.Rpl;
-using Module.Camoprof.Editor;
 using Module.Camoprof.Launcher;
+using Module.Camoprof.Network;
+using Module.Camoprof.Providers.Google;
 using Module.Camoprof.Runtime;
 using Module.Camoprof.SharedLogic;
 
 namespace Module.Camoprof;
 
 /// <summary>
-/// CamoProf composition root. Feature behaviour belongs to the three tab
-/// folders; this class owns shared lifetime and explicit cross-tab messages.
+/// CamoProf composition root. Feature behaviour belongs to feature folders;
+/// this class owns shared lifetime and explicit cross-tab messages.
 /// </summary>
 public partial class CamoprofView : UserControl
 {
     private readonly BrowserSessionCoordinator _sessions;
+    private readonly NetworkMonitor _network;
     private readonly LauncherView _launcher;
-    private readonly EditorView _editor;
     private readonly RuntimeView _runtime;
     private bool _loaded;
-    private bool _editorActivated;
     private bool _disposed;
 
     public CamoprofView(Lifetime lifetime)
@@ -27,17 +27,17 @@ public partial class CamoprofView : UserControl
         ArgumentNullException.ThrowIfNull(lifetime);
         InitializeComponent();
 
-        var catalog = new ProfileCatalog();
+        var credentials = new GoogleCredentialStore();
+        var catalog = new ProfileCatalog(credentials);
         _sessions = new BrowserSessionCoordinator();
-        _launcher = new LauncherView(catalog, _sessions);
-        _editor = new EditorView(catalog, _sessions);
+        _network = new NetworkMonitor();
+        var google = new GoogleAccountService(_network, credentials, _sessions);
+        _launcher = new LauncherView(catalog, _sessions, google, credentials, _network);
         _runtime = new RuntimeView(_sessions);
 
         LauncherHost.Content = _launcher;
-        EditorHost.Content = _editor;
         RuntimeHost.Content = _runtime;
 
-        _editor.ProfilesChanged += Editor_ProfilesChanged;
         _runtime.SetupBusyChanged += Runtime_SetupBusyChanged;
         Loaded += CamoprofView_Loaded;
         lifetime.Add(DisposeView);
@@ -51,6 +51,7 @@ public partial class CamoprofView : UserControl
         }
 
         _loaded = true;
+        _network.Start();
         await _launcher.RefreshAsync();
     }
 
@@ -63,23 +64,9 @@ public partial class CamoprofView : UserControl
             return;
         }
 
-        if (ReferenceEquals(WorkspaceTabs.SelectedItem, EditorPanel)
-            && !_editorActivated)
-        {
-            _editorActivated = true;
-            await _editor.ActivateAsync();
-        }
-        else if (ReferenceEquals(WorkspaceTabs.SelectedItem, RuntimePanel))
+        if (ReferenceEquals(WorkspaceTabs.SelectedItem, RuntimePanel))
         {
             await _runtime.ActivateAsync();
-        }
-    }
-
-    private async void Editor_ProfilesChanged(object? sender, EventArgs e)
-    {
-        if (!_disposed)
-        {
-            await _launcher.RefreshAsync();
         }
     }
 
@@ -103,9 +90,9 @@ public partial class CamoprofView : UserControl
 
         _disposed = true;
         Loaded -= CamoprofView_Loaded;
-        _editor.ProfilesChanged -= Editor_ProfilesChanged;
         _runtime.SetupBusyChanged -= Runtime_SetupBusyChanged;
         _launcher.Dispose();
+        _network.Dispose();
 
         // PyHost.Dispose can wait for its graceful shutdown ladder. Keep that
         // wait away from WPF's navigation path, matching the previous screen.

@@ -1,26 +1,45 @@
 using System.Collections.ObjectModel;
 using System.Windows;
 using System.Windows.Controls;
+using Citadel.Setting.Components;
 using CitadelBridge;
+using Module.Camoprof.Network;
+using Module.Camoprof.Providers.Google;
 using Module.Camoprof.SharedLogic;
 
 namespace Module.Camoprof.Launcher;
 
 public partial class LauncherView : UserControl, IDisposable
 {
+    private const string GoogleLoginUrl = "https://accounts.google.com/";
+    private const string GitHubUrl = "https://github.com/";
+
     private readonly ProfileCatalog _catalog;
     private readonly BrowserSessionCoordinator _sessions;
-    private readonly ObservableCollection<LauncherProfileRow> _profiles = new();
+    private readonly GoogleAccountService _google;
+    private readonly GoogleCredentialStore _credentials;
+    private readonly NetworkMonitor _network;
+    private readonly ObservableCollection<LauncherProfileRow> _profiles = [];
     private bool _busy;
     private bool _disposed;
 
-    internal LauncherView(ProfileCatalog catalog, BrowserSessionCoordinator sessions)
+    internal LauncherView(
+        ProfileCatalog catalog,
+        BrowserSessionCoordinator sessions,
+        GoogleAccountService google,
+        GoogleCredentialStore credentials,
+        NetworkMonitor network)
     {
         _catalog = catalog;
         _sessions = sessions;
+        _google = google;
+        _credentials = credentials;
+        _network = network;
         InitializeComponent();
-        ProfileList.ItemsSource = _profiles;
+        ProfileTable.ItemsSource = _profiles;
         _sessions.SessionChanged += Sessions_SessionChanged;
+        _network.SnapshotChanged += Network_SnapshotChanged;
+        RenderNetwork(_network.Current);
     }
 
     internal async Task RefreshAsync()
@@ -32,16 +51,25 @@ public partial class LauncherView : UserControl, IDisposable
 
         try
         {
-            var profiles = await _catalog.ScanAsync(includeSize: false);
+            var profiles = await _catalog.ScanAsync();
             if (_disposed)
             {
                 return;
             }
 
+            var previous = _profiles.ToDictionary(
+                row => row.ProfileId,
+                row => row.Google,
+                StringComparer.OrdinalIgnoreCase);
             _profiles.Clear();
             foreach (var profile in profiles)
             {
-                _profiles.Add(new LauncherProfileRow(profile, _sessions.IsOpen(profile.Name)));
+                var row = new LauncherProfileRow(profile, _sessions.IsOpen(profile.ProfileId));
+                if (previous.TryGetValue(profile.ProfileId, out var google))
+                {
+                    row.Google = google;
+                }
+                _profiles.Add(row);
             }
 
             EmptyText.Visibility = _profiles.Count == 0
@@ -50,8 +78,23 @@ public partial class LauncherView : UserControl, IDisposable
         }
         catch (Exception ex)
         {
-            StatusText.Text = "profile refresh gagal: " + ex.Message;
+            SetStatus("Profile refresh failed: " + ex.Message);
         }
+    }
+
+    private async void AddProfileButton_Click(object sender, RoutedEventArgs e)
+    {
+        var profileId = "p_" + Guid.NewGuid().ToString("N");
+        await RunActionAsync(async () =>
+        {
+            await _sessions.OpenAsync(profileId, GoogleLoginUrl, headless: false);
+            await RefreshAsync();
+            var saved = ShowAccountDialog(profileId, existingEmail: null);
+            await RefreshAsync();
+            SetStatus(saved
+                ? "Profile added and linked."
+                : "Profile added as unlinked; use its Google button to finish pairing.");
+        });
     }
 
     private async void RefreshButton_Click(object sender, RoutedEventArgs e)
@@ -68,18 +111,18 @@ public partial class LauncherView : UserControl, IDisposable
         {
             if (row.IsRunning)
             {
-                await _sessions.CloseAsync(row.Name);
-                StatusText.Text = "browser ditutup untuk '" + row.Name + "'";
+                await _sessions.CloseAsync(row.ProfileId);
+                SetStatus("Browser closed for '" + row.Name + "'.");
             }
             else
             {
-                await _sessions.OpenAsync(row.Name);
-                StatusText.Text = "browser terbuka untuk '" + row.Name + "'";
+                await _sessions.OpenAsync(row.ProfileId);
+                SetStatus("Browser opened for '" + row.Name + "'.");
             }
         });
     }
 
-    private async void VerifyGoogle_Click(object sender, RoutedEventArgs e)
+    private async void OpenGitHub_Click(object sender, RoutedEventArgs e)
     {
         if (sender is not FrameworkElement { Tag: LauncherProfileRow row })
         {
@@ -88,15 +131,109 @@ public partial class LauncherView : UserControl, IDisposable
 
         await RunActionAsync(async () =>
         {
-            var response = await _sessions.VerifyGoogleAsync(row.Name);
-            var alive = response["alive"]?.GetValue<bool>() == true;
-            StatusText.Text = alive
-                ? "✓ Google session aktif untuk '" + row.Name + "'"
-                : "○ Google belum login untuk '" + row.Name + "'";
+            if (_sessions.IsOpen(row.ProfileId))
+            {
+                await _sessions.NavigateAsync(row.ProfileId, GitHubUrl);
+            }
+            else
+            {
+                await _sessions.OpenAsync(row.ProfileId, GitHubUrl, headless: false);
+            }
+            SetStatus("GitHub opened for '" + row.Name + "'.");
         });
     }
 
-    private async Task RunActionAsync(Func<Task> action)
+    private async void CheckGoogle_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is not FrameworkElement { Tag: LauncherProfileRow row })
+        {
+            return;
+        }
+
+        await RunActionAsync(async () =>
+        {
+            if (!row.Profile.IsLinked)
+            {
+                if (!_sessions.IsOpen(row.ProfileId))
+                {
+                    await _sessions.OpenAsync(row.ProfileId, GoogleLoginUrl, headless: false);
+                }
+                var saved = ShowAccountDialog(row.ProfileId, existingEmail: null);
+                await RefreshAsync();
+                SetStatus(saved ? "Google account linked." : "Google account remains unlinked.");
+                return;
+            }
+
+            row.Google = new GoogleAccountResult(
+                GoogleAccountState.Checking,
+                row.Profile.Email,
+                "checking network and resident profile",
+                DateTimeOffset.Now);
+            var result = await _google.CheckAsync(
+                row.Profile,
+                showBrowser: CheckModeToggle.IsChecked == true);
+            row.Google = result;
+            SetStatus(result.Label + ": " + result.Reason);
+
+            if (result.State == GoogleAccountState.CredentialRejected)
+            {
+                var saved = ShowAccountDialog(row.ProfileId, row.Profile.Email);
+                if (saved)
+                {
+                    await RefreshAsync();
+                    SetStatus("Google password updated.");
+                }
+            }
+        }, row);
+    }
+
+    private async void DeleteProfile_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is not FrameworkElement { Tag: LauncherProfileRow row })
+        {
+            return;
+        }
+
+        bool confirmed;
+        try
+        {
+            confirmed = SettingDialog.Confirm(
+                Window.GetWindow(this),
+                "CamoProf",
+                "Delete profile '" + row.Name
+                + "'?\n\nIts resident browser folder and account record will be removed permanently.",
+                "Delete");
+        }
+        catch (Exception ex)
+        {
+            SetStatus("Delete confirmation failed: " + ex.Message);
+            return;
+        }
+        if (!confirmed)
+        {
+            return;
+        }
+
+        await RunActionAsync(async () =>
+        {
+            await _sessions.CloseAsync(row.ProfileId);
+            await _catalog.DeleteAsync(row.ProfileId);
+            await _credentials.DeleteAsync(row.ProfileId);
+            await RefreshAsync();
+            SetStatus("Profile '" + row.Name + "' deleted.");
+        });
+    }
+
+    private bool ShowAccountDialog(string profileId, string? existingEmail)
+    {
+        var dialog = new AccountSetupDialog(profileId, existingEmail, _google, _credentials)
+        {
+            Owner = Window.GetWindow(this),
+        };
+        return dialog.ShowDialog() == true;
+    }
+
+    private async Task RunActionAsync(Func<Task> action, LauncherProfileRow? row = null)
     {
         if (_busy || _disposed)
         {
@@ -104,34 +241,53 @@ public partial class LauncherView : UserControl, IDisposable
         }
 
         _busy = true;
-        ProfileList.IsEnabled = false;
+        ProfileTable.IsEnabled = false;
+        AddProfileButton.IsEnabled = false;
         RefreshButton.IsEnabled = false;
+        CheckModeToggle.IsEnabled = false;
         try
         {
             await action();
         }
         catch (PyHostException ex) when (ex.Code == "BROWSER_GONE")
         {
-            StatusText.Text = "jendela browser sudah tertutup — Launch ulang";
+            SetStatus("The browser window was closed; launch it again.");
         }
         catch (PyHostException ex)
         {
-            StatusText.Text = ex.Code + ": " + ex.Message;
+            SetStatus(ex.Code + ": " + ex.Message);
         }
         catch (Exception ex)
         {
-            StatusText.Text = ex.Message;
+            if (row is not null)
+            {
+                row.Google = new GoogleAccountResult(
+                    GoogleAccountState.Unknown,
+                    row.Profile.Email,
+                    ex.Message,
+                    DateTimeOffset.Now);
+            }
+            SetStatus(ex.Message);
         }
         finally
         {
             if (!_disposed)
             {
-                ProfileList.IsEnabled = true;
+                ProfileTable.IsEnabled = true;
+                AddProfileButton.IsEnabled = true;
                 RefreshButton.IsEnabled = true;
+                CheckModeToggle.IsEnabled = true;
             }
-
             _busy = false;
         }
+    }
+
+    private void SetStatus(string message)
+    {
+        StatusText.Text = message;
+        StatusText.Visibility = string.IsNullOrWhiteSpace(message)
+            ? Visibility.Collapsed
+            : Visibility.Visible;
     }
 
     private void Sessions_SessionChanged(object? sender, ProfileSessionChangedEventArgs e)
@@ -140,19 +296,42 @@ public partial class LauncherView : UserControl, IDisposable
         {
             return;
         }
-
         if (!Dispatcher.CheckAccess())
         {
             Dispatcher.BeginInvoke(() => Sessions_SessionChanged(sender, e));
             return;
         }
-
-        var row = _profiles.FirstOrDefault(
-            item => string.Equals(item.Name, e.Profile, StringComparison.OrdinalIgnoreCase));
+        var row = _profiles.FirstOrDefault(item => string.Equals(
+            item.ProfileId,
+            e.Profile,
+            StringComparison.OrdinalIgnoreCase));
         if (row is not null)
         {
             row.IsRunning = e.IsOpen;
         }
+    }
+
+    private void Network_SnapshotChanged(object? sender, NetworkSnapshot snapshot)
+    {
+        if (_disposed)
+        {
+            return;
+        }
+        if (!Dispatcher.CheckAccess())
+        {
+            Dispatcher.BeginInvoke(() => Network_SnapshotChanged(sender, snapshot));
+            return;
+        }
+        RenderNetwork(snapshot);
+    }
+
+    private void RenderNetwork(NetworkSnapshot snapshot)
+    {
+        var checkedAt = snapshot.CheckedAt == DateTimeOffset.MinValue
+            ? string.Empty
+            : " · " + snapshot.CheckedAt.ToString("HH:mm:ss");
+        NetworkText.Text = "Network: " + snapshot.State + checkedAt;
+        NetworkText.ToolTip = snapshot.Reason;
     }
 
     public void Dispose()
@@ -161,8 +340,8 @@ public partial class LauncherView : UserControl, IDisposable
         {
             return;
         }
-
         _disposed = true;
         _sessions.SessionChanged -= Sessions_SessionChanged;
+        _network.SnapshotChanged -= Network_SnapshotChanged;
     }
 }

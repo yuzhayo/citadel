@@ -1,8 +1,11 @@
 # PLAN: CamoProf Google account health + network guard
 
-Status: **DRAFT — awaiting LO approval; implementation not started**  
-Depends on: `PLAN-camoprof-ui-refactor.md` and the existing pyhost v1 contract.  
-Scope: CamoProf only, plus additive pyhost commands used by CamoProf.
+Status: **IMPLEMENTED — automated and visual gates pass; linked-account relog smoke awaits LO (2026-09-01)**
+
+Depends on: `PLAN-camoprof-ui-refactor.md` and the existing pyhost v1 contract.
+
+Scope: CamoProf, additive pyhost commands used by CamoProf, and the shared UI
+controls explicitly adopted by the current UI-refactor plan.
 
 ## 1. Goal
 
@@ -47,8 +50,8 @@ stable filesystem key.
 ### 3.1 Add a new profile
 
 ```text
-Editor
-[ Add & login ]
+Launcher
+[ Add Profile ]
 
 Browser opens headed. User completes the first Google login.
 
@@ -59,13 +62,14 @@ Password for future relog: [ ******** ] [ Save profile ]
 
 Detailed rules:
 
-1. `Add & login` generates an internal ID such as `p_<guid>` and opens its
+1. `Add Profile` generates an internal ID such as `p_<guid>` and opens its
    persistent browser directory. No profile name is requested.
 2. The user performs the initial login normally in the headed browser.
 3. `Detect account`/`Save profile` asks pyhost for the active Google email.
-4. When exactly one active email is identified, Editor asks for the password
-   once and saves the account record under the generated ID.
-5. Launcher and Editor display the detected email, not the generated ID.
+4. When exactly one active email is identified, the Launcher pairing dialog
+   asks for the password once and saves the account record under the generated
+   ID.
+5. Launcher displays the detected email, not the generated ID.
 6. Until the account is detected, the row is `Unlinked profile` and cannot
    auto-relog.
 
@@ -179,7 +183,7 @@ The Google column is non-colour-only and exposes one of these labels:
 | `Signed out` | Conclusive Google signed-out response | Relog |
 | `Relogging` | One automated relog attempt running | Wait |
 | `Action required` | 2FA/CAPTCHA/passkey/unknown step | Continue in browser |
-| `Wrong account` | Active email differs from saved email | Fix in Editor |
+| `Wrong account` | Active email differs from saved email | Press Google status and correct the resident account |
 | `Offline` | No usable network | Retry after recovery |
 | `Degraded` | Network result is unreliable | Retry after stable |
 | `Provider unavailable` | Internet works but Google cannot be reached | Retry later |
@@ -195,9 +199,8 @@ reason. Status is not inferred solely from button colour.
 module/camoprof/
 ├── Launcher/
 │   ├── LauncherView.xaml(.cs)          bind row actions and statuses
-│   └── LauncherProfileRow.cs           row presentation state
-├── Editor/
-│   └── EditorView.xaml(.cs)            add/link/update-password flow
+│   ├── LauncherProfileRow.cs           row presentation state
+│   └── AccountSetupDialog.xaml(.cs)    add/link/update-password flow
 ├── Network/                             independent connectivity feature
 │   └── ...
 ├── Providers/Google/
@@ -220,14 +223,15 @@ Ownership rules:
 
 - Network classification stays in `Network/`; no provider imports there.
 - Google state and relog policy stay in `Providers/Google/`.
-- Editor owns account creation and credential changes.
-- Launcher only invokes account service operations and renders state.
+- Launcher owns account creation, credential changes, account service actions,
+  and row presentation; the pairing workflow stays in its own dialog file.
 - `BrowserSessionCoordinator` remains the sole serializer of browser
   mutations, so Check, Launch, Close, Delete, and Relog cannot race.
 - PyHost remains transport/browser mechanics. It does not decide whether a
   network result permits relog; the CamoProf Google service owns that rule.
-- No changes to `core/`, `setting/`, MangaReader, installer, or citizen public
-  contracts.
+- No changes to `core/`, installer, or citizen public contracts. Reusable UI
+  changes in `setting/Components/` and MangaReader's shared-tab adoption are
+  governed by `PLAN-camoprof-ui-refactor.md`, not by provider logic.
 
 ## 8. Additive pyhost contract
 
@@ -336,3 +340,18 @@ The feature is complete when:
 - Moving profiles between Windows machines.
 - General password-manager UI or multi-provider vault abstraction.
 - Changes to Citadel core, Settings, MangaReader, installer, or release flow.
+
+## 13. Implementation evidence
+
+- Network policy smoke: `Offline`, `Degraded`, `Recovering`, and `Stable` pass.
+- Credenz smoke: DPAPI `CurrentUser` round trip passes and the stored payload
+  does not contain plaintext.
+- Pyhost regression: 23 tests pass with resource warnings treated as errors.
+- CamoProf module build/deploy: 0 warnings and 0 errors.
+- Full Citadel suite: 306 tests pass (108 Core + 14 UI + 184 UIA).
+- Visual smoke: Launcher renders two separate cards, dark readable table
+  headers, proportional columns, and shared outlined tabs; Editor is reserved.
+- Live unlinked smoke: Google check returns `Unlinked`, starts no relog, and
+  navigation-away leaves no CamoProf-owned pyhost process.
+- Pending LO smoke: link a real account, then exercise the saved-session,
+  signed-out relog, challenge, and wrong-account branches with that account.

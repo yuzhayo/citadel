@@ -45,6 +45,9 @@ public static class CredenzPath
     public static string ProfilesRoot()
         => Path.Combine(Resolve(), "google", "profiles");
 
+    public static string GoogleAccountsRoot()
+        => Path.Combine(Resolve(), "google", "accounts");
+
     private static bool IsWritable(string directory)
     {
         try

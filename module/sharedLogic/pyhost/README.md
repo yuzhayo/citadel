@@ -39,14 +39,15 @@ fix the code.
 ```
 
 ### `session.open`
-Opens a **headed** camoufox persistent context — the profile "home". The
-user drives the window manually (e.g. logs in once).
+Opens a camoufox persistent context — the profile "home". It remains headed
+by default so existing callers keep the same interactive behaviour.
 
 ```json
 > {"id": 2, "cmd": "session.open", "profile": "dhepil.main",
-   "start_url": "https://www.google.com/"}
+   "start_url": "https://www.google.com/", "headless": false}
 < {"id": 2, "ok": true, "session": "s1", "profile": "dhepil.main",
-   "profile_dir": "C:\\...\\credenz\\google\\profiles\\dhepil.main"}
+   "profile_dir": "C:\\...\\credenz\\google\\profiles\\dhepil.main",
+   "headless": false}
 ```
 
 - `profile` — required. Validated against `^[A-Za-z0-9._-]+$`, `.` and `..`
@@ -54,9 +55,28 @@ user drives the window manually (e.g. logs in once).
   `<CITADEL_CREDENZ>/google/profiles/` (`BAD_PROFILE_NAME` / `PATH_ESCAPE`).
   The directory is created if absent.
 - `start_url` — optional, defaults to `https://www.google.com/`.
+- `headless` — optional boolean, defaults to `false`. CamoProf uses a temporary
+  headless session only when the user disables `Show browser while checking`.
+  `google.relogin` refuses a headless session.
 - One live session per profile: a second `open` on the same profile fails
   with `PROFILE_BUSY`.
 - Launch failure → `BROWSER_LAUNCH`.
+
+### `session.navigate`
+
+Navigates an existing resident session without creating a second browser or
+changing its profile ownership:
+
+```json
+> {"id": 3, "cmd": "session.navigate", "session": "s1",
+   "url": "https://github.com/"}
+< {"id": 3, "ok": true, "session": "s1", "url": "https://github.com/"}
+```
+
+- `url` must be an absolute HTTP(S) URL (`BAD_URL`).
+- A network/navigation failure returns `NAVIGATE_FAILED` and keeps the session
+  registered for retry.
+- A closed browser returns `BROWSER_GONE` and removes the stale session.
 
 ### `session.verify`
 Checks whether Google still recognizes the home. Navigates the session's
@@ -86,10 +106,48 @@ FINAL URL (deviation from `reference/human_login.py` — recorded below):
   network hiccuped. Not-logged-in is a normal `alive: false` response, not
   an error at all.
 
+`session.verify` remains a backward-compatible adapter over `google.inspect`.
+
+### `google.inspect`
+
+Checks the resident profile at `myaccount.google.com` and returns a structured
+account result:
+
+```json
+> {"id": 4, "cmd": "google.inspect", "session": "s1"}
+< {"id": 4, "ok": true, "state": "active",
+   "email": "user@gmail.com", "url": "https://myaccount.google.com/",
+   "state_saved": true}
+```
+
+- `state` is `active`, `signed_out`, or `unknown`.
+- `email` is detected from account identity attributes and contains the email
+  address, never Google's display name. It can be null when identity markup is
+  unavailable.
+- DNS/navigation failures remain `VERIFY_FAILED`; they are not converted to
+  `signed_out`.
+
+### `google.relogin`
+
+Performs one ordinary email/password login attempt in an already-open **headed**
+session:
+
+```json
+> {"id": 5, "cmd": "google.relogin", "session": "s1",
+   "email": "user@gmail.com", "password": "request-only"}
+< {"id": 5, "ok": true, "state": "active",
+   "email": "user@gmail.com", "url": "https://myaccount.google.com/"}
+```
+
+The result state is `active`, `credential_rejected`, or `action_required`.
+2FA, CAPTCHA, passkeys, device confirmation, recovery, and unknown sign-in
+steps become `action_required`; pyhost does not bypass them. Email/password are
+request-only data and are never echoed or logged.
+
 ### `session.close`
 ```json
-> {"id": 4, "cmd": "session.close", "session": "s1"}
-< {"id": 4, "ok": true, "closed": "s1"}
+> {"id": 6, "cmd": "session.close", "session": "s1"}
+< {"id": 6, "ok": true, "closed": "s1"}
 ```
 Unknown id → `SESSION_NOT_FOUND`.
 The session is removed from the registry only after context shutdown is
@@ -98,8 +156,8 @@ available for retry; a close timeout likewise keeps it registered.
 
 ### `shutdown`
 ```json
-> {"id": 5, "cmd": "shutdown"}
-< {"id": 5, "ok": true, "stopping": true}
+> {"id": 7, "cmd": "shutdown"}
+< {"id": 7, "ok": true, "stopping": true}
 ```
 Responds first, then closes every context and exits 0.
 
@@ -122,12 +180,18 @@ Responds first, then closes every context and exits 0.
 | `TIMEOUT` | command exceeded its timeout |
 | `STARTUP_NO_CREDENZ` | `CITADEL_CREDENZ` missing/not absolute |
 | `BAD_PROFILE_NAME` | profile fails the name regex / is `.`/`..` |
+| `BAD_HEADLESS` | `session.open.headless` is not boolean |
 | `PATH_ESCAPE` | resolved profile path escapes the profiles root |
 | `PROFILE_BUSY` | profile already has a live session |
 | `BROWSER_LAUNCH` | camoufox failed to start |
 | `BROWSER_GONE` | browser window died mid-session (session dropped) |
 | `BROWSER_CLOSE_FAILED` | context close failed; session kept for retry |
+| `BAD_URL` | `session.navigate` URL is absent or not absolute HTTP(S) |
+| `NAVIGATE_FAILED` | navigation failed; live session kept for retry |
 | `VERIFY_FAILED` | verify navigation failed (DNS/network/timeout) — session KEPT |
+| `HEADLESS_RELOGIN` | relog was requested on a headless session |
+| `BAD_CREDENTIAL_INPUT` | relog email/password input is absent or malformed |
+| `RELOGIN_FAILED` | headed relog navigation failed; session kept |
 | `SESSION_NOT_FOUND` | unknown session id |
 | `INTERNAL` | anything else (message carries type + detail) |
 

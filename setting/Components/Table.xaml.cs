@@ -1,12 +1,25 @@
+using System.Collections;
 using System.Collections.ObjectModel;
+using System.Collections.Specialized;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Data;
 
 namespace Citadel.Setting.Components;
 
-/// <summary>A sortable, screen-blind table.</summary>
-public sealed partial class SettingTable : Control
+/// <summary>
+/// A screen-blind table. The original string Columns/Rows API remains binary
+/// compatible, while screens that need buttons or other cell content may
+/// declare DataGrid columns through InteractiveColumns.
+/// </summary>
+public sealed partial class SettingTable : UserControl
 {
+    public static readonly DependencyProperty ItemsSourceProperty =
+        DependencyProperty.Register(
+            nameof(ItemsSource),
+            typeof(IEnumerable),
+            typeof(SettingTable));
+
     public static readonly DependencyProperty SortColumnProperty =
         DependencyProperty.Register(
             nameof(SortColumn),
@@ -29,12 +42,24 @@ public sealed partial class SettingTable : Control
     {
         Columns = new ReadOnlyObservableCollection<string>(_columns);
         Rows = new ReadOnlyObservableCollection<IReadOnlyList<string>>(_rows);
+        InteractiveColumns.CollectionChanged += InteractiveColumns_CollectionChanged;
         InitializeComponent();
+        ApplyColumns();
     }
 
+    /// <summary>The legacy text-column labels used by Settings and Gallery.</summary>
     public ReadOnlyObservableCollection<string> Columns { get; }
 
     public ReadOnlyObservableCollection<IReadOnlyList<string>> Rows { get; }
+
+    /// <summary>Interactive column declarations used by feature screens.</summary>
+    public ObservableCollection<DataGridColumn> InteractiveColumns { get; } = [];
+
+    public IEnumerable? ItemsSource
+    {
+        get => (IEnumerable?)GetValue(ItemsSourceProperty);
+        set => SetValue(ItemsSourceProperty, value);
+    }
 
     public string? SortColumn
     {
@@ -51,8 +76,13 @@ public sealed partial class SettingTable : Control
     public void SetColumns(IEnumerable<string> columns)
     {
         ArgumentNullException.ThrowIfNull(columns);
+        InteractiveColumns.Clear();
         _columns.Clear();
-        foreach (var column in columns) _columns.Add(column);
+        foreach (var column in columns)
+        {
+            _columns.Add(column);
+        }
+        ApplyColumns();
         Resort();
     }
 
@@ -61,17 +91,50 @@ public sealed partial class SettingTable : Control
         ArgumentNullException.ThrowIfNull(rows);
         _source.Clear();
         _source.AddRange(rows);
+        ItemsSource = Rows;
         Resort();
     }
 
     private static void OnSortChanged(DependencyObject sender, DependencyPropertyChangedEventArgs args) =>
         ((SettingTable)sender).Resort();
 
+    private void InteractiveColumns_CollectionChanged(
+        object? sender,
+        NotifyCollectionChangedEventArgs e) => ApplyColumns();
+
+    private void ApplyColumns()
+    {
+        if (InnerTable is null)
+        {
+            return;
+        }
+
+        InnerTable.Columns.Clear();
+        if (InteractiveColumns.Count > 0)
+        {
+            foreach (var column in InteractiveColumns)
+            {
+                InnerTable.Columns.Add(column);
+            }
+            return;
+        }
+
+        foreach (var (label, index) in _columns.Select((label, index) => (label, index)))
+        {
+            InnerTable.Columns.Add(new DataGridTextColumn
+            {
+                Header = label,
+                Binding = new Binding($"[{index}]") { Mode = BindingMode.OneWay },
+                IsReadOnly = true,
+                Width = new DataGridLength(1, DataGridLengthUnitType.Star),
+            });
+        }
+    }
+
     private void Resort()
     {
         var index = SortColumn is null ? -1 : _columns.IndexOf(SortColumn);
         IEnumerable<IReadOnlyList<string>> ordered = _source;
-
         if (index >= 0)
         {
             ordered = SortDescending
@@ -80,7 +143,10 @@ public sealed partial class SettingTable : Control
         }
 
         _rows.Clear();
-        foreach (var row in ordered) _rows.Add(row);
+        foreach (var row in ordered)
+        {
+            _rows.Add(row);
+        }
     }
 
     private static string Cell(IReadOnlyList<string> row, int index) =>

@@ -1,0 +1,6 @@
+{
+  "control": "Tabs",
+  "presets": [
+    { "id": "workspace-tabs", "label": "Workspace tabs", "values": {} }
+  ]
+}

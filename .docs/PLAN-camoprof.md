@@ -1,5 +1,9 @@
 # PLAN: Citadel × Python wiring — module/camoprof
 
+> Historical base plan. Later approved UI/account decisions in
+> `PLAN-camoprof-ui-refactor.md` and `PLAN-camoprof-account-health.md`
+> supersede this file's screen-local list/tab and no-new-component details.
+
 Status: **APPROVED for implementation** (LO, 2026-08-31). Approved explicitly:
 D1 (direct camoufox, no stealthB), D2 (port login flow into pyhost), D3
 (shared C# source under `module/sharedLogic/cs`), D4 (stdlib json), runtime

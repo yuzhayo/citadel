@@ -23,7 +23,9 @@ internal sealed class ProfileSessionChangedEventArgs : EventArgs
 /// </summary>
 internal sealed class BrowserSessionCoordinator : IDisposable
 {
-    private readonly Dictionary<string, string> _sessions =
+    private sealed record SessionRegistration(string SessionId, bool Headless);
+
+    private readonly Dictionary<string, SessionRegistration> _sessions =
         new(StringComparer.OrdinalIgnoreCase);
     private readonly SemaphoreSlim _operationGate = new(1, 1);
     private readonly object _sync = new();
@@ -51,9 +53,18 @@ internal sealed class BrowserSessionCoordinator : IDisposable
         }
     }
 
+    public bool IsHeadless(string profile)
+    {
+        lock (_sync)
+        {
+            return _sessions.TryGetValue(profile, out var session) && session.Headless;
+        }
+    }
+
     public async Task OpenAsync(
         string profile,
         string? startUrl = null,
+        bool headless = false,
         CancellationToken cancellationToken = default)
     {
         await _operationGate.WaitAsync(cancellationToken);
@@ -65,7 +76,11 @@ internal sealed class BrowserSessionCoordinator : IDisposable
                 throw new PyHostException("PROFILE_BUSY", "profile sudah punya session: " + profile);
             }
 
-            var response = await EnsureHost().OpenSessionAsync(profile, startUrl, cancellationToken);
+            var response = await EnsureHost().OpenSessionAsync(
+                profile,
+                startUrl,
+                headless,
+                cancellationToken);
             var session = response["session"]?.GetValue<string>()
                 ?? throw new PyHostException("BAD_RESPONSE", "session.open tidak mengembalikan session id");
             lock (_sync)
@@ -74,7 +89,7 @@ internal sealed class BrowserSessionCoordinator : IDisposable
                 // answering. A disposed host already owns cleanup; never
                 // resurrect its session in the local registry.
                 ThrowIfDisposed();
-                _sessions[profile] = session;
+                _sessions[profile] = new SessionRegistration(session, headless);
             }
 
             SessionChanged?.Invoke(this, new ProfileSessionChangedEventArgs(profile, true));
@@ -85,7 +100,7 @@ internal sealed class BrowserSessionCoordinator : IDisposable
         }
     }
 
-    public async Task<JsonObject> VerifyGoogleAsync(
+    public async Task<JsonObject> InspectGoogleAsync(
         string profile,
         CancellationToken cancellationToken = default)
     {
@@ -99,7 +114,75 @@ internal sealed class BrowserSessionCoordinator : IDisposable
                     "tidak ada session terbuka untuk '" + profile + "'");
             try
             {
-                return await EnsureHost().VerifySessionAsync(session, cancellationToken);
+                return await EnsureHost().InspectGoogleAsync(
+                    session.SessionId,
+                    cancellationToken);
+            }
+            catch (PyHostException ex) when (ex.Code == "BROWSER_GONE")
+            {
+                Forget(profile);
+                throw;
+            }
+        }
+        finally
+        {
+            _operationGate.Release();
+        }
+    }
+
+    public async Task NavigateAsync(
+        string profile,
+        string url,
+        CancellationToken cancellationToken = default)
+    {
+        await _operationGate.WaitAsync(cancellationToken);
+        try
+        {
+            ThrowIfDisposed();
+            var session = GetSession(profile)
+                ?? throw new PyHostException(
+                    "SESSION_NOT_FOUND",
+                    "tidak ada session terbuka untuk '" + profile + "'");
+            try
+            {
+                await EnsureHost().NavigateSessionAsync(
+                    session.SessionId,
+                    url,
+                    cancellationToken);
+            }
+            catch (PyHostException ex) when (ex.Code == "BROWSER_GONE")
+            {
+                Forget(profile);
+                throw;
+            }
+        }
+        finally
+        {
+            _operationGate.Release();
+        }
+    }
+
+    public async Task<JsonObject> RelogGoogleAsync(
+        string profile,
+        string email,
+        string password,
+        CancellationToken cancellationToken = default)
+    {
+        await _operationGate.WaitAsync(cancellationToken);
+        try
+        {
+            ThrowIfDisposed();
+            var session = GetSession(profile)
+                ?? throw new PyHostException(
+                    "SESSION_NOT_FOUND",
+                    "tidak ada session terbuka untuk '" + profile + "'");
+            try
+            {
+                return await EnsureHost().RelogGoogleAsync(
+                    session.SessionId,
+                    email,
+                    password,
+                    cancellationToken);
             }
             catch (PyHostException ex) when (ex.Code == "BROWSER_GONE")
             {
@@ -130,7 +213,7 @@ internal sealed class BrowserSessionCoordinator : IDisposable
 
             try
             {
-                await EnsureHost().CloseSessionAsync(session, cancellationToken);
+                await EnsureHost().CloseSessionAsync(session.SessionId, cancellationToken);
             }
             catch (PyHostException ex) when (
                 ex.Code is "SESSION_NOT_FOUND" or "BROWSER_GONE")
@@ -167,7 +250,7 @@ internal sealed class BrowserSessionCoordinator : IDisposable
         host?.Dispose();
     }
 
-    private string? GetSession(string profile)
+    private SessionRegistration? GetSession(string profile)
     {
         lock (_sync)
         {

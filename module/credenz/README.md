@@ -7,7 +7,8 @@ exports). One folder per target; data flows both ways.
 ```
 credenz/
 └── google/
-    └── profiles/     camoufox persistent profile homes, one per account
+    ├── profiles/     camoufox persistent profile homes, keyed by profile ID
+    └── accounts/     identity.json + DPAPI CurrentUser password.dat per ID
 ```
 
 ## Rules
@@ -22,3 +23,6 @@ credenz/
   `%LocalAppData%\Citadel\Credenz`. C# resolves the location and hands the
   absolute path to Python via `CITADEL_CREDENZ` — Python never computes
   paths itself.
+- `identity.json` stores the detected provider email and timestamps. Passwords
+  never enter JSON; `password.dat` is protected for the current Windows user
+  and decrypted only when CamoProf starts a relog attempt.

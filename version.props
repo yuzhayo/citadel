@@ -2,7 +2,7 @@
 
   <!-- One source of truth for local builds and the release workflow. -->
   <PropertyGroup>
-    <CitadelVersion>0.1.0</CitadelVersion>
+    <CitadelVersion>1.1.0</CitadelVersion>
     <Version>$(CitadelVersion)</Version>
     <AssemblyVersion>$(CitadelVersion).0</AssemblyVersion>
     <FileVersion>$(CitadelVersion).0</FileVersion>
