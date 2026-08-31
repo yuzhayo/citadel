@@ -1,0 +1,175 @@
+<UserControl x:Class="Module.Camoprof.Launcher.LauncherView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:setting="clr-namespace:Citadel.Setting.Components;assembly=Citadel.Setting"
+             Background="{DynamicResource Bg}"
+             Foreground="{DynamicResource Fg}"
+             UseLayoutRounding="True"
+             SnapsToDevicePixels="True">
+    <UserControl.Resources>
+        <Style x:Key="ProfileListItemStyle" TargetType="{x:Type ListBoxItem}">
+            <Setter Property="Background" Value="{DynamicResource TransparentBrush}" />
+            <Setter Property="Foreground" Value="{DynamicResource Fg}" />
+            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+            <Setter Property="Padding" Value="10,8" />
+            <Setter Property="Margin" Value="0,0,0,4" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="{x:Type ListBoxItem}">
+                        <Border x:Name="Surface"
+                                Background="{TemplateBinding Background}"
+                                CornerRadius="{DynamicResource SidebarItemCornerRadius}"
+                                Padding="{TemplateBinding Padding}">
+                            <ContentPresenter />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Surface" Property="Background" Value="{DynamicResource Hover}" />
+                            </Trigger>
+                            <Trigger Property="IsSelected" Value="True">
+                                <Setter TargetName="Surface" Property="Background" Value="{DynamicResource Selected}" />
+                            </Trigger>
+                            <Trigger Property="IsKeyboardFocusWithin" Value="True">
+                                <Setter TargetName="Surface" Property="TextElement.Foreground" Value="{DynamicResource Fg}" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+    </UserControl.Resources>
+
+    <Grid Margin="4,14,4,4">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <Grid>
+            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                <TextBlock Text="Check browser"
+                           FontWeight="SemiBold"
+                           VerticalAlignment="Center"
+                           Margin="0,0,12,0" />
+                <setting:SettingToggle x:Name="CheckModeToggle"
+                                       Content="Show browser while checking"
+                                       IsChecked="True"
+                                       IsEnabled="False"
+                                       ToolTip="Provider checks will be connected later"
+                                       AutomationProperties.Name="Show browser while checking; provider checks not connected" />
+            </StackPanel>
+            <setting:SettingButton x:Name="RefreshButton"
+                                   Content="Refresh"
+                                   HorizontalAlignment="Right"
+                                   Click="RefreshButton_Click"
+                                   AutomationProperties.Name="Refresh CamoProf profiles" />
+        </Grid>
+
+        <TextBlock Grid.Row="1"
+                   Margin="0,8,0,12"
+                   Foreground="{DynamicResource Body}"
+                   FontSize="12"
+                   Text="Provider checks will be connected later. Verify Google remains available for an open browser." />
+
+        <Grid Grid.Row="2">
+            <ScrollViewer HorizontalScrollBarVisibility="Auto"
+                          VerticalScrollBarVisibility="Disabled">
+                <Grid MinWidth="760">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                    </Grid.RowDefinitions>
+
+                    <Border Padding="10,7"
+                            BorderBrush="{DynamicResource Border}"
+                            BorderThickness="0,0,0,1">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" MinWidth="220" />
+                                <ColumnDefinition Width="105" />
+                                <ColumnDefinition Width="105" />
+                                <ColumnDefinition Width="270" />
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Grid.Column="0" Text="Profile" Foreground="{DynamicResource Body}" />
+                            <TextBlock Grid.Column="1" Text="Google" Foreground="{DynamicResource Body}" />
+                            <TextBlock Grid.Column="2" Text="GitHub" Foreground="{DynamicResource Body}" />
+                            <TextBlock Grid.Column="3" Text="Action" Foreground="{DynamicResource Body}" />
+                        </Grid>
+                    </Border>
+
+                    <ListBox x:Name="ProfileList"
+                             Grid.Row="1"
+                             ItemsSource="{Binding}"
+                             ItemContainerStyle="{StaticResource ProfileListItemStyle}"
+                             Background="{DynamicResource TransparentBrush}"
+                             BorderThickness="0"
+                             ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                             ScrollViewer.VerticalScrollBarVisibility="Auto"
+                             AutomationProperties.Name="CamoProf launcher profiles">
+                        <ListBox.ItemTemplate>
+                            <DataTemplate>
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" MinWidth="210" />
+                                        <ColumnDefinition Width="105" />
+                                        <ColumnDefinition Width="105" />
+                                        <ColumnDefinition Width="270" />
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel Grid.Column="0" VerticalAlignment="Center">
+                                        <TextBlock Text="{Binding Name}" FontWeight="SemiBold" />
+                                        <TextBlock Text="{Binding LastWrite}"
+                                                   Foreground="{DynamicResource Body}"
+                                                   FontSize="11" />
+                                    </StackPanel>
+                                    <setting:SettingButton Grid.Column="1"
+                                                           Width="82"
+                                                           Content="Check"
+                                                           IsEnabled="False"
+                                                           ToolTip="Google check will be connected later"
+                                                           AutomationProperties.Name="Google check not connected" />
+                                    <setting:SettingButton Grid.Column="2"
+                                                           Width="82"
+                                                           Content="Check"
+                                                           IsEnabled="False"
+                                                           ToolTip="GitHub check will be connected later"
+                                                           AutomationProperties.Name="GitHub check not connected" />
+                                    <StackPanel Grid.Column="3" Orientation="Horizontal">
+                                        <setting:SettingButton Content="{Binding ActionLabel}"
+                                                               Tag="{Binding}"
+                                                               MinWidth="76"
+                                                               Click="LaunchClose_Click"
+                                                               AutomationProperties.Name="{Binding ActionLabel}" />
+                                        <setting:SettingButton Content="Verify Google"
+                                                               Tag="{Binding}"
+                                                               Margin="8,0,0,0"
+                                                               IsEnabled="{Binding CanVerify}"
+                                                               Click="VerifyGoogle_Click"
+                                                               AutomationProperties.Name="Verify Google login" />
+                                    </StackPanel>
+                                </Grid>
+                            </DataTemplate>
+                        </ListBox.ItemTemplate>
+                    </ListBox>
+                </Grid>
+            </ScrollViewer>
+
+            <TextBlock x:Name="EmptyText"
+                       HorizontalAlignment="Center"
+                       VerticalAlignment="Center"
+                       FontSize="16"
+                       FontWeight="SemiBold"
+                       Text="No profiles saved — add one in Editor."
+                       Visibility="Collapsed" />
+        </Grid>
+
+        <TextBlock x:Name="StatusText"
+                   Grid.Row="3"
+                   Margin="0,10,0,0"
+                   Foreground="{DynamicResource Body}"
+                   FontSize="12"
+                   TextWrapping="Wrap"
+                   Text="Launch opens an interactive browser. Navigating away closes CamoProf browsers." />
+    </Grid>
+</UserControl>

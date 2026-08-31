@@ -1,0 +1,89 @@
+<UserControl x:Class="Module.Camoprof.Runtime.RuntimeView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:setting="clr-namespace:Citadel.Setting.Components;assembly=Citadel.Setting"
+             Background="{DynamicResource Bg}"
+             Foreground="{DynamicResource Fg}"
+             UseLayoutRounding="True"
+             SnapsToDevicePixels="True">
+    <ScrollViewer VerticalScrollBarVisibility="Auto"
+                  HorizontalScrollBarVisibility="Disabled">
+        <StackPanel Margin="4,14,4,4">
+            <Grid>
+                <StackPanel>
+                    <TextBlock Text="Runtime environment"
+                               FontSize="16"
+                               FontWeight="SemiBold" />
+                    <TextBlock Text="Python and browser dependencies shared by Citadel automation modules."
+                               Margin="0,4,0,0"
+                               Foreground="{DynamicResource Body}"
+                               FontSize="12" />
+                </StackPanel>
+                <setting:SettingButton x:Name="RefreshButton"
+                                       Content="Refresh status"
+                                       HorizontalAlignment="Right"
+                                       VerticalAlignment="Top"
+                                       Click="RefreshButton_Click"
+                                       AutomationProperties.Name="Refresh runtime status" />
+            </Grid>
+
+            <Border Margin="0,16,0,12"
+                    Padding="16"
+                    Background="{DynamicResource Card}"
+                    BorderBrush="{DynamicResource Border}"
+                    BorderThickness="1"
+                    CornerRadius="{DynamicResource ShellCardRadius}">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="110" />
+                        <ColumnDefinition Width="28" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
+
+                    <TextBlock Grid.Row="0" Grid.Column="0" Text="Python" Margin="0,3" />
+                    <TextBlock Grid.Row="0" Grid.Column="1" x:Name="PythonMark" Text="…" Margin="0,3" />
+                    <TextBlock Grid.Row="0" Grid.Column="2" x:Name="PythonDetail" Foreground="{DynamicResource Body}" Margin="0,3" TextWrapping="Wrap" />
+
+                    <TextBlock Grid.Row="1" Grid.Column="0" Text="venv" Margin="0,3" />
+                    <TextBlock Grid.Row="1" Grid.Column="1" x:Name="VenvMark" Text="…" Margin="0,3" />
+                    <TextBlock Grid.Row="1" Grid.Column="2" x:Name="VenvDetail" Foreground="{DynamicResource Body}" Margin="0,3" TextWrapping="Wrap" />
+
+                    <TextBlock Grid.Row="2" Grid.Column="0" Text="packages" Margin="0,3" />
+                    <TextBlock Grid.Row="2" Grid.Column="1" x:Name="PackagesMark" Text="…" Margin="0,3" />
+                    <TextBlock Grid.Row="2" Grid.Column="2" x:Name="PackagesDetail" Foreground="{DynamicResource Body}" Margin="0,3" TextWrapping="Wrap" />
+
+                    <TextBlock Grid.Row="3" Grid.Column="0" Text="browser" Margin="0,3" />
+                    <TextBlock Grid.Row="3" Grid.Column="1" x:Name="BrowserMark" Text="…" Margin="0,3" />
+                    <TextBlock Grid.Row="3" Grid.Column="2" x:Name="BrowserDetail" Foreground="{DynamicResource Body}" Margin="0,3" TextWrapping="Wrap" />
+                </Grid>
+            </Border>
+
+            <StackPanel Orientation="Horizontal">
+                <setting:SettingButton x:Name="SetupButton"
+                                       Content="Setup runtime"
+                                       Click="SetupButton_Click"
+                                       AutomationProperties.Name="Setup CamoProf runtime" />
+                <ProgressBar x:Name="SetupProgress"
+                             Width="180"
+                             Height="6"
+                             Margin="12,0,0,0"
+                             VerticalAlignment="Center"
+                             IsIndeterminate="True"
+                             Visibility="Collapsed" />
+            </StackPanel>
+
+            <TextBlock x:Name="SetupStatus"
+                       Margin="0,8,0,0"
+                       Foreground="{DynamicResource Body}"
+                       FontSize="12"
+                       TextWrapping="Wrap"
+                       Text="Status is checked when this tab opens. Setup is idempotent." />
+        </StackPanel>
+    </ScrollViewer>
+</UserControl>

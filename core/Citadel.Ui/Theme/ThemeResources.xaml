@@ -88,7 +88,10 @@
                             x:Name="Surface"
                             Margin="{DynamicResource SidebarItemInset}"
                             Background="{TemplateBinding Background}"
-                            CornerRadius="{DynamicResource SidebarItemCornerRadius}" />
+                            BorderBrush="{DynamicResource Border}"
+                            BorderThickness="{DynamicResource ShellBorderThickness}"
+                            CornerRadius="{DynamicResource SidebarItemCornerRadius}"
+                            SnapsToDevicePixels="True" />
                         <ContentPresenter
                             HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
                             VerticalAlignment="{TemplateBinding VerticalContentAlignment}" />
