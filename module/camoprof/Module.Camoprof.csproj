@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <Import Project="..\Citizen.targets" />
+
+  <!--
+    Shared C# source (PyHost client + RuntimeSetup + CredenzPath), compiled
+    into this citizen — plan D3. Internal helpers only; no contract types.
+  -->
+  <ItemGroup>
+    <Compile Include="..\sharedLogic\cs\**\*.cs" />
+  </ItemGroup>
+
+</Project>

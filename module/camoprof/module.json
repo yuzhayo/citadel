@@ -1,0 +1,8 @@
+{
+  "title": "CamoProf",
+  "icon": "",
+  "route": "camoprof",
+  "order": 20,
+  "entry": "Module.Camoprof.dll",
+  "type": "Module.Camoprof.CamoprofModule"
+}

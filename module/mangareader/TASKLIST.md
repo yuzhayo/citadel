@@ -140,3 +140,29 @@ work; it does not change Citadel Core or the shared module contract.
 - [ ] Define Previous and Next behavior for each reading mode.
 - [ ] Define the Suwayomi-inspired menu controls one at a time.
 - [ ] Define fullscreen chrome, menu pinning, fit modes, direction, and auto-scroll.
+
+## Downloader reference — discovery note, not approved for implementation
+
+- [ ] Use the removed historical downloader from `C:\VSCODE\manga` only as a
+      behavior reference. Its complete implementation exists in Git history at
+      commit `c730b20` (and remains unchanged through `5df44c7`); commit
+      `9171aed` removed the backend and replaced the current screen with a
+      placeholder. `C:\VSCODE\Manga-Nee` has no downloader implementation.
+- [ ] Preserve the useful sequence: open a chapter URL in a real browser,
+      scroll the actual scroll container until height/image count stabilizes,
+      harvest ordered image URLs, fetch with the page URL as `Referer`, retry
+      bounded failures, detect the image type from bytes, and compile a CBZ.
+- [ ] Do not inherit the historical implementation's limitations: one chapter
+      per manual run, all page buffers retained in RAM, failed pages skipped
+      while still producing a CBZ, generic image heuristics that can capture
+      unrelated assets, and collision handling that silently creates `(2)`
+      files instead of reconciling local chapters.
+- [ ] A Citadel downloader must treat the remote ordered item list as the
+      completeness authority so regular chapters, split chapters, extras,
+      notices, and `Author's Note` remain separate items. Stream downloads to
+      temporary storage, validate every expected page, then finalize the CBZ
+      atomically; never publish a partial archive as complete.
+- [ ] Evaluate `C:\VSCODE\YUZZENI\core\stealthB` as the browser-session layer
+      through an explicit worker/IPC boundary. Citadel is C#/WPF while
+      `stealthB` is async Python/Playwright, so no Citadel assembly should
+      import or copy Python implementation files directly.

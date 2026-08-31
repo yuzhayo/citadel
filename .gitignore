@@ -25,3 +25,24 @@ AGENTS.local.md
 
 # Runtime log, if Log is ever pointed at the repo instead of %AppData%.
 log.txt
+
+# Credenz vault — credentials, profiles, sessions, results. Excluded one
+# level at a time: excluding a directory itself would make the negations
+# below unreachable (git never descends into an excluded directory), so each
+# committed marker needs its parent dirs negated explicitly.
+module/credenz/*
+!module/credenz/README.md
+!module/credenz/google
+module/credenz/google/*
+!module/credenz/google/profiles
+module/credenz/google/profiles/*
+!module/credenz/google/profiles/.gitkeep
+
+# Python runtime state and bytecode. The venv and vendored interpreter live
+# at %LocalAppData%\Citadel\runtime; these guards also catch accidents
+# anywhere else in the tree.
+.venv/
+venv/
+__pycache__/
+*.pyc
+*.pyo

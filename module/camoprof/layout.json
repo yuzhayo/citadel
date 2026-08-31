@@ -1,0 +1,7 @@
+{
+  "slots": {
+    "RuntimePanel": { "kind": "visibility", "visible": true },
+    "ProfileList": { "kind": "size", "w": 720, "h": 280 },
+    "StatusText": { "kind": "position", "x": 0, "y": 0 }
+  }
+}

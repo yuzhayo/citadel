@@ -84,6 +84,14 @@
   <PropertyGroup>
     <CitizenRuntimeRoot>$(CitadelRoot)core\Citadel.Shell\bin\$(Configuration)\$(TargetFramework)\module\</CitizenRuntimeRoot>
     <CitizenRuntimeFolder>$(CitizenRuntimeRoot)$(CitizenName)\</CitizenRuntimeFolder>
+    <!--
+      The shared python payload deploys as a SIBLING of module\, never inside
+      it: the searcher watches module\ only, and Build-Release.ps1 counts
+      module\* directories against citizen projects. GetFullPath resolves the
+      '..' so a -p:CitizenRuntimeRoot override (release) lands correctly too.
+    -->
+    <SharedLogicSource>$(CitadelRoot)module\sharedLogic\</SharedLogicSource>
+    <SharedLogicRuntimeRoot>$([System.IO.Path]::GetFullPath('$(CitizenRuntimeRoot)..\sharedLogic\'))</SharedLogicRuntimeRoot>
   </PropertyGroup>
 
   <!--
@@ -140,6 +148,42 @@
 
     <Error Condition="'@(DeployedSharedAssembly)' != ''"
            Text="Citizen '$(CitizenName)' deployed shared Citadel assemblies: @(DeployedSharedAssembly->'%(Filename)%(Extension)', ', '). A screen must reference Citadel.Core, Citadel.Contract and Citadel.Setting with Private=false; a private copy defines a second IModule type and the cast fails at load. Delete $(CitizenRuntimeFolder) and rebuild." />
+  </Target>
+
+  <!--
+    DeploySharedLogic: the read-only python payload (pyhost + requirements)
+    mirrors beside the shell executable at <output>\sharedLogic\ — a sibling
+    of module\, so neither the searcher nor the release directory count ever
+    sees it. cs/ (compile-time), reference/ (docs), READMEs, venvs and caches
+    are deliberately NOT deployed; runtime state is built by RuntimeSetup.
+    Runs after any citizen build and no-ops when the source tree has no
+    sharedLogic folder, so citizens that predate it keep building.
+  -->
+  <Target Name="DeploySharedLogic" AfterTargets="Build"
+          Condition="Exists('$(SharedLogicSource)requirements.txt')">
+    <!--
+      Sync, not just copy: stale payload is removed first (renamed-deleted
+      python files must not linger). Only the two spots Citadel owns are
+      touched — runtime state never lives under the deployed root.
+    -->
+    <Delete Files="$(SharedLogicRuntimeRoot)requirements.txt"
+            Condition="Exists('$(SharedLogicRuntimeRoot)requirements.txt')" />
+    <RemoveDir Directories="$(SharedLogicRuntimeRoot)pyhost"
+               Condition="Exists('$(SharedLogicRuntimeRoot)pyhost')" />
+    <ItemGroup>
+      <SharedLogicPyhost Include="$(SharedLogicSource)pyhost\**\*.py" />
+    </ItemGroup>
+    <!-- requirements.txt lands flat; pyhost keeps its subfolder (a bare
+         %(RecursiveDir) would drop pyhost.py at the root, because the '**'
+         anchor eats the pyhost\ segment). -->
+    <Copy SourceFiles="$(SharedLogicSource)requirements.txt"
+          DestinationFolder="$(SharedLogicRuntimeRoot)"
+          SkipUnchangedFiles="true" />
+    <Copy SourceFiles="@(SharedLogicPyhost)"
+          DestinationFiles="@(SharedLogicPyhost->'$(SharedLogicRuntimeRoot)pyhost\%(RecursiveDir)%(Filename)%(Extension)')"
+          SkipUnchangedFiles="true" />
+    <Message Importance="high"
+             Text="SharedLogic payload deployed to $(SharedLogicRuntimeRoot)" />
   </Target>
 
 </Project>
