@@ -1,8 +1,10 @@
 using System.Collections.ObjectModel;
+using System.IO;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media.Imaging;
 using Microsoft.Win32;
+using Module.Mangareader.Library;
 using Module.Mangareader.ShareLogic;
 
 namespace Module.Mangareader;
@@ -12,13 +14,18 @@ public partial class LibraryView : UserControl, IDisposable
     private readonly LibraryScanner _scanner = new();
     private readonly MangaCoverLoader _coverLoader = new();
     private readonly ObservableCollection<MangaTitleCardModel> _cards = new();
+    private readonly LibraryPathStore _pathStore = new();
+    private readonly LibraryScanPersistence _scanPersistence;
     private CancellationTokenSource? _scanCancellation;
+    private bool _autoRestored;
     private bool _disposed;
 
     public LibraryView()
     {
         InitializeComponent();
         TitleGrid.ItemsSource = _cards;
+        _scanPersistence = new LibraryScanPersistence(_pathStore);
+        Loaded += LibraryView_Loaded;
     }
 
     public event EventHandler<OpenChapterRequestedEventArgs>? OpenChapterRequested;
@@ -28,6 +35,25 @@ public partial class LibraryView : UserControl, IDisposable
     public IReadOnlyList<MangaTitleCardModel> Titles => _cards.ToArray();
 
     public Task RefreshAsync() => ScanLibraryAsync();
+
+    private async void LibraryView_Loaded(object sender, RoutedEventArgs e)
+    {
+        if (_disposed || _autoRestored) return;
+        _autoRestored = true;
+
+        var loaded = _pathStore.Load();
+        if (loaded.Path is not null)
+        {
+            LibraryPath.Text = loaded.Path;
+            await ScanLibraryAsync();
+            return;
+        }
+
+        if (loaded.Warning is not null)
+        {
+            StatusText.Text = loaded.Warning;
+        }
+    }
 
     private async void BrowseButton_Click(object sender, RoutedEventArgs e)
     {
@@ -62,6 +88,10 @@ public partial class LibraryView : UserControl, IDisposable
             return;
         }
 
+        // The path is captured once, at scan start. Completion persists
+        // this attempt, never whatever the field says later.
+        var attempt = _scanPersistence.BeginScan(path);
+
         var previous = _scanCancellation;
         var cancellation = new CancellationTokenSource();
         _scanCancellation = cancellation;
@@ -88,13 +118,13 @@ public partial class LibraryView : UserControl, IDisposable
                 ShowEmpty(
                     "No CBZ titles found",
                     "The selected folder must contain child folders with CBZ files inside them.");
-                StatusText.Text = "Scan complete — no CBZ files were found.";
+                CompleteSuccessfulScan(cancellation, attempt, "Scan complete — no CBZ files were found.");
                 return;
             }
 
             EmptyPanel.Visibility = Visibility.Collapsed;
             var chapterCount = titles.Sum(title => title.ChapterCount);
-            StatusText.Text = $"{titles.Count} titles · {chapterCount} chapters";
+            CompleteSuccessfulScan(cancellation, attempt, $"{titles.Count} titles · {chapterCount} chapters");
             SetBusy(false);
 
             await LoadCoversAsync(_cards.ToArray(), cancellation);
@@ -112,8 +142,11 @@ public partial class LibraryView : UserControl, IDisposable
 
             _cards.Clear();
             NotifyTitlesChanged();
-            ShowEmpty("Could not scan the library", exception.GetBaseException().Message);
-            StatusText.Text = "Scan failed.";
+            var baseException = exception.GetBaseException();
+            ShowEmpty("Could not scan the library", baseException.Message);
+            StatusText.Text = baseException is DirectoryNotFoundException
+                ? "The library folder is not available. Browse or Scan to choose another folder."
+                : "Scan failed.";
         }
         finally
         {
@@ -125,6 +158,29 @@ public partial class LibraryView : UserControl, IDisposable
 
             cancellation.Dispose();
         }
+    }
+
+    /// <summary>
+    /// Ends a successful scan: the path captured at scan start is persisted
+    /// only here, after the scanner completed without exception or
+    /// cancellation. The field is never re-read, so a field edited mid-scan
+    /// cannot change what gets saved. A persistence failure never hides the
+    /// scan results — it is appended as a warning.
+    /// </summary>
+    private void CompleteSuccessfulScan(
+        CancellationTokenSource scan,
+        LibraryScanAttempt attempt,
+        string status)
+    {
+        if (_disposed || !ReferenceEquals(_scanCancellation, scan)) return;
+
+        var save = _scanPersistence.CompleteScan(
+            attempt,
+            succeeded: true,
+            cancelled: scan.IsCancellationRequested);
+        StatusText.Text = save.Saved
+            ? status
+            : $"{status} Warning: {save.Warning}";
     }
 
     private async Task LoadCoversAsync(
@@ -195,6 +251,7 @@ public partial class LibraryView : UserControl, IDisposable
 
     private void SetBusy(bool busy)
     {
+        LibraryPath.IsEnabled = !busy;
         BrowseButton.IsEnabled = !busy;
         ScanButton.IsEnabled = !busy;
     }
@@ -210,6 +267,7 @@ public partial class LibraryView : UserControl, IDisposable
 
         if (_disposed) return;
         _disposed = true;
+        Loaded -= LibraryView_Loaded;
         _scanCancellation?.Cancel();
         _scanCancellation = null;
         ChapterSelector.Dismiss();

@@ -116,6 +116,7 @@
             <ListBox x:Name="ChapterList"
                      Grid.Row="2"
                      ItemsSource="{Binding Manga.Chapters}"
+                     Style="{DynamicResource SettingListStyle}"
                      Background="{DynamicResource Card}"
                      BorderBrush="{DynamicResource Border}"
                      BorderThickness="1"

@@ -23,10 +23,50 @@ interaction behavior.
 | `SettingTableActions` | one action centered; two actions balanced against the cell edges |
 | `SettingDialog` | modal chrome, owner centering and reusable confirmation behavior |
 | `SettingCardStyle` | ordinary shared card background, border, radius, padding and row spacing |
+| `SettingScrollBar` | **auto-fade scrollbar with reveal/hide behavior, vertical/horizontal orientation support** |
 
 Only the Gallery-editable primitives (`Button`, `Field`, `Toggle`, `Slider`,
 and `Table`) have `.presets.json` files. Fixed layout composites do not publish
 empty presets: their behavior is the contract above.
+
+## ScrollBar Auto-Fade
+
+**Owner:** `setting/Components/ScrollBar.xaml(.cs)`
+**Styles:** `SettingScrollBarStyle`, `SettingScrollViewerStyle`
+**Attached behavior:** `ScrollBarAutoFade.IsEnabled` (default: `true`)
+
+### Behavior Contract
+
+- Scrollbar appears only when content overflows the viewport.
+- **Reveal** (fade to opacity 1.0) on:
+  - Mouse wheel or touch scroll
+  - Keyboard scrolling (arrows, Page Up/Down, Home/End)
+  - `ScrollViewer.ScrollChanged` event
+  - Pointer enters ScrollBar
+  - Thumb drag starts
+  - ScrollBar receives keyboard focus
+- **Hide** (fade to opacity 0) after **1.5s idle** when:
+  - No drag in progress
+  - Pointer outside ScrollBar
+  - ScrollBar does not have keyboard focus
+- **Layout stable:** Rail width/height always reserved (10px); opacity changes do not shift content.
+- **Orientation:** Vertical and horizontal both supported; track direction correct per axis.
+- **Animation:** Respects `SystemParameters.ClientAreaAnimation`; transitions (150ms in, 250ms out) disabled when system animations off.
+- **Cleanup:** Timers, storyboards, event handlers detached on `Unloaded`; `ConditionalWeakTable` prevents leaks.
+- **Disabled state:** Respects `IsEnabled=false` and `DisabledOpacity` token.
+- **Thumb minimum:** 24px along the active scroll axis; the cross-axis rail remains 10px.
+
+### Consumer Migration
+
+All scroll surfaces use `SettingScrollViewerStyle`:
+- `SettingViewport` Document mode
+- `SettingTable` internal DataGrid
+- `SettingList` / `SettingCombo` dropdowns
+- MangaReader Library, History, Chapter Selector, Reader Window
+
+No per-screen scrollbar templates. Behavior consistent across app.
+
+---
 
 ## Screen responsibilities
 

@@ -20,7 +20,8 @@
         <Grid Grid.Row="1">
             <ScrollViewer VerticalScrollBarVisibility="Auto"
                           HorizontalScrollBarVisibility="Disabled"
-                          PanningMode="VerticalOnly">
+                          PanningMode="VerticalOnly"
+                          Style="{DynamicResource SettingScrollViewerStyle}">
                 <ItemsControl x:Name="HistoryGrid">
                     <ItemsControl.ItemsPanel>
                         <ItemsPanelTemplate>

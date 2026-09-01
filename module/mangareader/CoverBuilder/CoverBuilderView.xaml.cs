@@ -2,6 +2,7 @@ using System.IO;
 using System.Windows;
 using System.Windows.Controls;
 using Microsoft.Win32;
+using Module.Mangareader.Archive;
 using Module.Mangareader.ShareLogic;
 
 namespace Module.Mangareader;
@@ -163,7 +164,7 @@ public partial class CoverBuilderView : UserControl, IDisposable
 
         var cancellation = BeginOperation();
         _resultStatus = null;
-        StatusText.Text = "Validating the local cover and rebuilding the first chapter...";
+        StatusText.Text = "Detecting the chapter format and rebuilding the first chapter...";
 
         try
         {
@@ -173,15 +174,29 @@ public partial class CoverBuilderView : UserControl, IDisposable
                 cancellation.Token);
             if (_disposed || !ReferenceEquals(_operationCancellation, cancellation)) return;
 
-            var released = result.Bake.ReleasedProcesses.Count == 0
+            var bake = result.Bake;
+            if (bake.Status != CoverBakeStatus.Baked)
+            {
+                _resultStatus = $"Bake skipped; the chapter was not changed: {BakeSkippedDetail(bake)}";
+                StatusText.Text = _resultStatus;
+                return;
+            }
+
+            var released = bake.ReleasedProcesses.Count == 0
                 ? string.Empty
-                : $" Closed {string.Join(", ", result.Bake.ReleasedProcesses.Select(
+                : $" Closed {string.Join(", ", bake.ReleasedProcesses.Select(
                     process => $"{process.DisplayName} (PID {process.ProcessId})"))} to release the chapter.";
-            _resultStatus = $"Cover baked from {sourceLabel}.{released} Backup: {result.Bake.BackupPath}";
+            var backupDetail = bake.BackupPath is null
+                ? " The backup could not be promoted; see the backup warnings."
+                : $" Backup: {bake.BackupPath}";
+            var warningDetail = bake.BackupWarnings.Count == 0
+                ? string.Empty
+                : $" Backup warnings: {string.Join(" ", bake.BackupWarnings)}";
+            _resultStatus = $"Cover baked from {sourceLabel}.{released}{backupDetail}{warningDetail}";
             StatusText.Text = _resultStatus;
             CoverBaked?.Invoke(
                 this,
-                new CoverBakedEventArgs(selected.Manga, result.Bake));
+                new CoverBakedEventArgs(selected.Manga, bake));
         }
         catch (OperationCanceledException) when (cancellation.IsCancellationRequested)
         {
@@ -199,6 +214,21 @@ public partial class CoverBuilderView : UserControl, IDisposable
             EndOperation(cancellation);
         }
     }
+
+    private static string BakeSkippedDetail(CoverBakeResult bake) => bake.Status switch
+    {
+        CoverBakeStatus.UnsupportedFormat =>
+            bake.Detail ?? "this chapter format cannot be rewritten.",
+        CoverBakeStatus.CorruptOrTruncated =>
+            bake.Detail ?? "the chapter archive looks corrupt or truncated.",
+        CoverBakeStatus.UnknownFormat =>
+            bake.Detail ?? "the chapter content was not recognized as a supported archive.",
+        CoverBakeStatus.MissingSource =>
+            "the first chapter file was not found.",
+        CoverBakeStatus.Cancelled =>
+            "the bake was cancelled before the chapter was replaced.",
+        _ => "the bake did not complete.",
+    };
 
     private void UpdateAvailability()
     {

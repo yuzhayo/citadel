@@ -3,18 +3,36 @@ using System.Diagnostics;
 using System.IO;
 using System.Runtime.InteropServices;
 
-namespace Module.Mangareader.ShareLogic;
+namespace Module.Mangareader.Archive;
 
 public sealed record ReleasedArchiveProcess(int ProcessId, string DisplayName);
 
 /// <summary>
-/// Resolves Windows file-sharing conflicts immediately before an atomic CBZ
-/// replacement. Restart Manager is part of Windows, so ordinary CBZ editing
-/// does not require a private archive dependency in the citizen.
+/// Releases external file locks for the archive being replaced. The
+/// production implementation wraps Windows Restart Manager; tests may inject
+/// any other behavior.
 /// </summary>
-public sealed class ArchiveLockCoordinator
+public interface IArchiveLockCoordinator
+{
+    IReadOnlyList<ReleasedArchiveProcess> ReleaseForReplacement(
+        string archivePath,
+        CancellationToken cancellationToken);
+}
+
+/// <summary>
+/// Resolves Windows file-sharing conflicts immediately before an atomic
+/// archive replacement. Restart Manager is part of Windows, so ordinary CBZ
+/// editing does not require a private archive dependency in the citizen.
+/// Cover Builder wins against ordinary external applications, but safety
+/// rules hold: the current Citadel process is protected, Explorer, services
+/// and critical processes are never terminated, only the processes actually
+/// locking the target archive are touched, and a graceful shutdown request
+/// is attempted before any forced shutdown.
+/// </summary>
+public sealed class ArchiveLockCoordinator : IArchiveLockCoordinator
 {
     private const int ReleaseWaitMilliseconds = 5_000;
+    private const int GracefulWaitMilliseconds = 1_500;
     private const int ReleasePollMilliseconds = 100;
 
     public IReadOnlyList<ReleasedArchiveProcess> ReleaseForReplacement(
@@ -54,7 +72,14 @@ public sealed class ArchiveLockCoordinator
                 .ToArray();
             if (externalLockers.Length > 0)
             {
-                session.ShutdownLockers();
+                // Graceful first: ask the lockers to shut down, give them a
+                // short window, and only then force the same exact lockers.
+                session.ShutdownLockers(force: false);
+                if (!WaitUntilExclusive(fullPath, GracefulWaitMilliseconds, cancellationToken))
+                {
+                    session.ShutdownLockers(force: true);
+                }
+
                 foreach (var locker in externalLockers)
                 {
                     released[locker.ProcessId] = new ReleasedArchiveProcess(
@@ -63,7 +88,7 @@ public sealed class ArchiveLockCoordinator
                 }
             }
 
-            if (WaitUntilExclusive(fullPath, cancellationToken))
+            if (WaitUntilExclusive(fullPath, ReleaseWaitMilliseconds, cancellationToken))
             {
                 return released.Values.ToArray();
             }
@@ -79,9 +104,10 @@ public sealed class ArchiveLockCoordinator
 
     private static bool WaitUntilExclusive(
         string path,
+        int waitMilliseconds,
         CancellationToken cancellationToken)
     {
-        var deadline = Environment.TickCount64 + ReleaseWaitMilliseconds;
+        var deadline = Environment.TickCount64 + waitMilliseconds;
         while (Environment.TickCount64 < deadline)
         {
             cancellationToken.ThrowIfCancellationRequested();
@@ -237,11 +263,11 @@ public sealed class ArchiveLockCoordinator
             ThrowIfFailed(result, "protect Citadel from lock resolution");
         }
 
-        public void ShutdownLockers()
+        public void ShutdownLockers(bool force)
         {
             var result = NativeMethods.RmShutdown(
                 _handle,
-                ForceShutdown,
+                force ? ForceShutdown : 0u,
                 IntPtr.Zero);
             if (result != ErrorSuccess && result != ErrorFailShutdown)
                 ThrowIfFailed(result, "release applications locking the chapter");

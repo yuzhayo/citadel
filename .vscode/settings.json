@@ -1,0 +1,10 @@
+{
+  "python.analysis.exclude": [
+    "**/bin/**",
+    "**/obj/**",
+    "**/.git/**",
+    "**/.venv/**",
+    "**/venv/**",
+    "**/node_modules/**"
+  ]
+}

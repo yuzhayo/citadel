@@ -26,6 +26,7 @@
                       IsDeferredScrollingEnabled="False"
                       PanningMode="VerticalOnly"
                       Background="#05060A"
+                      Style="{DynamicResource SettingScrollViewerStyle}"
                       ScrollChanged="ReaderScroller_ScrollChanged"
                       PreviewMouseWheel="ReaderWindow_PreviewMouseWheel"
                       SizeChanged="ReaderScroller_SizeChanged">

@@ -7,6 +7,12 @@
     <!-- Shared screen resources. Every reusable control owns its presentation
          and behaviour in Components/<Name>.xaml(.cs). Only primitives exposed
          by Gallery also own an editable <Name>.presets.json file. -->
+
+    <!-- Merged shared components -->
+    <ResourceDictionary.MergedDictionaries>
+        <ResourceDictionary Source="Components/ScrollBar.xaml" />
+    </ResourceDictionary.MergedDictionaries>
+
     <Thickness x:Key="SettingControlPadding">10,6</Thickness>
     <Thickness x:Key="SettingPickerPadding">10,6,32,6</Thickness>
     <Thickness x:Key="SettingViewportInset">5</Thickness>
@@ -17,106 +23,8 @@
     <sys:Double x:Key="SettingBodyFontSize">13</sys:Double>
     <sys:Double x:Key="SettingPickerWidth">180</sys:Double>
 
-    <!--
-        These are keyed screen-chrome styles, not a sixth component kind. They
-        keep WPF's stock picker/list/scroll surfaces inside the same token theme
-        without adding a control/preset pair that the PLAN does not ask for.
-    -->
-    <Style x:Key="SettingScrollBarStyle" TargetType="{x:Type ScrollBar}">
-        <Setter Property="Width" Value="10" />
-        <Setter Property="Background" Value="{DynamicResource BgRail}" />
-        <Setter Property="Template">
-            <Setter.Value>
-                <ControlTemplate TargetType="{x:Type ScrollBar}">
-                    <Grid Background="{TemplateBinding Background}">
-                        <Track
-                            x:Name="PART_Track"
-                            IsDirectionReversed="True"
-                            Orientation="{TemplateBinding Orientation}">
-                            <Track.DecreaseRepeatButton>
-                                <RepeatButton
-                                    Command="{x:Static ScrollBar.PageUpCommand}"
-                                    CommandTarget="{Binding RelativeSource={RelativeSource TemplatedParent}}"
-                                    Focusable="False">
-                                    <RepeatButton.Template>
-                                        <ControlTemplate TargetType="{x:Type RepeatButton}">
-                                            <Border Background="{DynamicResource TransparentBrush}" />
-                                        </ControlTemplate>
-                                    </RepeatButton.Template>
-                                </RepeatButton>
-                            </Track.DecreaseRepeatButton>
-                            <Track.Thumb>
-                                <Thumb MinHeight="24">
-                                    <Thumb.Template>
-                                        <ControlTemplate TargetType="{x:Type Thumb}">
-                                            <Border
-                                                Margin="2"
-                                                Background="{DynamicResource Dim}"
-                                                CornerRadius="4" />
-                                        </ControlTemplate>
-                                    </Thumb.Template>
-                                </Thumb>
-                            </Track.Thumb>
-                            <Track.IncreaseRepeatButton>
-                                <RepeatButton
-                                    Command="{x:Static ScrollBar.PageDownCommand}"
-                                    CommandTarget="{Binding RelativeSource={RelativeSource TemplatedParent}}"
-                                    Focusable="False">
-                                    <RepeatButton.Template>
-                                        <ControlTemplate TargetType="{x:Type RepeatButton}">
-                                            <Border Background="{DynamicResource TransparentBrush}" />
-                                        </ControlTemplate>
-                                    </RepeatButton.Template>
-                                </RepeatButton>
-                            </Track.IncreaseRepeatButton>
-                        </Track>
-                    </Grid>
-                    <ControlTemplate.Triggers>
-                        <Trigger Property="IsEnabled" Value="False">
-                            <Setter Property="Opacity" Value="{DynamicResource DisabledOpacity}" />
-                        </Trigger>
-                    </ControlTemplate.Triggers>
-                </ControlTemplate>
-            </Setter.Value>
-        </Setter>
-    </Style>
-
-    <Style x:Key="SettingScrollViewerStyle" TargetType="{x:Type ScrollViewer}">
-        <Setter Property="Background" Value="{DynamicResource TransparentBrush}" />
-        <Setter Property="Focusable" Value="False" />
-        <Setter Property="HorizontalContentAlignment" Value="Stretch" />
-        <Setter Property="VerticalContentAlignment" Value="Stretch" />
-        <Setter Property="Template">
-            <Setter.Value>
-                <ControlTemplate TargetType="{x:Type ScrollViewer}">
-                    <Grid Background="{TemplateBinding Background}">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="*" />
-                            <ColumnDefinition Width="Auto" />
-                        </Grid.ColumnDefinitions>
-                        <ScrollContentPresenter
-                            x:Name="PART_ScrollContentPresenter"
-                            CanContentScroll="{TemplateBinding CanContentScroll}"
-                            Content="{TemplateBinding Content}"
-                            ContentTemplate="{TemplateBinding ContentTemplate}"
-                            HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
-                            VerticalAlignment="{TemplateBinding VerticalContentAlignment}"
-                            Margin="{TemplateBinding Padding}"
-                            SnapsToDevicePixels="{TemplateBinding SnapsToDevicePixels}" />
-                        <ScrollBar
-                            x:Name="PART_VerticalScrollBar"
-                            Grid.Column="1"
-                            Maximum="{TemplateBinding ScrollableHeight}"
-                            Orientation="Vertical"
-                            Style="{StaticResource SettingScrollBarStyle}"
-                            Value="{TemplateBinding VerticalOffset}"
-                            ViewportSize="{TemplateBinding ViewportHeight}"
-                            Visibility="{TemplateBinding ComputedVerticalScrollBarVisibility}" />
-                    </Grid>
-                </ControlTemplate>
-            </Setter.Value>
-        </Setter>
-    </Style>
+    <!-- SettingScrollBarStyle and SettingScrollViewerStyle are now defined in
+         Components/ScrollBar.xaml with auto-fade behavior and merged above. -->
 
     <Style x:Key="SettingComboBoxItemStyle" TargetType="{x:Type ComboBoxItem}">
         <Setter Property="Background" Value="{DynamicResource TransparentBrush}" />

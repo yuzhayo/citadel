@@ -1,0 +1,29 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="coverlet.collector" Version="6.0.4" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
+    <PackageReference Include="xunit" Version="2.9.3" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="3.1.4" />
+  </ItemGroup>
+
+  <!--
+    The MangaReader citizen is never a normal solution dependency: the pure
+    Archive sources are linked directly, exactly as the citizen compiles them.
+    The Archive classes stay path-based (no MangaTitle, no WPF), which is what
+    makes this link safe.
+  -->
+  <ItemGroup>
+    <Compile Include="..\..\module\mangareader\shareLogic\Archive\*.cs"
+             Link="Archive\%(Filename)%(Extension)" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Using Include="Xunit" />
+  </ItemGroup>
+
+</Project>

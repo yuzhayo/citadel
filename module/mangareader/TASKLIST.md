@@ -116,9 +116,23 @@ work; it does not change Citadel Core or the shared module contract.
       Citadel, Explorer, a Windows service, or a critical process; no private
       archive dependency is needed for ordinary CBZ files.
 
+## Shared scrollbar auto-fade — PR1 completed (2026-09-01)
+
+- [x] Move scrollbar presentation and behavior to `setting/Components/ScrollBar.xaml(.cs)`.
+- [x] Implement auto-fade: reveal on activity (scroll, wheel, pointer, drag, focus), hide after 1.5s idle.
+- [x] Support both vertical and horizontal orientation with correct track direction.
+- [x] Respect `SystemParameters.ClientAreaAnimation` for smooth transitions.
+- [x] Layout-stable: rail width always reserved, opacity changes do not shift content.
+- [x] Cleanup: timers/storyboards/handlers detached on Unloaded, no leaks (`ConditionalWeakTable`).
+- [x] Migrate all consumers to shared `SettingScrollViewerStyle` (Viewport Document, SettingTable, MangaReader views).
+- [x] Document behavior contract in `.docs/SHARED-UI-BEHAVIOR.md`.
+- [x] Add regression tests: template used, orientation correct, layout stable, cleanup verified.
+- [x] Build verification: `setting/`, `module/mangareader/`, tests pass.
+
 ## Deferred — define one by one before implementation
 
-- [ ] Persist the selected library path.
+- [x] Persist the selected library path.
+- [x] **Archive abstraction + Cover Builder refactor** — split format detection, capability model, transaction-safe writer, latest-backup-only retention into `shareLogic/Archive/` subfolder. (PR2 scope)
 - [x] Add a shared card-presentation sub-feature under `shareLogic/`:
       normalize underscores in folder titles to spaces for display only, collapse
       repeated whitespace, and expose the compact Library/History card data.
@@ -143,6 +157,10 @@ work; it does not change Citadel Core or the shared module contract.
 
 ## Downloader reference — discovery note, not approved for implementation
 
+- [ ] Treat `.docs/RESEARCH-comix-downloader-2026-09-01.md` as the current
+      evidence record for the Comix target. It documents DNS/browser behavior,
+      APK/upstream contracts, source variants, descrambling, a small CBZ
+      packaging proof, limitations, and the unapproved provisional seam.
 - [ ] Use the removed historical downloader from `C:\VSCODE\manga` only as a
       behavior reference. Its complete implementation exists in Git history at
       commit `c730b20` (and remains unchanged through `5df44c7`); commit

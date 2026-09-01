@@ -1,3 +1,5 @@
+using Module.Mangareader.Archive;
+
 namespace Module.Mangareader.ShareLogic;
 
 public sealed class OpenChapterRequestedEventArgs : EventArgs
