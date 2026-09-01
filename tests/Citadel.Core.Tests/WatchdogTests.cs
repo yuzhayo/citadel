@@ -54,17 +54,15 @@ public class WatchdogTests
     public void HealthyDrain_IsQuiet_WhenIntervalExceedsThreshold()
     {
         var mark = Log.Full().Length;
+        var time = new ManualTimeProvider();
         var main = new FakeMain();
-        using var watchdog = new Watchdog(main.Queue, stallMs: 20);
+        using var watchdog = new Watchdog(main.Queue, stallMs: 20, time);
 
-        watchdog.Start(intervalMs: 200);
-
-        var deadline = Stopwatch.StartNew();
-        while (deadline.Elapsed < TimeSpan.FromMilliseconds(900))
-        {
-            main.Pump();
-            Thread.Sleep(10);
-        }
+        watchdog.Poll();
+        main.Pump();
+        time.Advance(TimeSpan.FromMilliseconds(200));
+        watchdog.Poll();
+        main.Pump();
 
         Assert.DoesNotContain("main-thread stall", Since(mark));
     }
@@ -93,5 +91,24 @@ public class WatchdogTests
         }
 
         Assert.Contains("main-thread stall", Since(mark));
+    }
+
+    private sealed class ManualTimeProvider : TimeProvider
+    {
+        private long _timestamp;
+
+        public override long TimestampFrequency => TimeSpan.TicksPerSecond;
+
+        public override long GetTimestamp() => _timestamp;
+
+        public void Advance(TimeSpan duration)
+        {
+            if (duration < TimeSpan.Zero)
+            {
+                throw new ArgumentOutOfRangeException(nameof(duration));
+            }
+
+            _timestamp = checked(_timestamp + duration.Ticks);
+        }
     }
 }

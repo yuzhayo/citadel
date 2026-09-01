@@ -1,5 +1,3 @@
-using System.Diagnostics;
-
 namespace Citadel.Core.Crl;
 
 /// <summary>
@@ -21,15 +19,22 @@ public sealed class Watchdog : IDisposable
 {
     private readonly MainQueue _main;
     private readonly int _stallMs;
+    private readonly TimeProvider _timeProvider;
     private readonly object _gate = new();
     private Timer? _timer;
     private long _pingSentTs;
     private int _awaitingPong;
 
     public Watchdog(MainQueue main, int stallMs = 100)
+        : this(main, stallMs, TimeProvider.System)
+    {
+    }
+
+    internal Watchdog(MainQueue main, int stallMs, TimeProvider timeProvider)
     {
         _main = main ?? throw new ArgumentNullException(nameof(main));
         _stallMs = stallMs;
+        _timeProvider = timeProvider ?? throw new ArgumentNullException(nameof(timeProvider));
     }
 
     public void Start(int intervalMs = 1000)
@@ -37,17 +42,22 @@ public sealed class Watchdog : IDisposable
         lock (_gate)
         {
             if (_timer is not null) return;
-            _timer = new Timer(_ => Ping(), null, intervalMs, intervalMs);
+            _timer = new Timer(_ => Poll(), null, intervalMs, intervalMs);
         }
     }
 
-    private void Ping()
+    /// <summary>
+    /// Performs one timer poll. Kept as an internal seam so latency behavior
+    /// can be tested against a controlled clock instead of depending on the
+    /// host scheduler's timing precision.
+    /// </summary>
+    internal void Poll()
     {
         // Previous ping still unanswered: the main thread is silent. Report
         // how long it has been silent and do not queue another ping behind it.
         if (Interlocked.CompareExchange(ref _awaitingPong, 1, 0) == 1)
         {
-            var silentMs = Stopwatch
+            var silentMs = _timeProvider
                 .GetElapsedTime(Interlocked.Read(ref _pingSentTs))
                 .TotalMilliseconds;
             if (silentMs > _stallMs)
@@ -57,12 +67,12 @@ public sealed class Watchdog : IDisposable
             return;
         }
 
-        var sent = Stopwatch.GetTimestamp();
+        var sent = _timeProvider.GetTimestamp();
         Interlocked.Exchange(ref _pingSentTs, sent);
 
         _main.Post(() =>
         {
-            var lagMs = Stopwatch.GetElapsedTime(sent).TotalMilliseconds;
+            var lagMs = _timeProvider.GetElapsedTime(sent).TotalMilliseconds;
             Interlocked.Exchange(ref _awaitingPong, 0);
             if (lagMs > _stallMs)
             {
