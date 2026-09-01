@@ -72,6 +72,18 @@ Then edit, **only inside this folder**:
 3. `BlankView.xaml(.cs)` → your screen
 4. `layout.json` — the slots you want editable from Settings
 
+`BlankView.xaml` already starts inside `SettingViewport.Mode="Contained"`.
+Keep that mode when a table, collection, overlay, or feature surface owns its
+scrolling. Change it to `Document` only for a top-aligned document that should
+fill the available width and use one vertical fallback scrollbar. Never add an
+outer scrolling document around a `*`-sized table or collection: it receives an
+unbounded height and loses its own virtualization/scroll ownership.
+
+The shared viewport owns the screen inset and fill behavior. Standard cards
+stretch inside it; a screen must not add a top-level width cap or compensate
+with copied outer margins. Fixed dimensions remain local only when they express
+a real feature shape such as a cover, icon, or reader surface.
+
 ```
 dotnet build module/reports/Module.Reports.csproj
 ```

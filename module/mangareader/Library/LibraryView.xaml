@@ -5,6 +5,7 @@
              xmlns:setting="clr-namespace:Citadel.Setting.Components;assembly=Citadel.Setting"
              Background="{DynamicResource Bg}"
              Foreground="{DynamicResource Fg}">
+    <setting:SettingViewport Mode="Contained">
     <Grid>
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
@@ -37,7 +38,7 @@
 
         <TextBlock x:Name="StatusText"
                    Grid.Row="1"
-                   Margin="4,10"
+                   Margin="0,2,0,10"
                    Foreground="{DynamicResource Body}"
                    FontSize="13"
                    Text="Choose a library folder to begin." />
@@ -86,4 +87,5 @@
                                        ChapterSelected="ChapterSelector_ChapterSelected" />
         </Grid>
     </Grid>
+    </setting:SettingViewport>
 </UserControl>

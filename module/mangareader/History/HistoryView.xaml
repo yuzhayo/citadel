@@ -2,15 +2,17 @@
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:local="clr-namespace:Module.Mangareader"
+             xmlns:setting="clr-namespace:Citadel.Setting.Components;assembly=Citadel.Setting"
              Background="{DynamicResource Bg}"
              Foreground="{DynamicResource Fg}">
-    <Grid Margin="0,16,0,0">
+    <setting:SettingViewport Mode="Contained">
+    <Grid>
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
         </Grid.RowDefinitions>
 
-        <TextBlock Margin="4,0,4,10"
+        <TextBlock Margin="0,0,0,10"
                    Text="Recently opened titles"
                    FontSize="13"
                    Foreground="{DynamicResource Body}" />
@@ -51,4 +53,5 @@
             </StackPanel>
         </Grid>
     </Grid>
+    </setting:SettingViewport>
 </UserControl>

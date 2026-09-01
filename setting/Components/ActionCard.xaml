@@ -6,8 +6,9 @@
         <Setter Property="Background" Value="{DynamicResource Card}" />
         <Setter Property="BorderBrush" Value="{DynamicResource Border}" />
         <Setter Property="BorderThickness" Value="1" />
-        <Setter Property="Margin" Value="5" />
+        <Setter Property="Margin" Value="{DynamicResource SettingSectionGap}" />
         <Setter Property="Padding" Value="10,8" />
+        <Setter Property="HorizontalAlignment" Value="Stretch" />
         <Setter Property="HorizontalContentAlignment" Value="Stretch" />
         <Setter Property="VerticalContentAlignment" Value="Center" />
         <Setter Property="Template">

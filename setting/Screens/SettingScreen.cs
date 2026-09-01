@@ -23,15 +23,12 @@ public abstract class SettingScreen : UserControl
 
         NameScope.SetNameScope(this, new NameScope());
         Resources.MergedDictionaries.Add(new SettingResources());
-        var scroller = new ScrollViewer
+        var viewport = new SettingViewport
         {
-            VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
-            HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
+            Mode = SettingViewportMode.Document,
             Content = _body,
         };
-        scroller.SetResourceReference(FrameworkElement.StyleProperty, "SettingScrollViewerStyle");
-        Content = scroller;
-        _body.Margin = new Thickness(20, 18, 20, 20);
+        Content = viewport;
     }
 
     /// <summary>The view's own lifetime, supplied by the Router.</summary>

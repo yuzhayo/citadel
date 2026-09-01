@@ -1,9 +1,11 @@
 # Shared UI behavior contract
 
 Status: implemented; automated and normal/minimum/maximum-window visual gates
-pass on 2026-09-01. This is the default contract for every built-in screen and
-citizen view. Feature screens compose these controls; they do not copy their
-templates or restate universal interaction behavior.
+pass on 2026-09-01. High-DPI and negative-coordinate monitor bounds are covered
+by deterministic policy tests; live QA hardware was one 96-DPI monitor. This is
+the default contract for every built-in screen and citizen view. Feature screens
+compose these controls; they do not copy their templates or restate universal
+interaction behavior.
 
 ## Ownership
 
@@ -15,7 +17,8 @@ templates or restate universal interaction behavior.
 | `SettingToggle` | centered track/label, mouse/focus/disabled states, two-state keyboard behavior |
 | `SettingSlider` | shared track/thumb, keyboard focus indication, disabled state, step snapping |
 | `SettingTabs` | left-aligned tab group, equal outer inset, rounded normal/hover/selected/focus states |
-| `SettingActionCard` | compact shared surface, flexible content, right-side actions, equal outer inset |
+| `SettingViewport` | finite screen root, shared inset, explicit `Contained`/`Document` overflow ownership |
+| `SettingActionCard` | compact fill-width surface with flexible content and right-side actions |
 | `SettingTable` | equal star columns by default, centered headers, left text cells, grid lines, virtualization and scrolling |
 | `SettingTableActions` | one action centered; two actions balanced against the cell edges |
 | `SettingDialog` | modal chrome, owner centering and reusable confirmation behavior |
@@ -28,14 +31,35 @@ empty presets: their behavior is the contract above.
 ## Screen responsibilities
 
 A screen owns its content, data bindings, commands/event handlers, automation
-names and feature-specific visuals. It may set a minimum size needed by its own
-content. It must not replace shared templates, hard-code shared surface chrome,
-or locally redefine tab, input, table-header, table-action, focus, hover or
-disabled behavior.
+names and feature-specific visuals. Its root must use `SettingViewport` in the
+mode matching its scroll owner. It must not set a screen-level preferred/minimum
+width, replace shared templates, hard-code shared surface chrome, or locally
+redefine tab, input, table-header, table-action, focus, hover or disabled
+behavior.
 
 Custom visuals remain local when their shape is part of the feature rather than
 general application chrome. Current examples are MangaReader cover cards,
 chapter selection overlays and the reader window overlays.
+
+## Fluid desktop layout
+
+The Shell opens at the preferred `WindowW`/`WindowH`, centered and clamped once
+to the active monitor work area. It never follows navigation, tab selection,
+async data, or feature overflow. `Host`, Router transition layers, selected tab
+content, and `SettingViewport` explicitly stretch through the full available
+content area.
+
+Use `SettingViewport.Mode="Contained"` when a table, collection, overlay, or
+reader owns scrolling. Use `Mode="Document"` for a top-aligned document that may
+need one vertical fallback scrollbar. Document mode disables horizontal
+scrolling and stretches content to the available width. Do not wrap contained
+tables or collections in another enabled outer `ScrollViewer`.
+
+The viewport owns the common screen inset. Shared cards use flexible width and
+only vertical section spacing; screen-local outer margins and primary-column
+`MaxWidth` caps are not part of the contract. Fixed sizes remain valid for
+semantic visuals such as covers, icons, toggles, progress tracks, and the
+standalone MangaReader surface.
 
 ## Review gate
 

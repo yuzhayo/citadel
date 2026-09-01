@@ -4,13 +4,9 @@
              xmlns:setting="clr-namespace:Citadel.Setting.Components;assembly=Citadel.Setting"
              Background="{DynamicResource Bg}"
              Foreground="{DynamicResource Fg}">
-    <ScrollViewer Margin="0,16,0,0"
-                  VerticalScrollBarVisibility="Auto"
-                  HorizontalScrollBarVisibility="Disabled">
-        <StackPanel MaxWidth="920"
-                    HorizontalAlignment="Left">
-            <Border Margin="0"
-                    Padding="16"
+    <setting:SettingViewport Mode="Document">
+        <StackPanel>
+            <Border
                     Style="{DynamicResource SettingCardStyle}">
                 <Grid>
                     <Grid.ColumnDefinitions>
@@ -91,8 +87,7 @@
                 </Grid>
             </Border>
 
-            <Border Margin="0,12,0,0"
-                    Padding="16"
+            <Border
                     Style="{DynamicResource SettingCardStyle}">
                 <Grid>
                     <Grid.ColumnDefinitions>
@@ -123,5 +118,5 @@
                 </Grid>
             </Border>
         </StackPanel>
-    </ScrollViewer>
+    </setting:SettingViewport>
 </UserControl>

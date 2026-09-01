@@ -65,6 +65,8 @@
                             x:Name="PART_SelectedContentHost"
                             Grid.Row="1"
                             ContentSource="SelectedContent"
+                            HorizontalAlignment="Stretch"
+                            VerticalAlignment="Stretch"
                             SnapsToDevicePixels="{TemplateBinding SnapsToDevicePixels}" />
                     </Grid>
                 </ControlTemplate>

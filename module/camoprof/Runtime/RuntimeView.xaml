@@ -6,9 +6,8 @@
              Foreground="{DynamicResource Fg}"
              UseLayoutRounding="True"
              SnapsToDevicePixels="True">
-    <ScrollViewer VerticalScrollBarVisibility="Auto"
-                  HorizontalScrollBarVisibility="Disabled">
-        <StackPanel Margin="4,14,4,4">
+    <setting:SettingViewport Mode="Document">
+        <StackPanel>
             <Grid>
                 <StackPanel>
                     <TextBlock Text="Runtime environment"
@@ -82,5 +81,5 @@
                        TextWrapping="Wrap"
                        Text="Status is checked when this tab opens. Setup is idempotent." />
         </StackPanel>
-    </ScrollViewer>
+    </setting:SettingViewport>
 </UserControl>

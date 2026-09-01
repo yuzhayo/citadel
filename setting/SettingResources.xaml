@@ -9,7 +9,8 @@
          by Gallery also own an editable <Name>.presets.json file. -->
     <Thickness x:Key="SettingControlPadding">10,6</Thickness>
     <Thickness x:Key="SettingPickerPadding">10,6,32,6</Thickness>
-    <Thickness x:Key="SettingRowMargin">0,0,0,8</Thickness>
+    <Thickness x:Key="SettingViewportInset">5</Thickness>
+    <Thickness x:Key="SettingSectionGap">0,0,0,8</Thickness>
     <Thickness x:Key="SettingCardPadding">16,14</Thickness>
     <CornerRadius x:Key="SettingCardRadius">10</CornerRadius>
     <sys:Double x:Key="SettingSectionFontSize">11.5</sys:Double>
@@ -83,6 +84,8 @@
     <Style x:Key="SettingScrollViewerStyle" TargetType="{x:Type ScrollViewer}">
         <Setter Property="Background" Value="{DynamicResource TransparentBrush}" />
         <Setter Property="Focusable" Value="False" />
+        <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+        <Setter Property="VerticalContentAlignment" Value="Stretch" />
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="{x:Type ScrollViewer}">
@@ -96,6 +99,8 @@
                             CanContentScroll="{TemplateBinding CanContentScroll}"
                             Content="{TemplateBinding Content}"
                             ContentTemplate="{TemplateBinding ContentTemplate}"
+                            HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
+                            VerticalAlignment="{TemplateBinding VerticalContentAlignment}"
                             Margin="{TemplateBinding Padding}"
                             SnapsToDevicePixels="{TemplateBinding SnapsToDevicePixels}" />
                         <ScrollBar
@@ -291,7 +296,7 @@
     <Style x:Key="SettingSectionStyle" TargetType="{x:Type TextBlock}">
         <Setter Property="FontSize" Value="{DynamicResource SettingSectionFontSize}" />
         <Setter Property="Foreground" Value="{DynamicResource Accent}" />
-        <Setter Property="Margin" Value="{DynamicResource SettingRowMargin}" />
+        <Setter Property="Margin" Value="{DynamicResource SettingSectionGap}" />
     </Style>
 
     <Style x:Key="SettingBodyStyle" TargetType="{x:Type TextBlock}">
@@ -306,7 +311,8 @@
         <Setter Property="BorderThickness" Value="1" />
         <Setter Property="CornerRadius" Value="{DynamicResource SettingCardRadius}" />
         <Setter Property="Padding" Value="{DynamicResource SettingCardPadding}" />
-        <Setter Property="Margin" Value="{DynamicResource SettingRowMargin}" />
+        <Setter Property="Margin" Value="{DynamicResource SettingSectionGap}" />
+        <Setter Property="HorizontalAlignment" Value="Stretch" />
     </Style>
 
 </ResourceDictionary>

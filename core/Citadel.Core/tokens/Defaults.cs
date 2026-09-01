@@ -20,7 +20,7 @@ public static class Defaults
             ["FullMin"] = TokenValue.OfNumber(50),
             ["FullMax"] = TokenValue.OfNumber(320),
             ["WindowW"] = TokenValue.OfNumber(1180),
-            ["WindowH"] = TokenValue.OfNumber(720),
+            ["WindowH"] = TokenValue.OfNumber(900),
             ["WindowMinW"] = TokenValue.OfNumber(900),
             ["WindowMinH"] = TokenValue.OfNumber(560),
 

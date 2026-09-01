@@ -11,13 +11,17 @@
                              SelectedIndex="0"
                              SelectionChanged="WorkspaceTabs_SelectionChanged">
             <TabItem x:Name="LauncherPanel" Header="Launcher">
-                <ContentControl x:Name="LauncherHost" />
+                <ContentControl x:Name="LauncherHost"
+                                HorizontalContentAlignment="Stretch"
+                                VerticalContentAlignment="Stretch" />
             </TabItem>
             <TabItem x:Name="EditorPanel" Header="Editor">
-                <Grid />
+                <setting:SettingViewport Mode="Contained" />
             </TabItem>
             <TabItem x:Name="RuntimePanel" Header="Runtime">
-                <ContentControl x:Name="RuntimeHost" />
+                <ContentControl x:Name="RuntimeHost"
+                                HorizontalContentAlignment="Stretch"
+                                VerticalContentAlignment="Stretch" />
             </TabItem>
         </setting:SettingTabs>
     </Grid>

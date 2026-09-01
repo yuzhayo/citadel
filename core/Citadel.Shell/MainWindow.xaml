@@ -7,7 +7,7 @@
     Icon="Assets/Citadel.ico"
     Background="{DynamicResource Bg}"
     Foreground="{DynamicResource Fg}"
-    WindowStartupLocation="CenterScreen">
+    WindowStartupLocation="Manual">
 
     <!--
       No size literals: Width/Height take their initial values from tokens;
@@ -129,7 +129,9 @@
                     <ContentControl
                         x:Name="Host"
                         Grid.Row="1"
-                        Background="{DynamicResource Bg}" />
+                        Background="{DynamicResource Bg}"
+                        HorizontalContentAlignment="Stretch"
+                        VerticalContentAlignment="Stretch" />
                 </Grid>
             </Border>
         </Grid>

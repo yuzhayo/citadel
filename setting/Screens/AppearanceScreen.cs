@@ -228,8 +228,8 @@ public sealed class AppearanceScreen : SettingScreen
         }
 
         var windowNote = Body(
-            "Window minimums update live. WindowW and WindowH are initial sizes and apply on next launch, " +
-            "so editing another token never snaps a manually resized window back.");
+            "Window minimums update live. WindowW and WindowH are preferred next-launch sizes, " +
+            "clamped to the active monitor work area; later edits never snap a manually resized window back.");
         windowNote.Margin = new Thickness(0, 8, 0, 8);
         panel.Children.Add(windowNote);
 
@@ -590,9 +590,9 @@ public sealed class AppearanceScreen : SettingScreen
 
     private string WindowHint(string token) => token switch
     {
-        "WindowW" => $"min {_tokens.Number("WindowMinW"):0.##} · next launch",
+        "WindowW" => $"min {_tokens.Number("WindowMinW"):0.##} · preferred next launch",
         "WindowMinW" => $"max {_tokens.Number("WindowW"):0.##} · live minimum",
-        "WindowH" => $"min {_tokens.Number("WindowMinH"):0.##} · next launch",
+        "WindowH" => $"min {_tokens.Number("WindowMinH"):0.##} · preferred next launch",
         "WindowMinH" => $"max {_tokens.Number("WindowH"):0.##} · live minimum",
         _ => string.Empty,
     };

@@ -1,13 +1,15 @@
 <UserControl x:Class="Module.Blank.BlankView"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:setting="clr-namespace:Citadel.Setting.Components;assembly=Citadel.Setting">
   <!--
     One label, named so layout.json has something to grab. Colours come from the
     shell's theme resources: a screen declares nothing about its own palette.
   -->
-  <TextBlock x:Name="Message"
-             Text="Blank screen. Copy module/blank to make a new one."
-             Foreground="{DynamicResource Fg}"
-             FontSize="13"
-             Margin="0,4,0,0" />
+  <setting:SettingViewport Mode="Contained">
+    <TextBlock x:Name="Message"
+               Text="Blank screen. Copy module/blank to make a new one."
+               Foreground="{DynamicResource Fg}"
+               FontSize="13" />
+  </setting:SettingViewport>
 </UserControl>

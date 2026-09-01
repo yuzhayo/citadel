@@ -1,5 +1,7 @@
+using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Media;
 using Citadel.Core;
 using Citadel.Core.Crl;
 using Citadel.Core.Modules;
@@ -8,6 +10,7 @@ using Citadel.Core.Tokens;
 using Citadel.Ui.Animations;
 using Citadel.Ui.Controls;
 using Citadel.Ui.Theme;
+using WpfSize = System.Windows.Size;
 
 namespace Citadel.Shell;
 
@@ -25,6 +28,7 @@ public partial class MainWindow : Window
     private readonly ModuleGate _gate;
     private readonly Lifetime _lifetime;
     private readonly AnimationManager _animations;
+    private Rect? _startupWorkArea;
 
     private readonly Dictionary<string, BuiltInRoute> _builtInRoutes;
 
@@ -89,14 +93,22 @@ public partial class MainWindow : Window
 
     internal FrameworkElement ContentCardElement => ContentCard;
 
+    internal ContentControl ContentHostElement => Host;
+
     internal TextBlock ContentHeaderElement => ContentHeader;
 
     internal ContentControl ContentHeaderActionElement => ContentHeaderAction;
 
     private void ApplyWindowTokens()
     {
-        MinWidth = _tokens.Number("WindowMinW");
-        MinHeight = _tokens.Number("WindowMinH");
+        var requestedMinWidth = _tokens.Number("WindowMinW");
+        var requestedMinHeight = _tokens.Number("WindowMinH");
+        MinWidth = _startupWorkArea is { } workArea
+            ? Math.Min(requestedMinWidth, workArea.Width)
+            : requestedMinWidth;
+        MinHeight = _startupWorkArea is { } area
+            ? Math.Min(requestedMinHeight, area.Height)
+            : requestedMinHeight;
 
         NativeWindowChrome.Apply(this, _tokens.Color("BgRail"), _tokens.Color("Fg"));
 
@@ -112,8 +124,72 @@ public partial class MainWindow : Window
     protected override void OnSourceInitialized(EventArgs e)
     {
         base.OnSourceInitialized(e);
+        ApplyStartupBounds();
         NativeWindowChrome.Apply(this, _tokens.Color("BgRail"), _tokens.Color("Fg"));
     }
+
+    private void ApplyStartupBounds()
+    {
+        var cursor = System.Windows.Forms.Cursor.Position;
+        var screen = System.Windows.Forms.Screen.FromPoint(cursor);
+        var fallbackDpi = VisualTreeHelper.GetDpi(this);
+        var (dpiX, dpiY) = MonitorDpi(cursor.X, cursor.Y, fallbackDpi.PixelsPerInchX, fallbackDpi.PixelsPerInchY);
+        var pixels = screen.WorkingArea;
+        var workArea = WindowBoundsPolicy.PixelsToDips(
+            new Rect(pixels.Left, pixels.Top, pixels.Width, pixels.Height),
+            dpiX,
+            dpiY);
+        var bounds = WindowBoundsPolicy.Calculate(
+            new WpfSize(_tokens.Number("WindowW"), _tokens.Number("WindowH")),
+            new WpfSize(_tokens.Number("WindowMinW"), _tokens.Number("WindowMinH")),
+            workArea);
+
+        _startupWorkArea = workArea;
+        MinWidth = Math.Min(_tokens.Number("WindowMinW"), workArea.Width);
+        MinHeight = Math.Min(_tokens.Number("WindowMinH"), workArea.Height);
+        Left = bounds.Left;
+        Top = bounds.Top;
+        Width = bounds.Width;
+        Height = bounds.Height;
+    }
+
+    private static (double X, double Y) MonitorDpi(
+        int x,
+        int y,
+        double fallbackX,
+        double fallbackY)
+    {
+        var monitor = MonitorFromPoint(new NativePoint(x, y), MonitorDefaultToNearest);
+        if (monitor != IntPtr.Zero
+            && GetDpiForMonitor(monitor, MonitorDpiType.Effective, out var dpiX, out var dpiY) == 0
+            && dpiX > 0
+            && dpiY > 0)
+        {
+            return (dpiX, dpiY);
+        }
+
+        return (fallbackX, fallbackY);
+    }
+
+    private const uint MonitorDefaultToNearest = 2;
+
+    [StructLayout(LayoutKind.Sequential)]
+    private readonly record struct NativePoint(int X, int Y);
+
+    private enum MonitorDpiType
+    {
+        Effective = 0,
+    }
+
+    [DllImport("user32.dll")]
+    private static extern IntPtr MonitorFromPoint(NativePoint point, uint flags);
+
+    [DllImport("shcore.dll")]
+    private static extern int GetDpiForMonitor(
+        IntPtr monitor,
+        MonitorDpiType dpiType,
+        out uint dpiX,
+        out uint dpiY);
 
     private void WirePowerSaving()
     {

@@ -49,6 +49,8 @@
             <ContentControl
                 x:Name="PopupHost"
                 Grid.Row="1"
+                HorizontalContentAlignment="Stretch"
+                VerticalContentAlignment="Stretch"
                 AutomationProperties.AutomationId="SettingsWindowHost" />
         </Grid>
     </Border>

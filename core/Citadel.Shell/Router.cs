@@ -266,7 +266,11 @@ public sealed class Router : IDisposable
 
     private ContentPresenter Attach(FrameworkElement view)
     {
-        var layer = new ContentPresenter();
+        var layer = new ContentPresenter
+        {
+            HorizontalAlignment = System.Windows.HorizontalAlignment.Stretch,
+            VerticalAlignment = System.Windows.VerticalAlignment.Stretch,
+        };
         try
         {
             layer.Content = view;
