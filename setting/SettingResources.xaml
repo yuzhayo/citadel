@@ -4,8 +4,9 @@
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:sys="clr-namespace:System;assembly=System.Runtime">
 
-    <!-- Shared screen resources. Each reusable control owns its template in
-         Components/<Name>.xaml beside <Name>.presets.json. -->
+    <!-- Shared screen resources. Every reusable control owns its presentation
+         and behaviour in Components/<Name>.xaml(.cs). Only primitives exposed
+         by Gallery also own an editable <Name>.presets.json file. -->
     <Thickness x:Key="SettingControlPadding">10,6</Thickness>
     <Thickness x:Key="SettingPickerPadding">10,6,32,6</Thickness>
     <Thickness x:Key="SettingRowMargin">0,0,0,8</Thickness>

@@ -5,32 +5,49 @@
     xmlns:local="clr-namespace:Citadel.Setting.Components"
     FontSize="{DynamicResource SettingBodyFontSize}"
     Foreground="{DynamicResource Fg}"
-    IsThreeState="False">
+    IsThreeState="False"
+    VerticalContentAlignment="Center">
     <ToggleButton.Template>
         <ControlTemplate TargetType="{x:Type local:SettingToggle}">
-            <StackPanel Orientation="Horizontal">
-                <Border
-                    x:Name="Track"
-                    Width="34"
-                    Height="18"
-                    Background="{DynamicResource Hover}"
-                    CornerRadius="9">
-                    <Ellipse
-                        x:Name="Knob"
-                        Width="12"
-                        Height="12"
-                        Margin="3,0,0,0"
-                        Fill="{DynamicResource Dim}"
-                        HorizontalAlignment="Left" />
-                </Border>
-                <ContentPresenter Margin="8,0,0,0" VerticalAlignment="Center" />
-            </StackPanel>
+            <Border
+                x:Name="FocusSurface"
+                BorderBrush="{DynamicResource TransparentBrush}"
+                BorderThickness="1"
+                CornerRadius="{DynamicResource SidebarItemCornerRadius}"
+                Padding="2">
+                <StackPanel Orientation="Horizontal">
+                    <Border
+                        x:Name="Track"
+                        Width="34"
+                        Height="18"
+                        Background="{DynamicResource Hover}"
+                        CornerRadius="9">
+                        <Ellipse
+                            x:Name="Knob"
+                            Width="12"
+                            Height="12"
+                            Margin="3,0,0,0"
+                            Fill="{DynamicResource Dim}"
+                            HorizontalAlignment="Left" />
+                    </Border>
+                    <ContentPresenter Margin="8,0,0,0" VerticalAlignment="Center" />
+                </StackPanel>
+            </Border>
             <ControlTemplate.Triggers>
                 <Trigger Property="IsChecked" Value="True">
                     <Setter TargetName="Track" Property="Background" Value="{DynamicResource Selected}" />
                     <Setter TargetName="Knob" Property="Fill" Value="{DynamicResource Accent}" />
                     <Setter TargetName="Knob" Property="HorizontalAlignment" Value="Right" />
                     <Setter TargetName="Knob" Property="Margin" Value="0,0,3,0" />
+                </Trigger>
+                <Trigger Property="IsMouseOver" Value="True">
+                    <Setter TargetName="Track" Property="Background" Value="{DynamicResource Selected}" />
+                </Trigger>
+                <Trigger Property="IsKeyboardFocused" Value="True">
+                    <Setter TargetName="FocusSurface" Property="BorderBrush" Value="{DynamicResource Accent}" />
+                </Trigger>
+                <Trigger Property="IsEnabled" Value="False">
+                    <Setter Property="Opacity" Value="{DynamicResource DisabledOpacity}" />
                 </Trigger>
             </ControlTemplate.Triggers>
         </ControlTemplate>

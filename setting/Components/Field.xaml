@@ -5,10 +5,13 @@
     xmlns:local="clr-namespace:Citadel.Setting.Components"
     Background="{DynamicResource Bg}"
     FontSize="{DynamicResource SettingBodyFontSize}"
-    Foreground="{DynamicResource Fg}">
+    Foreground="{DynamicResource Fg}"
+    HorizontalContentAlignment="Left"
+    VerticalContentAlignment="Center">
     <Control.Template>
         <ControlTemplate TargetType="{x:Type local:SettingField}">
             <Border
+                x:Name="Surface"
                 Background="{TemplateBinding Background}"
                 BorderBrush="{DynamicResource Border}"
                 BorderThickness="1"
@@ -18,21 +21,35 @@
                     <TextBlock
                         x:Name="PlaceholderText"
                         Foreground="{DynamicResource Dim}"
+                        HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
+                        IsHitTestVisible="False"
                         Text="{TemplateBinding Placeholder}"
+                        VerticalAlignment="{TemplateBinding VerticalContentAlignment}"
                         Visibility="Collapsed" />
                     <TextBox
                         Background="{DynamicResource TransparentBrush}"
                         BorderThickness="0"
                         CaretBrush="{DynamicResource Fg}"
                         Foreground="{TemplateBinding Foreground}"
+                        HorizontalContentAlignment="{TemplateBinding HorizontalContentAlignment}"
                         Padding="0"
-                        Text="{Binding Text, RelativeSource={RelativeSource TemplatedParent}, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                        Text="{Binding Text, RelativeSource={RelativeSource TemplatedParent}, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                        VerticalContentAlignment="{TemplateBinding VerticalContentAlignment}" />
                 </Grid>
             </Border>
             <ControlTemplate.Triggers>
                 <DataTrigger Binding="{Binding Text, RelativeSource={RelativeSource Self}}" Value="">
                     <Setter TargetName="PlaceholderText" Property="Visibility" Value="Visible" />
                 </DataTrigger>
+                <DataTrigger Binding="{Binding Text, RelativeSource={RelativeSource Self}}" Value="{x:Null}">
+                    <Setter TargetName="PlaceholderText" Property="Visibility" Value="Visible" />
+                </DataTrigger>
+                <Trigger Property="IsKeyboardFocusWithin" Value="True">
+                    <Setter TargetName="Surface" Property="BorderBrush" Value="{DynamicResource Accent}" />
+                </Trigger>
+                <Trigger Property="IsEnabled" Value="False">
+                    <Setter Property="Opacity" Value="{DynamicResource DisabledOpacity}" />
+                </Trigger>
             </ControlTemplate.Triggers>
         </ControlTemplate>
     </Control.Template>

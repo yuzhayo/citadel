@@ -26,7 +26,7 @@ public sealed partial class SettingField : Control
 
     public string Text
     {
-        get => (string)GetValue(TextProperty);
+        get => (string?)GetValue(TextProperty) ?? string.Empty;
         set => SetValue(TextProperty, value);
     }
 

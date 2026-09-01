@@ -1,6 +1,0 @@
-{
-  "control": "ActionCard",
-  "presets": [
-    { "id": "compact-actions", "label": "Compact actions", "values": {} }
-  ]
-}

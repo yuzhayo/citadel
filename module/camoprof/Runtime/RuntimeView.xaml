@@ -29,10 +29,7 @@
 
             <Border Margin="0,16,0,12"
                     Padding="16"
-                    Background="{DynamicResource Card}"
-                    BorderBrush="{DynamicResource Border}"
-                    BorderThickness="1"
-                    CornerRadius="{DynamicResource ShellCardRadius}">
+                    Style="{DynamicResource SettingCardStyle}">
                 <Grid>
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="110" />

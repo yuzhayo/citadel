@@ -1,6 +1,0 @@
-{
-  "control": "Toolbar",
-  "presets": [
-    { "id": "split-toolbar", "label": "Split toolbar", "values": {} }
-  ]
-}

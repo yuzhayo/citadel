@@ -9,11 +9,9 @@
                   HorizontalScrollBarVisibility="Disabled">
         <StackPanel MaxWidth="920"
                     HorizontalAlignment="Left">
-            <Border Background="{DynamicResource Card}"
-                    BorderBrush="{DynamicResource Border}"
-                    BorderThickness="1"
-                    CornerRadius="{DynamicResource ShellCardRadius}"
-                    Padding="16">
+            <Border Margin="0"
+                    Padding="16"
+                    Style="{DynamicResource SettingCardStyle}">
                 <Grid>
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="150" />
@@ -94,11 +92,8 @@
             </Border>
 
             <Border Margin="0,12,0,0"
-                    Background="{DynamicResource Card}"
-                    BorderBrush="{DynamicResource Border}"
-                    BorderThickness="1"
-                    CornerRadius="{DynamicResource ShellCardRadius}"
-                    Padding="16">
+                    Padding="16"
+                    Style="{DynamicResource SettingCardStyle}">
                 <Grid>
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="*" />

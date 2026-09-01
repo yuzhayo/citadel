@@ -118,17 +118,14 @@ public class PresetTests : IDisposable
         Assert.True(store.Contains("named"));
     }
 
-    /// <summary>Every shipped control has both sides of its preset pair.</summary>
+    /// <summary>Every Gallery-editable primitive has both sides of its preset pair.</summary>
     [Theory]
     [InlineData("Button")]
     [InlineData("Field")]
     [InlineData("Toggle")]
     [InlineData("Slider")]
     [InlineData("Table")]
-    [InlineData("Tabs")]
-    [InlineData("Toolbar")]
-    [InlineData("PasswordField")]
-    public void EveryShippedControl_HasItsPairedPresetsFile(string control)
+    public void EveryGalleryPrimitive_HasItsPairedPresetsFile(string control)
     {
         var path = PresetStore.PathFor(control);
 
@@ -140,6 +137,21 @@ public class PresetTests : IDisposable
 
         var components = System.IO.Path.Combine(
             RepositoryRoot(), "setting", "Components");
+        Assert.True(File.Exists(System.IO.Path.Combine(components, $"{control}.xaml")));
+        Assert.True(File.Exists(System.IO.Path.Combine(components, $"{control}.xaml.cs")));
+    }
+
+    [Theory]
+    [InlineData("ActionCard")]
+    [InlineData("PasswordField")]
+    [InlineData("TableActions")]
+    [InlineData("Tabs")]
+    public void FixedBehaviorComponent_DoesNotAdvertiseAnEditablePreset(string control)
+    {
+        var components = System.IO.Path.Combine(
+            RepositoryRoot(), "setting", "Components");
+
+        Assert.False(File.Exists(System.IO.Path.Combine(components, $"{control}.presets.json")));
         Assert.True(File.Exists(System.IO.Path.Combine(components, $"{control}.xaml")));
         Assert.True(File.Exists(System.IO.Path.Combine(components, $"{control}.xaml.cs")));
     }

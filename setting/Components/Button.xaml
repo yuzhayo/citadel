@@ -8,12 +8,15 @@
     FontSize="{DynamicResource SettingBodyFontSize}"
     Foreground="{DynamicResource Fg}"
     HorizontalContentAlignment="Center"
-    Padding="{DynamicResource SettingControlPadding}">
+    Padding="{DynamicResource SettingControlPadding}"
+    VerticalContentAlignment="Center">
     <Button.Template>
         <ControlTemplate TargetType="{x:Type local:SettingButton}">
             <Border
                 x:Name="Surface"
                 Background="{TemplateBinding Background}"
+                BorderBrush="{DynamicResource TransparentBrush}"
+                BorderThickness="1"
                 CornerRadius="{DynamicResource SidebarItemCornerRadius}"
                 Padding="{TemplateBinding Padding}">
                 <ContentPresenter
@@ -23,6 +26,12 @@
             <ControlTemplate.Triggers>
                 <Trigger Property="IsMouseOver" Value="True">
                     <Setter TargetName="Surface" Property="Background" Value="{DynamicResource Selected}" />
+                </Trigger>
+                <Trigger Property="IsPressed" Value="True">
+                    <Setter TargetName="Surface" Property="Background" Value="{DynamicResource Card}" />
+                </Trigger>
+                <Trigger Property="IsKeyboardFocused" Value="True">
+                    <Setter TargetName="Surface" Property="BorderBrush" Value="{DynamicResource Accent}" />
                 </Trigger>
                 <Trigger Property="IsEnabled" Value="False">
                     <Setter Property="Opacity" Value="{DynamicResource DisabledOpacity}" />

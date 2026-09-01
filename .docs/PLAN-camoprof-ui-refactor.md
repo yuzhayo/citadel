@@ -29,7 +29,9 @@ The reusable controls are:
 - `SettingTable` — proportional declared columns, normal row/column lines,
   themed header/cell/selection states, virtualization, and internal scrolling.
   Its legacy string-column API remains available to Settings and Gallery.
-- `SettingToolbar` — two-sided left/right action layout.
+- `SettingActionCard` — compact flexible-content/right-action layout used by
+  Launcher and MangaReader.
+- `SettingTableActions` — one centered or two edge-balanced table actions.
 - `SettingButton`, `SettingToggle`, and `SettingPasswordField` — themed actions,
   check-mode switch, and password entry.
 - `SettingDialog` — shared modal chrome and confirmation behavior.
@@ -112,7 +114,8 @@ module/camoprof/Launcher/AccountSetupDialog.xaml(.cs)
 setting/Components/
 ├── Tabs.xaml(.cs)
 ├── Table.xaml(.cs)
-├── Toolbar.xaml(.cs)
+├── ActionCard.xaml(.cs)
+├── TableActions.xaml(.cs)
 ├── Dialog.xaml(.cs)
 └── PasswordField.xaml(.cs)
 
@@ -171,8 +174,9 @@ safe; automated and live visual gates pass; and LO approves before commit.
 - Setting, MangaReader, CamoProf, Shell, and full solution build with 0 warnings
   and 0 errors.
 - Pyhost protocol: 23/23 tests pass with resource warnings treated as errors.
-- Citadel suite: 306/306 tests pass (108 Core + 14 UI + 184 UIA).
+- Citadel suite: 309/309 tests pass (108 Core + 14 UI + 187 UIA).
 - Live visual pass: two separate cards, readable dark headers, proportional
-  lined table, and shared rounded tabs with a thin normal-state outline.
+  lined table, shared rounded tabs with a thin normal-state outline, and
+  responsive layout at normal, 900x600 minimum, and maximized window sizes.
 - Delete regression: confirmation opened and Cancel preserved `yuzz.cezh02`;
   the shell remained alive.

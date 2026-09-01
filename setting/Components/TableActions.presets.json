@@ -1,6 +1,0 @@
-{
-  "control": "TableActions",
-  "presets": [
-    { "id": "balanced-pair", "label": "Balanced pair", "values": {} }
-  ]
-}

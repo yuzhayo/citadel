@@ -6,14 +6,18 @@
     Background="{DynamicResource Hover}"
     Foreground="{DynamicResource Accent}"
     Height="20"
-    MinWidth="140">
+    MinWidth="140"
+    VerticalContentAlignment="Center">
     <Slider.Template>
         <ControlTemplate TargetType="{x:Type local:SettingSlider}">
             <Grid Background="{DynamicResource TransparentBrush}">
                 <Border
+                    x:Name="TrackSurface"
                     Height="4"
                     VerticalAlignment="Center"
                     Background="{TemplateBinding Background}"
+                    BorderBrush="{DynamicResource TransparentBrush}"
+                    BorderThickness="1"
                     CornerRadius="2" />
                 <Track x:Name="PART_Track">
                     <Track.Thumb>
@@ -27,6 +31,14 @@
                     </Track.Thumb>
                 </Track>
             </Grid>
+            <ControlTemplate.Triggers>
+                <Trigger Property="IsKeyboardFocused" Value="True">
+                    <Setter TargetName="TrackSurface" Property="BorderBrush" Value="{DynamicResource Accent}" />
+                </Trigger>
+                <Trigger Property="IsEnabled" Value="False">
+                    <Setter Property="Opacity" Value="{DynamicResource DisabledOpacity}" />
+                </Trigger>
+            </ControlTemplate.Triggers>
         </ControlTemplate>
     </Slider.Template>
 </Slider>
