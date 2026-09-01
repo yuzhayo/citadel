@@ -148,12 +148,28 @@ work; it does not change Citadel Core or the shared module contract.
 - [x] Keep the content point beneath the pointer anchored while zooming, clamp
       the zoom range, coalesce rapid wheel input, and avoid re-decoding chapter
       images for each zoom step. Clamp it to `50%–300%` in `10%` steps and use
-      `Ctrl+0` to reset to `100%`; future fit modes remain separately deferred.
-- [ ] Add the temporary three-zone active-page overlay:
-      Previous / Menu / Next; hide visuals while retaining hit areas.
-- [ ] Define Previous and Next behavior for each reading mode.
-- [ ] Define the Suwayomi-inspired menu controls one at a time.
-- [ ] Define fullscreen chrome, menu pinning, fit modes, direction, and auto-scroll.
+      `Ctrl+0` to reset to `100%`; fit modes and reading-direction modes are not
+      part of the Reader control scope.
+
+## Immersive Reader controls — locked plan, not implemented
+
+Canonical contract: `.docs/PLAN-mangareader-reader-controls.md`. Reading
+direction and fit modes are explicitly outside this scope.
+
+- [ ] Refactor `ReaderWindow` once into the stable parent/children feature
+      contract, explicit catalog, central state, input router, and named layer
+      hosts without changing the rolling chapter engine.
+- [ ] Add the invisible three-zone Overlay: Previous/Menu/Next, with
+      Previous/Next scrolling `90%` of the viewport and Menu toggling the
+      Drawer.
+- [ ] Add the proportional left Drawer and its chapter navigation, fullscreen,
+      auto-scroll, Pin, zoom, Dim Pages, and global Reset contributions.
+- [ ] Add themed auto-fading Reader chrome, current-monitor true fullscreen,
+      toast, and the locked fullscreen → Drawer → Reader `Esc` priority.
+- [ ] Persist only Dim and auto-scroll speed with validated atomic fallback;
+      keep zoom, fullscreen, Drawer, Pin, and running state session-only.
+- [ ] Complete pure behavior, shared-component, regression, and live WPF gates
+      before marking this scope implemented.
 
 ## Downloader reference — discovery note, not approved for implementation
 
