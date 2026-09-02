@@ -1,5 +1,7 @@
 using Module.Mangareader.ReaderCore;
 using Module.Mangareader.ShareLogic;
+using System.Windows;
+using System.Windows.Controls;
 
 namespace Module.Mangareader;
 
@@ -12,6 +14,51 @@ namespace Module.Mangareader;
 /// </summary>
 public sealed class ChapterLoadingFeatureTests
 {
+    [Fact]
+    public void DefaultCatalog_AttachAndHostStart_RegistersAndLoadsThroughContracts()
+    {
+        WpfTest.Run(() =>
+        {
+            var title = ReaderTestContext.Title(2);
+            var state = new ReaderSessionState();
+            var commands = new ReaderCommandHub();
+            var activity = new ReaderActivityHub();
+            var viewport = new TestViewport();
+            var status = new TestStatusHost();
+            var loader = ImmediateLoader();
+            var navigation = new ReaderChapterNavigationHub(title, title.Chapters[0]);
+            var context = new ReaderFeatureContext(
+                state,
+                commands,
+                viewport,
+                navigation,
+                navigation,
+                new ReaderContentContext(title, title.Chapters[0], loader, status),
+                new TestInputEvents(),
+                activity,
+                new ReaderNotificationHub(),
+                CancellationToken.None);
+            var hosts = Enum.GetValues<ReaderLayer>()
+                .ToDictionary(layer => layer, _ => new ContentControl());
+            var catalog = ReaderDefaultFeatureCatalog.Create(
+                new Window(),
+                state,
+                commands,
+                activity);
+            using var host = new ReaderFeatureHost(context, hosts, catalog);
+
+            host.StartAsync().GetAwaiter().GetResult();
+            var callsAfterFirstStart = loader.Calls.Count;
+            host.StartAsync().GetAwaiter().GetResult();
+
+            Assert.Equal([0, 1], navigation.Surfaces.Select(surface => surface.ChapterIndex));
+            Assert.Equal(2, callsAfterFirstStart);
+            Assert.Equal(callsAfterFirstStart, loader.Calls.Count);
+            Assert.False(state.IsLoading);
+            Assert.False(status.IsVisible);
+        });
+    }
+
     [Fact]
     public void StartLoad_PublishesIntoStableCollectionAndRemovesBlocker()
     {

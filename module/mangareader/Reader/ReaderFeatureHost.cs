@@ -10,6 +10,7 @@ public sealed class ReaderFeatureHost : IDisposable
 {
     private readonly IReadOnlyDictionary<ReaderLayer, ContentControl> _hosts;
     private readonly List<IReaderFeature> _features = [];
+    private Task? _startTask;
     private bool _disposed;
 
     public ReaderFeatureHost(
@@ -80,6 +81,19 @@ public sealed class ReaderFeatureHost : IDisposable
                 throw new InvalidOperationException($"Reader layer {contribution.Layer} is already occupied.");
             host.Content = contribution.View;
         }
+    }
+
+    public Task StartAsync()
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        return _startTask ??= StartFeaturesAsync();
+    }
+
+    private async Task StartFeaturesAsync()
+    {
+        var startableFeatures = _features.OfType<IReaderStartableFeature>().ToArray();
+        foreach (var feature in startableFeatures)
+            await feature.StartAsync();
     }
 
     public void Dispose()

@@ -63,6 +63,7 @@ public partial class ReaderWindow : Window
             CloseAfterErrorButton,
             _notifications);
         _navigation = new ReaderChapterNavigationHub(title, chapter);
+        var content = new ReaderContentContext(title, chapter, chapterLoader, status);
 
         _input = new ReaderInputRouter(this, _viewport, _state, _commands, _activity);
         var context = new ReaderFeatureContext(
@@ -70,6 +71,8 @@ public partial class ReaderWindow : Window
             _commands,
             _viewport,
             _navigation,
+            _navigation,
+            content,
             _input,
             _activity,
             _notifications,
@@ -90,13 +93,9 @@ public partial class ReaderWindow : Window
                 this,
                 _state,
                 _commands,
-                _activity,
-                title,
-                chapter,
-                chapterLoader,
-                status));
+                _activity));
 
-        // The ChapterLoading feature registers into the hub during attach, so the
+        // The navigation provider registers during feature attachment, so the
         // live surface collection only exists after the feature host is built.
         ChapterList.ItemsSource = _navigation.Surfaces;
 
@@ -124,7 +123,7 @@ public partial class ReaderWindow : Window
     {
         if (_loadStarted || _closed) return;
         _loadStarted = true;
-        await _navigation.StartLoadingAsync();
+        await _featureHost.StartAsync();
         if (!_closed && !_state.HasError) ReaderScroller.Focus();
         if (!string.IsNullOrWhiteSpace(_preferences.LastWarning))
             _notifications.ShowToast(_preferences.LastWarning!, TimeSpan.FromSeconds(4));

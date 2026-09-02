@@ -6,12 +6,15 @@ namespace Module.Mangareader.ReaderCore;
 /// <summary>
 /// Late-bound chapter-navigation facade owned by the composition root.
 /// ReaderWindow creates it seeded only with chapter metadata; the ChapterLoading
-/// feature registers the live implementation during attach; every other feature
+/// feature registers the live implementation through the registry contract during
+/// attach; every other feature
 /// consumes navigation through it. Seeding the static metadata keeps consumers
 /// independent of catalog attach order, while surfaces and jumps forward to the
 /// registered implementation once it exists.
 /// </summary>
-public sealed class ReaderChapterNavigationHub : IReaderChapterNavigation
+public sealed class ReaderChapterNavigationHub :
+    IReaderChapterNavigation,
+    IReaderChapterNavigationRegistry
 {
     private static readonly ReadOnlyObservableCollection<ChapterSurfaceModel> NoSurfaces =
         new(new ObservableCollection<ChapterSurfaceModel>());
@@ -19,7 +22,6 @@ public sealed class ReaderChapterNavigationHub : IReaderChapterNavigation
     private readonly MangaTitle _title;
     private readonly int _initialChapterIndex;
     private IReaderChapterNavigation? _implementation;
-    private Func<Task>? _startLoading;
 
     public ReaderChapterNavigationHub(MangaTitle title, ChapterInfo initialChapter)
     {
@@ -45,32 +47,26 @@ public sealed class ReaderChapterNavigationHub : IReaderChapterNavigation
     public bool IsAtAbsoluteBeginning => _implementation?.IsAtAbsoluteBeginning ?? false;
     public bool IsAtAbsoluteEnd => _implementation?.IsAtAbsoluteEnd ?? false;
 
-    public void RegisterImplementation(
-        IReaderChapterNavigation implementation,
-        Func<Task>? startLoading = null)
+    public void Register(IReaderChapterNavigation implementation)
     {
         ArgumentNullException.ThrowIfNull(implementation);
         if (_implementation is not null)
             throw new InvalidOperationException("Reader chapter navigation is already registered.");
         _implementation = implementation;
-        _startLoading = startLoading;
         _implementation.ActiveChapterChanged += OnImplementationActiveChapterChanged;
     }
 
-    public void UnregisterImplementation()
+    public void Unregister(IReaderChapterNavigation implementation)
     {
         if (_implementation is null) return;
+        if (!ReferenceEquals(_implementation, implementation))
+        {
+            throw new InvalidOperationException(
+                "Only the registered chapter navigation implementation can unregister itself.");
+        }
         _implementation.ActiveChapterChanged -= OnImplementationActiveChapterChanged;
         _implementation = null;
-        _startLoading = null;
     }
-
-    /// <summary>
-    /// Triggers the initial chapter load through the registered implementation.
-    /// Called by the composition root once the window is loaded and the viewport
-    /// has a usable width. A no-op before registration.
-    /// </summary>
-    public Task StartLoadingAsync() => _startLoading?.Invoke() ?? Task.CompletedTask;
 
     public Task NavigateToChapterAsync(int index) =>
         RequireImplementation().NavigateToChapterAsync(index);

@@ -114,6 +114,29 @@ public sealed class ReaderFeatureHostTests
     }
 
     [Fact]
+    public void DisposeDuringStart_DoesNotInvalidateTheLifecycleIteration()
+    {
+        WpfTest.Run(() =>
+        {
+            var completion = new TaskCompletionSource(
+                TaskCreationOptions.RunContinuationsAsynchronously);
+            var catalog = new ReaderFeatureCatalog()
+                .Add("Drawer", () => new TestDrawerFeature([]))
+                .Add("Startable", () => new TestStartableFeature(completion.Task));
+            var host = new ReaderFeatureHost(
+                ReaderTestContext.Create(),
+                new Dictionary<ReaderLayer, ContentControl>(),
+                catalog);
+
+            var start = host.StartAsync();
+            host.Dispose();
+            completion.SetResult();
+
+            start.GetAwaiter().GetResult();
+        });
+    }
+
+    [Fact]
     public void HostRejectsDuplicateDrawerContributionKeys()
     {
         WpfTest.Run(() =>
@@ -175,6 +198,14 @@ public sealed class ReaderFeatureHostTests
         public IReadOnlyList<ReaderDrawerContribution> DrawerContributions { get; } =
             [new OrderedContribution("early", 99)];
         public void Attach(ReaderFeatureContext context) { }
+        public void Dispose() { }
+    }
+
+    private sealed class TestStartableFeature(Task start) : IReaderFeature, IReaderStartableFeature
+    {
+        public string FeatureName => "Startable";
+        public void Attach(ReaderFeatureContext context) { }
+        public Task StartAsync() => start;
         public void Dispose() { }
     }
 }

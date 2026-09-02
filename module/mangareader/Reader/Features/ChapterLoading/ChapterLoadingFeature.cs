@@ -37,14 +37,15 @@ internal interface IChapterLoadingRuntime
 /// </summary>
 public sealed class ChapterLoadingFeature :
     IReaderFeature,
+    IReaderStartableFeature,
     IReaderChapterNavigation,
     IChapterLoadingRuntime
 {
-    private readonly MangaTitle _title;
-    private readonly ChapterInfo _initialChapter;
-    private readonly IReaderChapterLoader _loader;
-    private readonly IReaderStatusHost _status;
-    private readonly ReaderSessionState _state;
+    private MangaTitle? _title;
+    private ChapterInfo? _initialChapter;
+    private IReaderChapterLoader? _loader;
+    private IReaderStatusHost? _status;
+    private ReaderSessionState? _state;
 
     private readonly object _operationGate = new();
     private readonly CancellationTokenSource _lifetime = new();
@@ -52,36 +53,24 @@ public sealed class ChapterLoadingFeature :
     private int _activeAsyncOperationCount;
     private bool _shutdownCancellationCompleted;
     private bool _asyncResourcesDisposed;
+    private bool _registered;
     private volatile bool _disposed;
 
     private IReaderViewport? _viewport;
     private ReaderActivityHub? _activity;
-    private ReaderChapterNavigationHub? _hub;
+    private IReaderChapterNavigationRegistry? _registry;
     private ChapterCoordinator? _coordinator;
     private ChapterPreloader? _preloader;
     private ChapterNavigator? _navigator;
 
     /// <summary>
-    /// Catalog path: the chapter-loading specifics are captured here; the viewport,
-    /// activity hub, and navigation hub arrive through <see cref="Attach"/>.
+    /// Catalog path: all dependencies arrive through <see cref="Attach"/>.
     /// </summary>
-    public ChapterLoadingFeature(
-        MangaTitle title,
-        ChapterInfo initialChapter,
-        IReaderChapterLoader loader,
-        IReaderStatusHost status,
-        ReaderSessionState state)
-    {
-        _title = title ?? throw new ArgumentNullException(nameof(title));
-        _initialChapter = initialChapter ?? throw new ArgumentNullException(nameof(initialChapter));
-        _loader = loader ?? throw new ArgumentNullException(nameof(loader));
-        _status = status ?? throw new ArgumentNullException(nameof(status));
-        _state = state ?? throw new ArgumentNullException(nameof(state));
-    }
+    public ChapterLoadingFeature() { }
 
     /// <summary>
     /// Direct path used by tests and any host that already holds the viewport and
-    /// hubs: wires the collaborators immediately instead of deferring to Attach.
+    /// services: wires the collaborators immediately instead of deferring to Attach.
     /// </summary>
     internal ChapterLoadingFeature(
         MangaTitle title,
@@ -91,12 +80,12 @@ public sealed class ChapterLoadingFeature :
         ReaderSessionState state,
         ReaderActivityHub activity,
         IReaderChapterLoader loader,
-        ReaderChapterNavigationHub? hub = null)
-        : this(title, initialChapter, loader, status, state)
+        IReaderChapterNavigationRegistry? registry = null)
     {
+        Configure(new ReaderContentContext(title, initialChapter, loader, status), state);
         ArgumentNullException.ThrowIfNull(viewport);
         ArgumentNullException.ThrowIfNull(activity);
-        Wire(viewport, activity, hub);
+        Wire(viewport, activity, registry);
     }
 
     public string FeatureName => "ChapterLoading";
@@ -104,28 +93,47 @@ public sealed class ChapterLoadingFeature :
     public void Attach(ReaderFeatureContext context)
     {
         ArgumentNullException.ThrowIfNull(context);
-        Wire(context.Viewport, context.Activity, context.Chapters as ReaderChapterNavigationHub);
+        Configure(context.Content, context.SessionState);
+        Wire(context.Viewport, context.Activity, context.ChapterNavigationRegistry);
+    }
+
+    private void Configure(ReaderContentContext content, ReaderSessionState state)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        if (_title is not null)
+            throw new InvalidOperationException("ChapterLoading is already configured.");
+
+        ArgumentNullException.ThrowIfNull(content);
+        _title = content.Title;
+        _initialChapter = content.InitialChapter;
+        _loader = content.ChapterLoader;
+        _status = content.Status;
+        _state = state ?? throw new ArgumentNullException(nameof(state));
     }
 
     private void Wire(
         IReaderViewport viewport,
         ReaderActivityHub activity,
-        ReaderChapterNavigationHub? hub)
+        IReaderChapterNavigationRegistry? registry)
     {
         if (_coordinator is not null)
             throw new InvalidOperationException("ChapterLoading is already attached.");
 
         _viewport = viewport;
         _activity = activity;
-        _hub = hub;
+        _registry = registry;
 
-        _coordinator = new ChapterCoordinator(this, _initialChapter);
+        _coordinator = new ChapterCoordinator(this, InitialChapter);
         _preloader = new ChapterPreloader(this, _coordinator);
         _coordinator.Neighbors = _preloader;
         _navigator = new ChapterNavigator(this, _coordinator, _preloader);
         _coordinator.ActiveChapterChanged += OnCoordinatorActiveChapterChanged;
 
-        hub?.RegisterImplementation(this, StartLoadAsync);
+        if (registry is not null)
+        {
+            registry.Register(this);
+            _registered = true;
+        }
     }
 
     private ChapterCoordinator Coordinator =>
@@ -136,17 +144,19 @@ public sealed class ChapterLoadingFeature :
         _navigator ?? throw new InvalidOperationException("ChapterLoading is not attached.");
 
     /// <summary>Triggers the first chapter load; called by the host once the viewport has a width.</summary>
-    public Task StartLoadAsync() => Navigator.StartLoadAsync();
+    public Task StartAsync() => Navigator.StartLoadAsync();
+
+    internal Task StartLoadAsync() => StartAsync();
 
     // ---- IReaderChapterNavigation (delegated to the collaborators) ----
 
     public event EventHandler<OpenChapterRequestedEventArgs>? ActiveChapterChanged;
 
-    public IReadOnlyList<ChapterInfo> Chapters => _title.Chapters;
+    public IReadOnlyList<ChapterInfo> Chapters => Title.Chapters;
     public ReadOnlyObservableCollection<ChapterSurfaceModel> Surfaces => Coordinator.Surfaces;
     public int ActiveChapterIndex => Coordinator.ActiveChapterIndex;
     public ChapterInfo ActiveChapter => Coordinator.ActiveChapter;
-    public string MangaTitle => _title.Title;
+    public string MangaTitle => Title.Title;
     public bool CanNavigatePrevious => Coordinator.CanNavigatePrevious;
     public bool CanNavigateNext => Coordinator.CanNavigateNext;
     public bool IsAtAbsoluteBeginning => Coordinator.IsAtAbsoluteBeginning;
@@ -166,9 +176,9 @@ public sealed class ChapterLoadingFeature :
 
     // ---- IChapterLoadingRuntime ----
 
-    MangaTitle IChapterLoadingRuntime.Title => _title;
-    ReaderSessionState IChapterLoadingRuntime.State => _state;
-    IReaderStatusHost IChapterLoadingRuntime.Status => _status;
+    MangaTitle IChapterLoadingRuntime.Title => Title;
+    ReaderSessionState IChapterLoadingRuntime.State => State;
+    IReaderStatusHost IChapterLoadingRuntime.Status => Status;
     bool IChapterLoadingRuntime.IsDisposed => _disposed;
     CancellationToken IChapterLoadingRuntime.Lifetime => _lifetime.Token;
 
@@ -188,8 +198,8 @@ public sealed class ChapterLoadingFeature :
         await _loadGate.WaitAsync(cancellationToken);
         try
         {
-            return await _loader.LoadAsync(
-                _title.Chapters[chapterIndex],
+            return await Loader.LoadAsync(
+                Title.Chapters[chapterIndex],
                 request,
                 progress,
                 cancellationToken);
@@ -304,6 +314,21 @@ public sealed class ChapterLoadingFeature :
         }
         if (disposeResources) DisposeAsyncResources();
 
-        _hub?.UnregisterImplementation();
+        if (_registered && _registry is not null)
+        {
+            _registry.Unregister(this);
+            _registered = false;
+        }
     }
+
+    private MangaTitle Title =>
+        _title ?? throw new InvalidOperationException("ChapterLoading is not configured.");
+    private ChapterInfo InitialChapter =>
+        _initialChapter ?? throw new InvalidOperationException("ChapterLoading is not configured.");
+    private IReaderChapterLoader Loader =>
+        _loader ?? throw new InvalidOperationException("ChapterLoading is not configured.");
+    private IReaderStatusHost Status =>
+        _status ?? throw new InvalidOperationException("ChapterLoading is not configured.");
+    private ReaderSessionState State =>
+        _state ?? throw new InvalidOperationException("ChapterLoading is not configured.");
 }

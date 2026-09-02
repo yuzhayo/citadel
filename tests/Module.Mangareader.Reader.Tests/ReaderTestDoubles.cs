@@ -227,6 +227,24 @@ internal sealed class TestChapterNavigation : IReaderChapterNavigation
     public void NotifyZoomChanged() => ZoomNotifications++;
 }
 
+internal sealed class TestChapterNavigationRegistry : IReaderChapterNavigationRegistry
+{
+    public IReaderChapterNavigation? Implementation { get; private set; }
+
+    public void Register(IReaderChapterNavigation implementation)
+    {
+        ArgumentNullException.ThrowIfNull(implementation);
+        if (Implementation is not null)
+            throw new InvalidOperationException("A chapter navigation implementation is already registered.");
+        Implementation = implementation;
+    }
+
+    public void Unregister(IReaderChapterNavigation implementation)
+    {
+        if (ReferenceEquals(Implementation, implementation)) Implementation = null;
+    }
+}
+
 internal sealed class DelegateChapterLoader(
     Func<ChapterInfo, ChapterRenderRequest, CancellationToken, Task<LoadedChapter>> load)
     : IReaderChapterLoader
@@ -257,19 +275,55 @@ internal static class ReaderTestContext
         ReaderCommandHub? commands = null,
         TestViewport? viewport = null,
         IReaderChapterNavigation? chapters = null,
+        IReaderChapterNavigationRegistry? chapterNavigationRegistry = null,
+        ReaderContentContext? content = null,
         TestInputEvents? input = null,
         ReaderActivityHub? activity = null,
         ReaderNotificationHub? notifications = null,
         CancellationToken lifetime = default) =>
-        new(
+        CreateCore(
             state ?? new ReaderSessionState(),
             commands ?? new ReaderCommandHub(),
             viewport ?? new TestViewport(),
             chapters ?? new TestChapterNavigation(),
+            chapterNavigationRegistry ?? new TestChapterNavigationRegistry(),
+            content,
             input ?? new TestInputEvents(),
             activity ?? new ReaderActivityHub(),
             notifications ?? new ReaderNotificationHub(),
             lifetime);
+
+    private static ReaderFeatureContext CreateCore(
+        ReaderSessionState state,
+        ReaderCommandHub commands,
+        TestViewport viewport,
+        IReaderChapterNavigation chapters,
+        IReaderChapterNavigationRegistry chapterNavigationRegistry,
+        ReaderContentContext? content,
+        TestInputEvents input,
+        ReaderActivityHub activity,
+        ReaderNotificationHub notifications,
+        CancellationToken lifetime)
+    {
+        var defaultTitle = Title(1);
+        content ??= new ReaderContentContext(
+            defaultTitle,
+            defaultTitle.Chapters[0],
+            new DelegateChapterLoader((chapter, request, _) =>
+                Task.FromResult(DelegateChapterLoader.Chapter(chapter, request))),
+            new TestStatusHost());
+        return new ReaderFeatureContext(
+            state,
+            commands,
+            viewport,
+            chapters,
+            chapterNavigationRegistry,
+            content,
+            input,
+            activity,
+            notifications,
+            lifetime);
+    }
 
     public static MangaTitle Title(int count) =>
         new(

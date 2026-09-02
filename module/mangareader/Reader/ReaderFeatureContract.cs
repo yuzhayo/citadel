@@ -13,6 +13,11 @@ public interface IReaderFeature : IDisposable
     void Attach(ReaderFeatureContext context);
 }
 
+public interface IReaderStartableFeature
+{
+    Task StartAsync();
+}
+
 public interface IReaderVisualFeature
 {
     IReadOnlyList<ReaderVisualContribution> Visuals { get; }
@@ -189,6 +194,32 @@ public interface IReaderChapterNavigation
     void NotifyZoomChanged();
 }
 
+public interface IReaderChapterNavigationRegistry
+{
+    void Register(IReaderChapterNavigation implementation);
+    void Unregister(IReaderChapterNavigation implementation);
+}
+
+public sealed class ReaderContentContext
+{
+    public ReaderContentContext(
+        MangaTitle title,
+        ChapterInfo initialChapter,
+        IReaderChapterLoader chapterLoader,
+        IReaderStatusHost status)
+    {
+        Title = title ?? throw new ArgumentNullException(nameof(title));
+        InitialChapter = initialChapter ?? throw new ArgumentNullException(nameof(initialChapter));
+        ChapterLoader = chapterLoader ?? throw new ArgumentNullException(nameof(chapterLoader));
+        Status = status ?? throw new ArgumentNullException(nameof(status));
+    }
+
+    public MangaTitle Title { get; }
+    public ChapterInfo InitialChapter { get; }
+    public IReaderChapterLoader ChapterLoader { get; }
+    public IReaderStatusHost Status { get; }
+}
+
 public enum ReaderOverlayZone
 {
     Previous,
@@ -210,19 +241,24 @@ public interface IReaderInputEvents
 public sealed class ReaderFeatureContext
 {
     internal ReaderFeatureContext(
-        IReaderStateView state,
+        ReaderSessionState state,
         IReaderCommands commands,
         IReaderViewport viewport,
         IReaderChapterNavigation chapters,
+        IReaderChapterNavigationRegistry chapterNavigationRegistry,
+        ReaderContentContext content,
         IReaderInputEvents input,
         ReaderActivityHub activity,
         ReaderNotificationHub notifications,
         CancellationToken lifetime)
     {
+        SessionState = state;
         State = state;
         Commands = commands;
         Viewport = viewport;
         Chapters = chapters;
+        ChapterNavigationRegistry = chapterNavigationRegistry;
+        Content = content;
         Input = input;
         Activity = activity;
         Notifications = notifications;
@@ -230,9 +266,12 @@ public sealed class ReaderFeatureContext
     }
 
     public IReaderStateView State { get; }
+    internal ReaderSessionState SessionState { get; }
     public IReaderCommands Commands { get; }
     public IReaderViewport Viewport { get; }
     public IReaderChapterNavigation Chapters { get; }
+    public IReaderChapterNavigationRegistry ChapterNavigationRegistry { get; }
+    public ReaderContentContext Content { get; }
     public IReaderInputEvents Input { get; }
     public ReaderActivityHub Activity { get; }
     public ReaderNotificationHub Notifications { get; }

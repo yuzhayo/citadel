@@ -60,6 +60,8 @@
              Link="Reader\Features\Drawer\ReaderDrawerPolicy.cs" />
     <Compile Include="..\..\module\mangareader\Reader\ReaderFeatureCatalog.cs"
              Link="Reader\ReaderFeatureCatalog.cs" />
+    <Compile Include="..\..\module\mangareader\Reader\ReaderDefaultFeatureCatalog.cs"
+             Link="Reader\ReaderDefaultFeatureCatalog.cs" />
     <Compile Include="..\..\module\mangareader\Reader\ReaderFeatureContract.cs"
              Link="Reader\ReaderFeatureContract.cs" />
     <Compile Include="..\..\module\mangareader\Reader\ReaderFeatureHost.cs"
@@ -68,6 +70,12 @@
              Link="Reader\Features\Fullscreen\ReaderFullscreenGeometry.cs" />
     <Compile Include="..\..\module\mangareader\Reader\Features\Fullscreen\ReaderFullscreenController.cs"
              Link="Reader\Features\Fullscreen\ReaderFullscreenController.cs" />
+    <Page Include="..\..\module\mangareader\Reader\Features\Overlay\ReaderOverlay.xaml"
+          Link="Reader\Features\Overlay\ReaderOverlay.xaml" />
+    <Compile Include="..\..\module\mangareader\Reader\Features\Overlay\ReaderOverlay.xaml.cs"
+             Link="Reader\Features\Overlay\ReaderOverlay.xaml.cs">
+      <DependentUpon>ReaderOverlay.xaml</DependentUpon>
+    </Compile>
     <Compile Include="..\..\module\mangareader\Reader\ReaderInputPolicy.cs"
              Link="Reader\ReaderInputPolicy.cs" />
     <Compile Include="..\..\module\mangareader\Reader\ReaderCore\ReaderInputRouter.cs"
