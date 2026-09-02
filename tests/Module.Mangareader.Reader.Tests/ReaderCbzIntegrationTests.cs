@@ -3,6 +3,7 @@ using System.IO.Compression;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using Module.Mangareader.ShareLogic;
+using Module.Mangareader.ReaderCore;
 
 namespace Module.Mangareader;
 
@@ -17,7 +18,7 @@ public sealed class ReaderCbzIntegrationTests : IDisposable
     public ReaderCbzIntegrationTests() => Directory.CreateDirectory(_root);
 
     [Fact]
-    public void RealDisposableCbz_LoadsRollsAndJumpsThroughOneCoordinatorPath()
+    public void RealDisposableCbz_LoadsRollsAndJumpsThroughOneChapterLoadingPath()
     {
         WpfTest.Run(() =>
         {
@@ -27,7 +28,7 @@ public sealed class ReaderCbzIntegrationTests : IDisposable
             var viewport = new TestViewport { ViewportWidth = 700, ScrollableHeight = 5000 };
             var status = new TestStatusHost();
             var state = new ReaderSessionState();
-            using var coordinator = new ReaderChapterCoordinator(
+            using var feature = new ChapterLoadingFeature(
                 title,
                 _chapters[0],
                 viewport,
@@ -36,28 +37,28 @@ public sealed class ReaderCbzIntegrationTests : IDisposable
                 new ReaderActivityHub(),
                 new CbzReaderChapterLoader());
             var commits = new List<int>();
-            coordinator.ActiveChapterChanged += (_, _) => commits.Add(coordinator.ActiveChapterIndex);
+            feature.ActiveChapterChanged += (_, _) => commits.Add(feature.ActiveChapterIndex);
 
-            coordinator.StartLoadAsync().GetAwaiter().GetResult();
+            feature.StartLoadAsync().GetAwaiter().GetResult();
 
-            Assert.Equal([0, 1], coordinator.Surfaces.Select(surface => surface.ChapterIndex));
-            Assert.All(coordinator.Surfaces, surface => Assert.Equal(3, surface.Pages.Count));
+            Assert.Equal([0, 1], feature.Surfaces.Select(surface => surface.ChapterIndex));
+            Assert.All(feature.Surfaces, surface => Assert.Equal(3, surface.Pages.Count));
             Assert.Equal(["page-1.png", "page-2.png", "page-10.png"],
-                coordinator.Surfaces[0].Pages.Select(page => page.Name));
+                feature.Surfaces[0].Pages.Select(page => page.Name));
             Assert.False(state.IsLoading);
             Assert.False(status.IsVisible);
 
             viewport.ScrollToVerticalOffset(420, ReaderActivityOrigin.LayoutRestore);
-            coordinator.NavigateToChapterAsync(2).GetAwaiter().GetResult();
+            feature.NavigateToChapterAsync(2).GetAwaiter().GetResult();
 
-            Assert.Equal(2, coordinator.ActiveChapterIndex);
+            Assert.Equal(2, feature.ActiveChapterIndex);
             Assert.Equal([2], commits);
-            var activeTop = coordinator.Surfaces
+            var activeTop = feature.Surfaces
                 .TakeWhile(surface => surface.ChapterIndex < 2)
                 .Sum(surface => surface.SurfaceHeight * state.ZoomScale);
             Assert.Equal(activeTop, viewport.VerticalOffset, 3);
             Assert.Equal(3, Assert.Single(
-                coordinator.Surfaces,
+                feature.Surfaces,
                 surface => surface.ChapterIndex == 2).Pages.Count);
         });
     }

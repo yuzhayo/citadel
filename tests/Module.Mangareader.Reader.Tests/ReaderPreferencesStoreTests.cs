@@ -1,5 +1,6 @@
 using System.Text;
 using System.IO;
+using Module.Mangareader.ReaderCore;
 
 namespace Module.Mangareader;
 

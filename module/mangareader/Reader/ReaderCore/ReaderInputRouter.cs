@@ -5,7 +5,7 @@ using System.Windows.Input;
 using System.Windows.Media;
 using Citadel.Setting.Components;
 
-namespace Module.Mangareader;
+namespace Module.Mangareader.ReaderCore;
 
 /// <summary>Only window-level preview input owner for the Reader.</summary>
 public sealed class ReaderInputRouter : IReaderInputEvents, IDisposable

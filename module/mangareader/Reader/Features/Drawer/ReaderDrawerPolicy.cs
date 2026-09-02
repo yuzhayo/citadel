@@ -1,3 +1,5 @@
+using Module.Mangareader.ReaderCore;
+
 namespace Module.Mangareader;
 
 /// <summary>Defines which outside Reader actions auto-close an unpinned Drawer.</summary>

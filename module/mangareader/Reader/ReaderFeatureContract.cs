@@ -3,6 +3,7 @@ using System.Windows;
 using System.Windows.Input;
 using System.Windows.Threading;
 using Module.Mangareader.ShareLogic;
+using Module.Mangareader.ReaderCore;
 
 namespace Module.Mangareader;
 
@@ -158,6 +159,15 @@ public interface IReaderStatusHost
     void Hide();
     void ShowError(string message);
     void SetNonBlockingDetail(string message);
+}
+
+public interface IReaderChapterLoader
+{
+    Task<LoadedChapter> LoadAsync(
+        ChapterInfo chapter,
+        ChapterRenderRequest request,
+        IProgress<ChapterLoadProgress>? progress,
+        CancellationToken cancellationToken);
 }
 
 public interface IReaderChapterNavigation

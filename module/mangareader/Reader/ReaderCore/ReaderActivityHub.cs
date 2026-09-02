@@ -1,4 +1,4 @@
-namespace Module.Mangareader;
+namespace Module.Mangareader.ReaderCore;
 
 public enum ReaderActivityOrigin
 {

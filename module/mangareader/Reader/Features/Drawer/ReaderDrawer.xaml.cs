@@ -3,6 +3,7 @@ using System.Collections.ObjectModel;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
+using Module.Mangareader.ReaderCore;
 
 namespace Module.Mangareader;
 

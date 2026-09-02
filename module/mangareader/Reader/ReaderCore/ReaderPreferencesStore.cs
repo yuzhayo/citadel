@@ -4,7 +4,7 @@ using System.IO;
 using System.Text;
 using System.Text.Json;
 
-namespace Module.Mangareader;
+namespace Module.Mangareader.ReaderCore;
 
 public sealed record ReaderPreferenceValues(
     double DimPercent,

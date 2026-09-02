@@ -1,3 +1,5 @@
+using Module.Mangareader.ReaderCore;
+
 namespace Module.Mangareader;
 
 /// <summary>Pure elapsed-time and interruption rules for Auto-scroll.</summary>

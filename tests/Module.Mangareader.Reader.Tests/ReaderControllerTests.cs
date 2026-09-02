@@ -6,6 +6,7 @@ using System.Windows.Input;
 using System.Windows.Media;
 using Citadel.Setting;
 using Citadel.Setting.Components;
+using Module.Mangareader.ReaderCore;
 
 namespace Module.Mangareader;
 

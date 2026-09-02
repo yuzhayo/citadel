@@ -1,6 +1,7 @@
 using System.Windows;
 using System.Windows.Automation;
 using Citadel.Setting.Components;
+using Module.Mangareader.ReaderCore;
 
 namespace Module.Mangareader;
 

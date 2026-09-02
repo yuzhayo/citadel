@@ -6,7 +6,7 @@ using System.Windows.Threading;
 using Citadel.Setting.Components;
 using Module.Mangareader.ShareLogic;
 
-namespace Module.Mangareader;
+namespace Module.Mangareader.ReaderCore;
 
 /// <summary>
 /// The only adapter between Reader policies and the concrete ScrollViewer/

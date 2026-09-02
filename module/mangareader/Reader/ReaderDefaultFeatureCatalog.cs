@@ -1,4 +1,6 @@
 using System.Windows;
+using Module.Mangareader.ReaderCore;
+using Module.Mangareader.ShareLogic;
 
 namespace Module.Mangareader;
 
@@ -12,8 +14,18 @@ internal static class ReaderDefaultFeatureCatalog
         Window window,
         ReaderSessionState state,
         ReaderCommandHub commands,
-        ReaderActivityHub activity) =>
+        ReaderActivityHub activity,
+        MangaTitle title,
+        ChapterInfo initialChapter,
+        IReaderChapterLoader chapterLoader,
+        IReaderStatusHost status) =>
         new ReaderFeatureCatalog()
+            .Add("ChapterLoading", () => new ChapterLoadingFeature(
+                title,
+                initialChapter,
+                chapterLoader,
+                status,
+                state))
             .Add("Overlay", static () => new ReaderOverlay())
             .Add("Drawer", () => new ReaderDrawer(state, commands, activity))
             .Add("Chrome", static () => new ReaderChromeController())

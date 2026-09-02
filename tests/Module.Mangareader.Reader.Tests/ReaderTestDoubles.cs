@@ -5,6 +5,7 @@ using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Threading;
 using Module.Mangareader.ShareLogic;
+using Module.Mangareader.ReaderCore;
 
 namespace Module.Mangareader;
 

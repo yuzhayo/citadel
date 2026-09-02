@@ -1,6 +1,6 @@
 using System.ComponentModel;
 
-namespace Module.Mangareader;
+namespace Module.Mangareader.ReaderCore;
 
 public interface IReaderStateView : INotifyPropertyChanged
 {

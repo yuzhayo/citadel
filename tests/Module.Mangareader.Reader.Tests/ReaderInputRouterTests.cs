@@ -2,6 +2,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using Citadel.Setting.Components;
+using Module.Mangareader.ReaderCore;
 
 namespace Module.Mangareader;
 

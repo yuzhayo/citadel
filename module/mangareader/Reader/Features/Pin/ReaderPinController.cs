@@ -4,6 +4,7 @@ using System.Windows.Automation;
 using System.Windows.Media;
 using System.Windows.Shapes;
 using Citadel.Setting.Components;
+using Module.Mangareader.ReaderCore;
 
 namespace Module.Mangareader;
 

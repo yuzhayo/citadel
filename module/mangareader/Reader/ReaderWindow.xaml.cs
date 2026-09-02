@@ -3,6 +3,7 @@ using System.Windows.Controls;
 using Citadel.Core.Tokens;
 using Citadel.Setting.Components;
 using Module.Mangareader.ShareLogic;
+using Module.Mangareader.ReaderCore;
 
 namespace Module.Mangareader;
 
@@ -16,7 +17,7 @@ public partial class ReaderWindow : Window
     private readonly ReaderPreferencesStore _preferences;
     private readonly ReaderActivityHub _activity;
     private readonly FrameContentHost _viewport;
-    private readonly ReaderChapterCoordinator _coordinator;
+    private readonly ReaderChapterNavigationHub _navigation;
     private readonly ReaderInputRouter _input;
     private readonly ReaderFeatureHost _featureHost;
     private bool _loadStarted;
@@ -61,22 +62,14 @@ public partial class ReaderWindow : Window
             LoadingProgress,
             CloseAfterErrorButton,
             _notifications);
-        _coordinator = new ReaderChapterCoordinator(
-            title,
-            chapter,
-            _viewport,
-            status,
-            _state,
-            _activity,
-            chapterLoader);
-        ChapterList.ItemsSource = _coordinator.Surfaces;
+        _navigation = new ReaderChapterNavigationHub(title, chapter);
 
         _input = new ReaderInputRouter(this, _viewport, _state, _commands, _activity);
         var context = new ReaderFeatureContext(
             _state,
             _commands,
             _viewport,
-            _coordinator,
+            _navigation,
             _input,
             _activity,
             _notifications,
@@ -93,10 +86,22 @@ public partial class ReaderWindow : Window
         _featureHost = new ReaderFeatureHost(
             context,
             hosts,
-            ReaderDefaultFeatureCatalog.Create(this, _state, _commands, _activity));
+            ReaderDefaultFeatureCatalog.Create(
+                this,
+                _state,
+                _commands,
+                _activity,
+                title,
+                chapter,
+                chapterLoader,
+                status));
+
+        // The ChapterLoading feature registers into the hub during attach, so the
+        // live surface collection only exists after the feature host is built.
+        ChapterList.ItemsSource = _navigation.Surfaces;
 
         _commands.CloseReaderRequested += Close;
-        _coordinator.ActiveChapterChanged += OnActiveChapterChanged;
+        _navigation.ActiveChapterChanged += OnActiveChapterChanged;
         _preferences.WarningRaised += OnPreferenceWarning;
         _preferences.Bind(_state);
         Loaded += OnLoaded;
@@ -119,7 +124,7 @@ public partial class ReaderWindow : Window
     {
         if (_loadStarted || _closed) return;
         _loadStarted = true;
-        await _coordinator.StartLoadAsync();
+        await _navigation.StartLoadingAsync();
         if (!_closed && !_state.HasError) ReaderScroller.Focus();
         if (!string.IsNullOrWhiteSpace(_preferences.LastWarning))
             _notifications.ShowToast(_preferences.LastWarning!, TimeSpan.FromSeconds(4));
@@ -132,7 +137,7 @@ public partial class ReaderWindow : Window
     }
 
     private void UpdateWindowTitle() =>
-        Title = $"{_coordinator.MangaTitle} — {_coordinator.ActiveChapter.Title} — Manga Reader";
+        Title = $"{_navigation.MangaTitle} — {_navigation.ActiveChapter.Title} — Manga Reader";
 
     private void OnPreferenceWarning(object? sender, string warning) =>
         Dispatcher.BeginInvoke(() => _notifications.ShowToast(warning, TimeSpan.FromSeconds(4)));
@@ -146,14 +151,13 @@ public partial class ReaderWindow : Window
         Loaded -= OnLoaded;
         Closed -= OnClosed;
         _commands.CloseReaderRequested -= Close;
-        _coordinator.ActiveChapterChanged -= OnActiveChapterChanged;
+        _navigation.ActiveChapterChanged -= OnActiveChapterChanged;
         _preferences.WarningRaised -= OnPreferenceWarning;
         _lifetime.Cancel();
         _input.Dispose();
         _featureHost.Dispose();
         _preferences.Flush();
         _preferences.Dispose();
-        _coordinator.Dispose();
         _viewport.Dispose();
         ChapterList.ItemsSource = null;
         DataContext = null;
