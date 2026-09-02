@@ -7,6 +7,8 @@ stdout. stdout murni protokol; SEMUA log ke stderr.
 v1 commands: ping, session.open, session.navigate, session.verify,
 google.inspect, google.relogin, session.close, shutdown.
 
+Perilaku Google hidup di providers/google/ (inspection, relogin,
+enrollment); file ini hanya protokol, registry session, dan lifecycle.
 Resep browser dipindahkan (ported) dari reference/human_login.py —
 AsyncCamoufox langsung, persistent context, headed. BUKAN lewat stealthB.
 """
@@ -20,20 +22,14 @@ import re
 import sys
 from urllib.parse import urlparse
 
+from providers import PyhostError as _PyhostError, log as _log
+from providers.google import is_browser_closed_error as _is_browser_closed_error
+from providers.google import inspection, relogin
+
 PROTOCOL_VERSION = 1
 DEFAULT_TIMEOUT_SEC = 120.0
-CHECK_URL = "https://myaccount.google.com/"
 DEFAULT_START_URL = "https://www.google.com/"
-SIGNIN_URL = (
-    "https://accounts.google.com/signin/v2/identifier"
-    "?service=accountsettings&continue=https%3A%2F%2Fmyaccount.google.com%2F"
-)
 NAME_RE = re.compile(r"^[A-Za-z0-9._-]+$")
-EMAIL_RE = re.compile(
-    r"[A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]+"
-    r"@[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?"
-    r"(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)+"
-)
 
 
 def _log(msg):
@@ -56,83 +52,6 @@ def _pkg_version(name):
         return importlib.metadata.version(name)
     except Exception:  # noqa: BLE001 - versi bersifat diagnostik
         return None
-
-
-def _google_url_state(url):
-    parsed = urlparse(url or "")
-    host = (parsed.hostname or "").lower()
-    if host == "myaccount.google.com":
-        return "active"
-    if host == "accounts.google.com":
-        return "signed_out"
-    if host in ("www.google.com", "google.com") \
-            and parsed.path.startswith("/account/about"):
-        return "signed_out"
-    return "unknown"
-
-
-def _extract_email(values):
-    for value in values or ():
-        if not isinstance(value, str):
-            continue
-        match = EMAIL_RE.search(value)
-        if match:
-            return match.group(0).lower()
-    return None
-
-
-async def _detect_google_email(page):
-    """Read account identity only; never use Google's display name."""
-    try:
-        values = await page.evaluate("""
-            () => Array.from(document.querySelectorAll(
-                '[data-email], [aria-label*="@"], a[href*="SignOutOptions"]'))
-              .flatMap(node => [
-                node.getAttribute('data-email'),
-                node.getAttribute('aria-label'),
-                node.textContent
-              ])
-              .filter(Boolean)
-        """)
-        email = _extract_email(values)
-        if email:
-            return email
-    except Exception as e:  # noqa: BLE001 - DOM fallback is best effort
-        _log("deteksi email via DOM gagal: %s" % type(e).__name__)
-
-    for selector, attribute in (
-            ("[data-email]", "data-email"),
-            ('[aria-label*="@"]', "aria-label")):
-        try:
-            locator = page.locator(selector).first
-            value = await locator.get_attribute(attribute)
-            email = _extract_email((value,))
-            if email:
-                return email
-        except Exception:  # noqa: BLE001 - selector optional
-            continue
-    return None
-
-
-def _is_browser_closed_error(error):
-    text = str(error).lower()
-    return any(marker in text for marker in (
-        "target closed", "target page, context or browser has been closed",
-        "browser has been closed", "connection closed", "page closed",
-        "context destroyed"))
-
-
-async def _is_visible(locator, timeout=1000):
-    try:
-        return await locator.is_visible(timeout=timeout)
-    except Exception:  # noqa: BLE001 - absence is a normal branch
-        return False
-
-
-class _PyhostError(Exception):
-    def __init__(self, code, message):
-        super().__init__(message)
-        self.code = code
 
 
 class _Host:
@@ -303,112 +222,11 @@ class _Host:
 
     async def cmd_google_inspect(self, msg):
         sess = self._get_session(msg)
-        sid = msg.get("session")
-        page = sess["page"]
-        try:
-            await page.goto(CHECK_URL, wait_until="domcontentloaded",
-                            timeout=45000)
-            await page.wait_for_timeout(4000)
-        except Exception as e:  # noqa: BLE001 - klasifikasi di bawah
-            # codex audit #4: kebanyakan kegagalan di sini BUKAN browser mati.
-            # DNS, timeout jaringan, dan navigasi gagal bisa terjadi dengan
-            # browser hidup utuh — maka session dipertahankan.
-            if _is_browser_closed_error(e):
-                await self._drop_session(sid, forget_on_failure=True)
-                raise _PyhostError("BROWSER_GONE",
-                                   "jendela browser sudah ditutup")
-            raise _PyhostError("VERIFY_FAILED",
-                               "navigasi verify gagal (session dipertahankan): "
-                               "%s" % e)
-        url = page.url or ""
-        state = _google_url_state(url)
-        email = await _detect_google_email(page) if state == "active" else None
-        state_saved = False
-        if state == "active":
-            try:
-                state_path = os.path.join(sess["dir"], "_session_state.json")
-                await sess["ctx"].storage_state(path=state_path)
-                state_saved = True
-            except Exception as e:  # noqa: BLE001 - artefak opsional
-                _log("storage_state gagal: %s" % e)
-        return {"state": state, "email": email, "url": url,
-                "state_saved": state_saved}
+        return await inspection.inspect(self, sess, msg.get("session"))
 
     async def cmd_google_relogin(self, msg):
         sess = self._get_session(msg)
-        sid = msg.get("session")
-        if sess.get("headless"):
-            raise _PyhostError(
-                "HEADLESS_RELOGIN",
-                "relogin harus memakai browser headed")
-
-        email = msg.get("email")
-        password = msg.get("password")
-        if not isinstance(email, str) or not EMAIL_RE.fullmatch(email.strip()):
-            raise _PyhostError("BAD_CREDENTIAL_INPUT", "email tidak sah")
-        if not isinstance(password, str) or not password:
-            raise _PyhostError("BAD_CREDENTIAL_INPUT", "password kosong")
-
-        page = sess["page"]
-        try:
-            await page.goto(SIGNIN_URL, wait_until="domcontentloaded",
-                            timeout=45000)
-            email_input = page.locator('input[type="email"]').first
-            if await _is_visible(email_input, timeout=5000):
-                await email_input.fill(email.strip())
-                next_button = page.locator(
-                    "#identifierNext button, #identifierNext").first
-                if await _is_visible(next_button):
-                    await next_button.click()
-                else:
-                    await email_input.press("Enter")
-
-            try:
-                await page.wait_for_selector(
-                    'input[type="password"]', state="visible", timeout=15000)
-            except Exception:  # noqa: BLE001 - challenge before password
-                return {"state": "action_required", "email": None,
-                        "url": page.url or ""}
-
-            password_input = page.locator('input[type="password"]').first
-            await password_input.fill(password)
-            password_next = page.locator(
-                "#passwordNext button, #passwordNext").first
-            if await _is_visible(password_next):
-                await password_next.click()
-            else:
-                await password_input.press("Enter")
-            await page.wait_for_timeout(5000)
-        except Exception as e:  # noqa: BLE001 - classify browser/network split
-            if _is_browser_closed_error(e):
-                await self._drop_session(sid, forget_on_failure=True)
-                raise _PyhostError("BROWSER_GONE", "jendela browser ditutup")
-            raise _PyhostError(
-                "RELOGIN_FAILED",
-                "navigasi relog gagal; session dipertahankan")
-
-        url = page.url or ""
-        state = _google_url_state(url)
-        if state == "active":
-            detected = await _detect_google_email(page)
-            try:
-                state_path = os.path.join(sess["dir"], "_session_state.json")
-                await sess["ctx"].storage_state(path=state_path)
-            except Exception as e:  # noqa: BLE001 - optional artifact
-                _log("storage_state setelah relog gagal: %s" % e)
-            return {"state": "active", "email": detected, "url": url}
-
-        errors = []
-        try:
-            errors = await page.locator(
-                '[aria-live="assertive"], .o6cuMc').all_text_contents()
-        except Exception:  # noqa: BLE001 - error marker optional
-            pass
-        if await _is_visible(password_input) and any(
-                isinstance(value, str) and value.strip() for value in errors):
-            return {"state": "credential_rejected", "email": None,
-                    "url": url}
-        return {"state": "action_required", "email": None, "url": url}
+        return await relogin.relogin(self, sess, msg.get("session"), msg)
 
     async def cmd_session_close(self, msg):
         sid = msg.get("session")

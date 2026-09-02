@@ -22,6 +22,12 @@ from unittest import mock
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # sharedLogic/
 PYHOST = os.path.join(ROOT, "pyhost", "pyhost.py")
 
+# pyhost.py mengimpor paket `providers` yang tinggal di sebelahnya
+# (repo maupun payload ter-deploy); sebagai script sys.path[0] sudah
+# benar, tapi loader ini mengeksekusi file langsung — jadi daftarkan
+# foldernya secara eksplisit.
+sys.path.insert(0, os.path.join(ROOT, "pyhost"))
+
 SPEC = importlib.util.spec_from_file_location("citadel_pyhost_tests", PYHOST)
 PYHOST_MODULE = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(PYHOST_MODULE)
