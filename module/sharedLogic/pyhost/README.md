@@ -160,6 +160,15 @@ sign-in. The response returns after `armed`, so a caller may show the "log in
 now" instruction knowing capture is already live. The first keystroke cannot
 be missed.
 
+**Non-blocking start:** the navigation itself runs as an enrollment-owned
+background task, not inside the `start` response. Protocol v1 processes
+requests sequentially — if `start` awaited its `goto`, a `cancel` arriving
+mid-navigation would queue behind it and a dialog close could hang for up to
+the 45 s goto timeout. Teardown cancels and awaits that task before closing
+the page. A non-browser navigation failure ends the enrollment with state
+`failed` (surfaced by `status`); a dead browser still routes through
+`BROWSER_GONE`.
+
 **Capture boundaries (enforced in JS at event time AND again in Python before
 storing):**
 
@@ -167,8 +176,11 @@ storing):**
 - password fields only (`input[type=password]`; Google's audited field is
   `input[name="Passwd"]`);
 - the listener exists only on the enrollment page and dies with it;
-- retyping overwrites the held value; values are never logged, never appear in
-  `status`/error responses, and are dropped on consume/teardown.
+- retyping overwrites the held value; **emptying the field drops the captured
+  candidate** (a stale or partial value can never become the stored relog
+  credential just because the user typed and then deleted it);
+- values are never logged, never appear in `status`/error responses, and are
+  dropped on consume/teardown.
 
 **State machine:**
 
@@ -176,7 +188,7 @@ storing):**
 armed → password_observed → waiting_for_google | challenge
       → complete → consumed
 (any non-terminal state)
-      → cancelled | expired | browser_gone | wrong_account
+      → cancelled | expired | browser_gone | wrong_account | failed
 ```
 
 - one active enrollment per profile; a second `start` while non-terminal fails
@@ -209,7 +221,9 @@ armed → password_observed → waiting_for_google | challenge
 
 Headed sessions only (`HEADLESS_RELOGIN`-style guard: `HEADLESS_ENROLLMENT`).
 `expected_email` is optional and must be a valid email when present
-(`BAD_CREDENTIAL_INPUT`).
+(`BAD_CREDENTIAL_INPUT`). The response returns as soon as the listener is
+armed; the login-page navigation proceeds in the background and a non-browser
+failure surfaces later as state `failed` via `status`.
 
 #### `google.enrollment.status`
 ```json

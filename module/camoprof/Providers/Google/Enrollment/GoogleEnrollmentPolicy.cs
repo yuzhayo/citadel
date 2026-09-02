@@ -22,6 +22,7 @@ internal static class GoogleEnrollmentPolicy
         "expired" => "Enrollment timed out after 10 minutes.",
         "browser_gone" => "The browser window was closed.",
         "wrong_account" => "A different account was logged in.",
+        "failed" => "Could not open the Google login page.",
         _ => "Waiting…",
     };
 
@@ -33,6 +34,7 @@ internal static class GoogleEnrollmentPolicy
             "expired" => GoogleEnrollmentOutcome.Expired,
             "browser_gone" => GoogleEnrollmentOutcome.BrowserGone,
             "wrong_account" => GoogleEnrollmentOutcome.WrongAccount,
+            "failed" => GoogleEnrollmentOutcome.Failed,
             _ => null,
         };
 

@@ -20,9 +20,10 @@
     sources they reference — same-assembly internals, no
     InternalsVisibleTo. Tests drive the service through its delegate
     seams: no browser, no pyhost process, no real DPAPI writes. The
-    dialog is deliberately NOT linked — its contract (post-close guard,
-    cancellation ownership) is exercised by the linked service tests and
-    live smoke.
+    dialog is deliberately NOT linked here: its post-close guard and
+    cancellation ownership are code-reviewed only — a WPF harness was
+    judged not worth the flake risk for one dialog; live smoke covers
+    the real behavior and is tracked in tasks/todo.md Phase 3.
   -->
   <ItemGroup>
     <Compile Include="..\..\module\sharedLogic\cs\**\*.cs" />

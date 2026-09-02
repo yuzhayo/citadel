@@ -667,11 +667,18 @@ class PyHostLifecycleTest(unittest.TestCase):
 
 
 class _FakeEnrollmentPage:
-    """Page enrollment: merekam urutan arm/navigate dan callback expose."""
+    """Page enrollment: merekam urutan arm/navigate dan callback expose.
 
-    def __init__(self, ctx, events):
+    ``goto_gate`` membuat goto menggantung sampai gate diset — untuk
+    membuktikan bahwa start/cancel tidak pernah menunggu navigasi.
+    ``goto_error`` membuat goto melempar — untuk uji kegagalan navigasi.
+    """
+
+    def __init__(self, ctx, events, goto_gate=None, goto_error=None):
         self._ctx = ctx
         self.events = events
+        self._goto_gate = goto_gate
+        self._goto_error = goto_error
         self.url = "about:blank"
         self.closed = False
         self.exposed = {}
@@ -688,6 +695,10 @@ class _FakeEnrollmentPage:
 
     async def goto(self, url, **_kwargs):
         self.events.append("goto")
+        if self._goto_error is not None:
+            raise self._goto_error
+        if self._goto_gate is not None:
+            await self._goto_gate.wait()
         self.url = url
 
     def is_closed(self):
@@ -703,16 +714,19 @@ class _FakeEnrollmentPage:
 
 
 class _FakeEnrollmentContext:
-    def __init__(self):
+    def __init__(self, goto_gate=None, goto_error=None):
         self.events = []
         self.pages = []
         self.replacement_pages = 0
+        self._goto_gate = goto_gate
+        self._goto_error = goto_error
 
     async def new_page(self):
         # Halaman pengganti (teardown) juga dihitung agar test bisa
         # membedakan "page bersih" dari page enrollment.
         self.replacement_pages += 1
-        page = _FakeEnrollmentPage(self, self.events)
+        page = _FakeEnrollmentPage(
+            self, self.events, self._goto_gate, self._goto_error)
         self.pages.append(page)
         return page
 
@@ -729,9 +743,10 @@ class PyHostEnrollmentTest(unittest.IsolatedAsyncioTestCase):
     SIGNIN = "https://accounts.google.com/signin/v2/identifier"
     MYACCOUNT = "https://myaccount.google.com/"
 
-    def _make_host(self, headless=False):
+    def _make_host(self, headless=False, goto_gate=None, goto_error=None):
         host = PYHOST_MODULE._Host()
-        ctx = _FakeEnrollmentContext()
+        ctx = _FakeEnrollmentContext(
+            goto_gate=goto_gate, goto_error=goto_error)
         host.sessions["s1"] = {
             "profile": "probe",
             "cm": _NullContextManager(),
@@ -776,6 +791,9 @@ class PyHostEnrollmentTest(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(response["ok"])
         self.assertEqual(response["state"], "armed")
         page = host.enrollments["probe"].page
+        # Navigasi berjalan sebagai task latar — beri satu yield agar
+        # task itu sempat dieksekusi sebelum urutan diperiksa.
+        await asyncio.sleep(0)
         # Kontrak urutan: listener hidup SEBELUM halaman login dibuka.
         self.assertEqual(page.events, ["expose", "init", "goto"])
         self.assertEqual(len(page.exposed), 1)
@@ -783,6 +801,82 @@ class PyHostEnrollmentTest(unittest.IsolatedAsyncioTestCase):
         self.assertIn('input[type=\\"password\\"]',
                       "".join(page.init_scripts))
         self._cancel_pending_tasks(host)
+
+    async def test_start_returns_while_navigation_pending(self):
+        # goto sengaja digantung: start tetap harus kembali segera
+        # setelah armed (protokol v1 berurutan — kalau start menunggu
+        # goto, cancel akan mengantri di belakangnya).
+        gate = asyncio.Event()
+        host, _ctx = self._make_host(goto_gate=gate)
+        response = await self._start(host)
+        self.assertTrue(response["ok"])
+        self.assertEqual(response["state"], "armed")
+        # Satu yield: task navigasi mulai (merekam goto) lalu menggantung
+        # di gate — membuktikan respons start tidak menunggu selesainya.
+        await asyncio.sleep(0)
+        enr = host.enrollments["probe"]
+        self.assertIn("goto", enr.page.events)
+        gate.set()
+        self._cancel_pending_tasks(host)
+
+    async def test_cancel_during_pending_navigation_is_immediate(self):
+        # Regression (audit #1): Cancel saat goto masih berjalan tidak
+        # boleh menunggu navigasi selesai.
+        gate = asyncio.Event()
+        host, _ctx = self._make_host(goto_gate=gate)
+        await self._start(host)
+        enr = host.enrollments["probe"]
+        enrollment_page = enr.page
+        enr.page.url = self.SIGNIN
+        await self._type_password(host, "secret-not-echoed")
+
+        cancelled = await self._cancel(host)
+        self.assertTrue(cancelled["ok"])
+        self.assertEqual(cancelled["state"], "cancelled")
+        self.assertTrue(enrollment_page.closed)
+        self.assertIsNone(enr.password)
+
+        gate.set()
+        after = await self._status(host)
+        self.assertEqual(after["state"], "cancelled")
+        self.assertNotIn("secret-not-echoed", json.dumps(after))
+
+    async def test_navigation_failure_ends_enrollment_failed(self):
+        host, _ctx = self._make_host(
+            goto_error=RuntimeError("net::ERR_NAME_NOT_RESOLVED"))
+        response = await self._start(host)
+        self.assertTrue(response["ok"])
+        self.assertEqual(response["state"], "armed")
+        # Beri task navigasi kesempatan gagal, lalu periksa statusnya.
+        await asyncio.sleep(0)
+        after = await self._status(host)
+        self.assertEqual(after["state"], "failed")
+        self.assertFalse(after["has_password"])
+        self.assertTrue(host.enrollments["probe"].page is None)
+
+    async def test_clearing_field_clears_captured_candidate(self):
+        # Regression (audit #2): user mengetik, menghapus seluruh isi
+        # field, lalu login via passkey — kandidat lama tidak boleh
+        # ikut tersimpan.
+        host, _ctx = self._make_host()
+        await self._start(host)
+        enr = host.enrollments["probe"]
+        await asyncio.sleep(0)
+        enr.page.url = self.SIGNIN
+        await self._type_password(host, "typed-then-cleared")
+        self.assertTrue((await self._status(host))["has_password"])
+        await self._type_password(host, "")
+        self.assertFalse((await self._status(host))["has_password"])
+
+        enr.page.url = self.MYACCOUNT
+        enr.page.evaluate_result = ["Account: User (user@gmail.com)"]
+        response = await self._status(host)
+        self.assertEqual(response["state"], "complete")
+        self.assertFalse(response["has_password"])
+        finished = await self._finish(host)
+        self.assertTrue(finished["ok"])
+        self.assertIsNone(finished["password"])
+        self.assertNotIn("typed-then-cleared", json.dumps(finished))
 
     async def test_start_refuses_headless_session(self):
         host, _ctx = self._make_host(headless=True)

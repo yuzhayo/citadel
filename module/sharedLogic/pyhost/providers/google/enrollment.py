@@ -18,7 +18,21 @@ State machine::
     armed -> password_observed -> waiting_for_google | challenge
           -> complete -> consumed
     (state non-terminal mana pun)
-          -> cancelled | expired | browser_gone | wrong_account
+          -> cancelled | expired | browser_gone | wrong_account | failed
+
+``start`` kembali SEGERA setelah state Armed terdaftar — navigasi ke
+halaman login berjalan sebagai task milik enrollment, bukan bagian dari
+respons. Ini bukan kosmetik: protokol v1 memproses request secara
+berurutan, jadi kalau goto ditunggu di dalam start, sebuah cancel yang
+datang saat navigasi berjalan akan mengantri di belakangnya dan
+penutupan dialog bisa menggantung sampai timeout goto (45 detik).
+Teardown membatalkan dan MENUNGGU task navigasi itu sebelum menutup
+page. Kegagalan navigasi (non-browser) mengakhiri enrollment dengan
+state ``failed`` — jujur dilaporkan lewat ``status``.
+
+Mengosongkan field password (event input dengan nilai kosong) membuang
+kandidat yang tertangkap — nilai lama/parsial tidak pernah bisa menjadi
+credential relog hanya karena user sempat mengetik lalu menghapus.
 
 Cleanup mengikuti lifecycle session: ``_drop_session`` di pyhost.py
 memanggil ``disarm_for_session`` — browser ditutup manual,
@@ -46,13 +60,15 @@ _EXPOSED_NAME = "__pyhostEnrollmentInput"
 _CAPTURING_STATES = frozenset(
     ("armed", "password_observed", "waiting_for_google", "challenge"))
 _TERMINAL_STATES = frozenset(
-    ("consumed", "cancelled", "expired", "browser_gone", "wrong_account"))
+    ("consumed", "cancelled", "expired", "browser_gone", "wrong_account",
+     "failed"))
 
 # Dipasang via add_init_script sehingga bertahan lintas navigasi
 # multi-langkah Google. Validasi origin dan field terjadi di event
 # time (JS) DAN sekali lagi di sisi Python (callback) sebelum nilai
 # diterima. Field teraudit Google bernama "Passwd"; input password
-# tanpa nama tetap diterima HANYA pada host yang tepat.
+# tanpa nama tetap diterima HANYA pada host yang tepat. Nilai KOSONG
+# ikut diteruskan: mengosongkan field harus membuang kandidat lama.
 _INIT_SCRIPT = """
 (() => {
   const report = (event) => {
@@ -62,7 +78,7 @@ _INIT_SCRIPT = """
       if (location.hostname !== "accounts.google.com") return;
       if (!el.matches("input[type=\\"password\\"]")) return;
       const value = el.value;
-      if (typeof value !== "string" || value.length === 0) return;
+      if (typeof value !== "string") return;
       window.__pyhostEnrollmentInput(value);
     } catch (_) {
       // listener tidak boleh mengganggu halaman
@@ -75,7 +91,8 @@ _INIT_SCRIPT = """
 
 class _Enrollment:
     __slots__ = ("profile", "sid", "ctx", "page", "expected_email",
-                 "deadline", "state", "password", "email", "expire_task")
+                 "deadline", "state", "password", "email", "expire_task",
+                 "navigate_task")
 
     def __init__(self, profile, sid, ctx, expected_email, deadline):
         self.profile = profile
@@ -88,6 +105,7 @@ class _Enrollment:
         self.password = None
         self.email = None
         self.expire_task = None
+        self.navigate_task = None
 
 
 # ---- commands ---------------------------------------------------------
@@ -132,18 +150,12 @@ async def start(host, sess, sid, msg):
     # pegangan (pola yang sama dengan session.open).
     host.enrollments[profile] = enr
     enr.expire_task = asyncio.ensure_future(_expire_later(enr))
-    try:
-        await enr.page.goto(SIGNIN_URL, wait_until="domcontentloaded",
-                            timeout=45000)
-    except Exception as e:  # noqa: BLE001 - klasifikasi browser/jaringan
-        if is_browser_closed_error(e):
-            await host._drop_session(sid, forget_on_failure=True)
-            raise PyhostError("BROWSER_GONE", "jendela browser ditutup")
-        log("navigasi enrollment gagal: %s: %s" % (type(e).__name__, e))
-        await _teardown(enr, "cancelled")
-        host.enrollments.pop(profile, None)
-        raise PyhostError("ENROLLMENT_START_FAILED",
-                          "navigasi ke halaman login gagal")
+    # Navigasi berjalan sebagai task milik enrollment — start kembali
+    # SEGERA setelah armed. Kalau goto ditunggu di sini, sebuah cancel
+    # yang datang saat navigasi berjalan akan mengantri di belakangnya
+    # (protokol v1 berurutan) dan penutupan dialog bisa menggantung
+    # sampai 45 detik. Teardown membatalkan task ini.
+    enr.navigate_task = asyncio.ensure_future(_navigate_later(host, enr))
     return {"session": sid, "state": "armed"}
 
 
@@ -197,6 +209,8 @@ def disarm_for_session(host, sid, profile):
     if enr is None or enr.sid != sid:
         return
     _end(enr, "browser_gone")
+    if enr.navigate_task is not None:
+        enr.navigate_task.cancel()  # best effort; browser sedang mati
     enr.page = None
     enr.ctx = None
 
@@ -216,17 +230,26 @@ def _make_input_callback(enr):
         try:
             if enr.state not in _CAPTURING_STATES:
                 return
-            if not isinstance(value, str) or not value \
-                    or len(value) > _MAX_PASSWORD_LENGTH:
+            if not isinstance(value, str):
                 return
             page = enr.page
             url = (page.url or "") if page is not None else ""
             host_name = (urlparse(url).hostname or "").lower()
             if host_name != "accounts.google.com":
                 return
-            enr.password = value
-            if enr.state == "armed":
-                enr.state = "password_observed"
+            if value:
+                if len(value) > _MAX_PASSWORD_LENGTH:
+                    return
+                enr.password = value
+                if enr.state == "armed":
+                    enr.state = "password_observed"
+            else:
+                # Field dikosongkan: kandidat lama/parsial dibuang, agar
+                # tidak pernah tersimpan sebagai credential relog hanya
+                # karena user sempat mengetik lalu menghapus.
+                enr.password = None
+                if enr.state == "password_observed":
+                    enr.state = "armed"
         except Exception:  # noqa: BLE001 - callback tidak boleh melempar
             pass
     return on_password_input
@@ -284,7 +307,13 @@ def _snapshot(enr):
 
 
 def _end(enr, state):
-    """Transisi terminal: buang secret, hentikan expire task."""
+    """Transisi terminal: buang secret, hentikan expire task.
+
+    Task navigasi TIDAK disentuh di sini — hanya ``_teardown`` (yang
+    menunggunya selesai) dan ``disarm_for_session`` (best-effort,
+    browser sedang mati) yang boleh membatalkannya. ``_navigate_later``
+    sendiri tidak boleh menunggu task-nya sendiri.
+    """
     if enr.state in _TERMINAL_STATES:
         return  # sudah terminal; jangan timpa sejarah state
     enr.state = state
@@ -294,10 +323,29 @@ def _end(enr, state):
         enr.expire_task = None
 
 
+async def _stop_navigation(enr):
+    """Batalkan task navigasi yang masih berjalan dan TUNGGU dia berhenti
+    sebelum page ditutup — menutup page di bawah goto yang hidup hanya
+    menghasilkan error race yang harus ditelan."""
+    task = enr.navigate_task
+    enr.navigate_task = None
+    if task is None or task.done():
+        return
+    task.cancel()
+    try:
+        await task
+    except asyncio.CancelledError:
+        pass
+    except Exception as e:  # noqa: BLE001 - pembatalan best effort
+        log("pembatalan navigasi enrollment error: %s" % type(e).__name__)
+
+
 async def _teardown(enr, state):
-    """Transisi terminal + tutup enrollment page; ganti page bersih
-    pada context yang sama bila itu page terakhir (browser tetap hidup)."""
+    """Transisi terminal + hentikan navigasi + tutup enrollment page;
+    ganti page bersih pada context yang sama bila itu page terakhir
+    (browser tetap hidup)."""
     _end(enr, state)
+    await _stop_navigation(enr)
     page, enr.page = enr.page, None
     if page is not None:
         try:
@@ -312,6 +360,28 @@ async def _teardown(enr, state):
                 await ctx.new_page()
         except Exception as e:  # noqa: BLE001 - best effort
             log("ganti page bersih gagal: %s" % type(e).__name__)
+
+
+async def _navigate_later(host, enr):
+    """Task latar: buka halaman login Google pada enrollment page.
+
+    Dipisah dari ``start`` agar respons tidak menunggu goto. Kegagalan
+    non-browser mengakhiri enrollment dengan state ``failed`` (jujur
+    dilaporkan lewat ``status``); browser mati diteruskan ke
+    ``_drop_session`` yang hook-nya akan disarm enrollment ini.
+    """
+    try:
+        await enr.page.goto(SIGNIN_URL, wait_until="domcontentloaded",
+                            timeout=45000)
+    except asyncio.CancelledError:
+        raise  # teardown yang membatalkan; biarkan terpropagasi
+    except Exception as e:  # noqa: BLE001 - klasifikasi browser/jaringan
+        if is_browser_closed_error(e):
+            await host._drop_session(enr.sid, forget_on_failure=True)
+            return
+        log("navigasi enrollment gagal: %s: %s" % (type(e).__name__, e))
+        _end(enr, "failed")
+        await _close_page_quietly(enr)
 
 
 async def _close_page_quietly(enr):

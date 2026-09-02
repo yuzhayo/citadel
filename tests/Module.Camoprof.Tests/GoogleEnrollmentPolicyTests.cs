@@ -28,6 +28,7 @@ public class GoogleEnrollmentPolicyTests
     [InlineData("expired", "Expired")]
     [InlineData("browser_gone", "BrowserGone")]
     [InlineData("wrong_account", "WrongAccount")]
+    [InlineData("failed", "Failed")]
     public void OutcomeFor_maps_terminal_wire_states(
         string wireState,
         string expectedOutcome)
@@ -47,6 +48,13 @@ public class GoogleEnrollmentPolicyTests
     public void OutcomeFor_returns_null_for_non_terminal_states(string wireState)
     {
         Assert.Null(GoogleEnrollmentPolicy.OutcomeFor(wireState));
+    }
+
+    [Fact]
+    public void StatusText_covers_the_failed_navigation_state()
+    {
+        Assert.False(string.IsNullOrWhiteSpace(
+            GoogleEnrollmentPolicy.StatusText("failed")));
     }
 
     [Theory]
