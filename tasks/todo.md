@@ -30,6 +30,7 @@
 - [x] Fix 2 (Medium): emptying the password field used to keep the previously captured value — a stale/partial candidate could become the stored relog credential after a passkey login. The JS listener now forwards empty values and the Python callback clears the candidate (and reverts `password_observed` → `armed`).
 - [x] Regression tests: `test_start_returns_while_navigation_pending`, `test_cancel_during_pending_navigation_is_immediate`, `test_navigation_failure_ends_enrollment_failed`, `test_clearing_field_clears_captured_candidate` (Python 44/44); `failed` state mapping (C# policy tests).
 - [x] Doc sync: csproj dialog claim reworded to "code-reviewed; live smoke pending"; README + plan.md updated for non-blocking start, `failed` state, empty-clear behavior.
+- [x] Fix 3 (self-cancel, second audit round): when the browser dies *from within* `_navigate_later`, that task itself calls `_drop_session` — `disarm_for_session` was cancelling the running task, so `CancelledError` landed mid-`__aexit__` of a genuinely-async context close, `_drop_session` deliberately doesn't swallow it, and the dead session stayed registered (phantom running / `PROFILE_BUSY`). Guard: `task is not asyncio.current_task()`. Regression test `test_browser_gone_during_navigation_drops_session` (yielding context manager; verified RED against the unguarded code — CancelledError in `__aexit__`, session `s1` retained — then GREEN with the guard).
 
 ### Checkpoint: Phase 2
 - [x] All C# + Python tests green (547 C# across 7 projects; 40 Python)

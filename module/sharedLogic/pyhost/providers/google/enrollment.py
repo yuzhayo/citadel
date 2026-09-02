@@ -204,13 +204,21 @@ def disarm_for_session(host, sid, profile):
 
     Secret dibuang dan task dihentikan; page sengaja TIDAK ditutup —
     context-nya sedang mati, menutup page hanya bisa melempar.
+
+    Jalur browser-gone-dari-dalam-navigasi: ``_navigate_later`` adalah
+    pemanggil ``_drop_session`` — task navigasi TIDAK boleh mencancel
+    dirinya sendiri, kalau tidak CancelledError masuk di tengah
+    ``__aexit__`` context close, ``_drop_session`` sengaja tidak
+    menelannya, dan session yang sudah mati tetap terdaftar
+    (status running palsu / PROFILE_BUSY).
     """
     enr = host.enrollments.get(profile)
     if enr is None or enr.sid != sid:
         return
     _end(enr, "browser_gone")
-    if enr.navigate_task is not None:
-        enr.navigate_task.cancel()  # best effort; browser sedang mati
+    task = enr.navigate_task
+    if task is not None and task is not asyncio.current_task():
+        task.cancel()  # best effort; browser sedang mati
     enr.page = None
     enr.ctx = None
 

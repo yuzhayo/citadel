@@ -736,6 +736,16 @@ class _NullContextManager:
         return None
 
 
+class _YieldingContextManager:
+    """Context close yang benar-benar yield — sebuah cancel yang masuk
+    saat __aexit__ akan terlihat sebagai CancelledError, meniru context
+    close async yang sesungguhnya (browser dying)."""
+
+    async def __aexit__(self, *_args):
+        await asyncio.sleep(0)
+        return None
+
+
 class PyHostEnrollmentTest(unittest.IsolatedAsyncioTestCase):
     """google.enrollment — urutan arm, capture tervalidasi, state
     machine, finish satu kali, dan cleanup per jalur kematian session."""
@@ -853,6 +863,31 @@ class PyHostEnrollmentTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(after["state"], "failed")
         self.assertFalse(after["has_password"])
         self.assertTrue(host.enrollments["probe"].page is None)
+
+    async def test_browser_gone_during_navigation_drops_session(self):
+        # Regression (self-cancel): browser mati DARI DALAM task navigasi —
+        # _navigate_later sendiri yang memanggil _drop_session. Disarm tidak
+        # boleh mencancel task yang sedang berjalan itu; kalau iya,
+        # CancelledError masuk di tengah __aexit__ (context close yang
+        # benar-benar async), _drop_session sengaja tidak menelannya, dan
+        # session mati tetap terdaftar — status running palsu / PROFILE_BUSY.
+        host, _ctx = self._make_host(
+            goto_error=RuntimeError(
+                "Target page, context or browser has been closed"))
+        host.sessions["s1"]["cm"] = _YieldingContextManager()
+
+        response = await self._start(host)
+        self.assertTrue(response["ok"])
+        enr = host.enrollments["probe"]
+        task = enr.navigate_task
+        self.assertIsNotNone(task)
+        await task                      # deterministik: tunggu jalur mati selesai
+        self.assertFalse(task.cancelled())
+
+        self.assertEqual(enr.state, "browser_gone")
+        self.assertIsNone(enr.password)
+        # Kunci reproduksi audit: session s1 harus HILANG dari registry.
+        self.assertNotIn("s1", host.sessions)
 
     async def test_clearing_field_clears_captured_candidate(self):
         # Regression (audit #2): user mengetik, menghapus seluruh isi
