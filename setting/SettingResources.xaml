@@ -58,6 +58,7 @@
 
     <Style x:Key="SettingComboBoxStyle" TargetType="{x:Type ComboBox}">
         <Setter Property="MinWidth" Value="{DynamicResource SettingPickerWidth}" />
+        <Setter Property="Padding" Value="{DynamicResource SettingPickerPadding}" />
         <Setter Property="Background" Value="{DynamicResource Bg}" />
         <Setter Property="BorderBrush" Value="{DynamicResource Border}" />
         <Setter Property="BorderThickness" Value="1" />
@@ -76,10 +77,12 @@
                             CornerRadius="{DynamicResource SidebarItemCornerRadius}">
                             <Grid>
                                 <ContentPresenter
-                                    Margin="{DynamicResource SettingPickerPadding}"
+                                    Margin="{TemplateBinding Padding}"
                                     VerticalAlignment="Center"
                                     Content="{TemplateBinding SelectionBoxItem}"
                                     ContentTemplate="{TemplateBinding SelectionBoxItemTemplate}"
+                                    ContentTemplateSelector="{TemplateBinding ItemTemplateSelector}"
+                                    ContentStringFormat="{TemplateBinding SelectionBoxItemStringFormat}"
                                     IsHitTestVisible="False" />
                                 <Path
                                     Margin="0,0,11,0"

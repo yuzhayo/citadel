@@ -11,8 +11,14 @@ Releases/
 *.user
 *.suo
 
-# Local agent tooling and configuration; never publish with the application.
-.agents/
+# Local agent tooling and configuration; only the project UI contract skill is
+# versioned so every agent receives the same component boundary.
+!.agents/
+.agents/*
+!.agents/skills/
+.agents/skills/*
+!.agents/skills/citadel-shared-ui/
+!.agents/skills/citadel-shared-ui/SKILL.md
 .claude/
 .qoder/
 .mcp.json

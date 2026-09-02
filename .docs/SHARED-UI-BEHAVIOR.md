@@ -1,8 +1,8 @@
 # Shared UI behavior contract
 
 Status: implemented; automated and normal/minimum/maximum-window visual gates
-pass on 2026-09-01. High-DPI and negative-coordinate monitor bounds are covered
-by deterministic policy tests; live QA hardware was one 96-DPI monitor. This is
+pass through 2026-09-02. High-DPI and negative-coordinate monitor bounds are
+covered by deterministic policy tests; live QA hardware was one 96-DPI monitor. This is
 the default contract for every built-in screen and citizen view. Feature screens
 compose these controls; they do not copy their templates or restate universal
 interaction behavior.
@@ -65,6 +65,72 @@ All scroll surfaces use `SettingScrollViewerStyle`:
 - MangaReader Library, History, Chapter Selector, Reader Window
 
 No per-screen scrollbar templates. Behavior consistent across app.
+
+---
+
+## Drawer
+
+**Owner:** `setting/Components/Drawer.xaml(.cs)`
+**Control:** `SettingDrawer`
+
+- `WidthFraction` is measured against the full host, not the Drawer itself.
+  The Reader uses `0.25`, so the final panel is exactly 25% of current client
+  width at maximized, normal, and minimum sizes.
+- The surface slides from the left over 200 ms with ease-out. System-disabled
+  client animation snaps directly to final geometry.
+- The root clips horizontally and hit testing exists only inside the actual
+  translated panel. Backdrops and outside space remain consumer-owned.
+- Size changes retarget final geometry; unload/reload detaches animation state
+  and leaves no stale clock or event route.
+- Drawer content is composed by the feature. Shared buttons, slider, ComboBox,
+  and ScrollViewer templates remain owned here in Setting.
+- MangaReader publishes one opaque, feature-owned card composition per Drawer
+  feature. The Drawer only orders and hosts those cards; chapter, fullscreen,
+  auto-scroll, Pin, zoom, Dim, and Reset layouts are not templates in the
+  parent. Each card composes `SettingCardStyle`/`SettingActionCard` with the
+  existing shared button, slider, and picker controls.
+- Drawer control interaction remains inside the owning feature route. It does
+  not publish Reader page-pointer activity; page input and Reader scrollbar
+  movement retain their own manual-navigation route.
+
+## Window chrome
+
+**Owner:** `setting/Components/WindowChrome.xaml(.cs)`
+**Native behavior:** `NativeWindowChromeBehavior`
+
+- The chrome is visible on first frame, idles for 500 ms, fades over 180 ms,
+  and becomes non-hit-testable when hidden.
+- A full-width six-DIP physical-top trigger reveals it. Pointer entry, keyboard
+  focus, title drag, and pressed system actions hold it visible; ordinary
+  document scrolling does not.
+- Minimize, maximize/restore, close, drag, and title double-click use one shared
+  resize policy. `NoResize` consumes the double-click without mutating window
+  state, and a rejected native `DragMove` is non-fatal while its hold is always
+  released.
+- Colors are dynamic theme resources; native DWM fallback is shared by Shell,
+  Settings, and standalone Reader rather than copied into each window.
+- Timers, capture, focus, animation, and event state detach on unload and can
+  attach safely again.
+
+## Picker and slider refinements
+
+- `SettingComboBoxStyle` honors `DisplayMemberPath` for selected object items
+  and binds the selected presenter margin to the ComboBox `Padding`. Consumers
+  can therefore use compact responsive padding without copying the template.
+- `SettingSlider` carries minimum, maximum, value, and direction into its track;
+  reversed direction remains valid for inverse speed semantics.
+
+## 2026-09-02 evidence
+
+- Complete `Citadel.Uia` suite: 226/226.
+- MangaReader Reader suite: 91/91. The 2026-09-02 feature-owned card layout and
+  render-frame auto-scroll correction are covered automatically; fresh live
+  user judgment for those two usability changes remains pending.
+- Disposable WPF Reader: 54/54 live checks with inspected maximized,
+  fullscreen, normal 1180x760, and minimum 640x480 captures.
+- The minimum Reader Drawer keeps its selected chapter label readable without
+  horizontal scrolling, and the shared chrome reveals at the physical top edge
+  after its hidden state.
 
 ---
 

@@ -12,4 +12,5 @@
   <Project Path="tests/Citadel.Uia.Citizen.Dependency/Citadel.Uia.Citizen.Dependency.csproj" />
   <Project Path="tests/Module.Mangareader.Archive.Tests/Module.Mangareader.Archive.Tests.csproj" />
   <Project Path="tests/Module.Mangareader.Library.Tests/Module.Mangareader.Library.Tests.csproj" />
+  <Project Path="tests/Module.Mangareader.Reader.Tests/Module.Mangareader.Reader.Tests.csproj" />
 </Solution>

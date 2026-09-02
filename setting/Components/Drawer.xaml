@@ -1,0 +1,30 @@
+<ContentControl
+    x:Class="Citadel.Setting.Components.SettingDrawer"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:local="clr-namespace:Citadel.Setting.Components"
+    HorizontalAlignment="Stretch"
+    VerticalAlignment="Stretch">
+    <ContentControl.Template>
+        <ControlTemplate TargetType="{x:Type local:SettingDrawer}">
+            <Grid x:Name="PART_Root" ClipToBounds="True">
+                <Border
+                    x:Name="PART_DrawerSurface"
+                    Width="0"
+                    HorizontalAlignment="Left"
+                    Background="{DynamicResource BgRail}"
+                    BorderBrush="{DynamicResource Border}"
+                    BorderThickness="0,0,1,0">
+                    <Border.RenderTransform>
+                        <TranslateTransform x:Name="PART_SlideTransform" />
+                    </Border.RenderTransform>
+                    <ContentPresenter
+                        HorizontalAlignment="Stretch"
+                        VerticalAlignment="Stretch"
+                        Content="{TemplateBinding Content}"
+                        ContentTemplate="{TemplateBinding ContentTemplate}" />
+                </Border>
+            </Grid>
+        </ControlTemplate>
+    </ContentControl.Template>
+</ContentControl>

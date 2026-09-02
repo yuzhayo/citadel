@@ -1,0 +1,18 @@
+<UserControl
+    x:Class="Module.Mangareader.ReaderOverlay"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:automation="clr-namespace:System.Windows.Automation;assembly=PresentationCore"
+    IsHitTestVisible="False"
+    Opacity="0">
+    <Grid>
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="*" />
+            <ColumnDefinition Width="*" />
+            <ColumnDefinition Width="*" />
+        </Grid.ColumnDefinitions>
+        <Border Grid.Column="0" automation:AutomationProperties.Name="Previous viewport" />
+        <Border Grid.Column="1" automation:AutomationProperties.Name="Toggle Reader menu" />
+        <Border Grid.Column="2" automation:AutomationProperties.Name="Next viewport" />
+    </Grid>
+</UserControl>

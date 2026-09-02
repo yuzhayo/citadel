@@ -1,0 +1,110 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <IsPackable>false</IsPackable>
+    <UseWPF>true</UseWPF>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="coverlet.collector" Version="6.0.4" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
+    <PackageReference Include="xunit" Version="2.9.3" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="3.1.4" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\setting\Citadel.Setting.csproj" />
+  </ItemGroup>
+
+  <!--
+    The MangaReader citizen remains outside the solution dependency graph.
+    Reader policies/engine sources are linked exactly as compiled by the
+    citizen, while the CBZ decoder is replaced through IReaderChapterLoader.
+  -->
+  <ItemGroup>
+    <Compile Include="..\..\module\mangareader\Reader\ReaderActivityHub.cs"
+             Link="Reader\ReaderActivityHub.cs" />
+    <Compile Include="..\..\module\mangareader\Reader\FrameContentHost.cs"
+             Link="Reader\FrameContentHost.cs" />
+    <Compile Include="..\..\module\mangareader\Reader\CbzReaderChapterLoader.cs"
+             Link="Reader\CbzReaderChapterLoader.cs" />
+    <Compile Include="..\..\module\mangareader\Reader\ReaderAutoScrollController.cs"
+             Link="Reader\ReaderAutoScrollController.cs" />
+    <Compile Include="..\..\module\mangareader\Reader\ReaderAutoScrollPolicy.cs"
+             Link="Reader\ReaderAutoScrollPolicy.cs" />
+    <Compile Include="..\..\module\mangareader\Reader\ReaderChapterCoordinator.cs"
+             Link="Reader\ReaderChapterCoordinator.cs" />
+    <Compile Include="..\..\module\mangareader\Reader\ReaderChapterNavigation.cs"
+             Link="Reader\ReaderChapterNavigation.cs" />
+    <Compile Include="..\..\module\mangareader\Reader\ReaderChromeController.cs"
+             Link="Reader\ReaderChromeController.cs" />
+    <Compile Include="..\..\module\mangareader\Reader\ReaderDimController.cs"
+             Link="Reader\ReaderDimController.cs" />
+    <Page Include="..\..\module\mangareader\Reader\ReaderDrawer.xaml"
+          Link="Reader\ReaderDrawer.xaml" />
+    <Compile Include="..\..\module\mangareader\Reader\ReaderDrawer.xaml.cs"
+             Link="Reader\ReaderDrawer.xaml.cs">
+      <DependentUpon>ReaderDrawer.xaml</DependentUpon>
+    </Compile>
+    <Compile Include="..\..\module\mangareader\Reader\ReaderDrawerContributions.cs"
+             Link="Reader\ReaderDrawerContributions.cs" />
+    <Compile Include="..\..\module\mangareader\Reader\ReaderDrawerPolicy.cs"
+             Link="Reader\ReaderDrawerPolicy.cs" />
+    <Compile Include="..\..\module\mangareader\Reader\ReaderFeatureCatalog.cs"
+             Link="Reader\ReaderFeatureCatalog.cs" />
+    <Compile Include="..\..\module\mangareader\Reader\ReaderFeatureContract.cs"
+             Link="Reader\ReaderFeatureContract.cs" />
+    <Compile Include="..\..\module\mangareader\Reader\ReaderFeatureHost.cs"
+             Link="Reader\ReaderFeatureHost.cs" />
+    <Compile Include="..\..\module\mangareader\Reader\ReaderFullscreenGeometry.cs"
+             Link="Reader\ReaderFullscreenGeometry.cs" />
+    <Compile Include="..\..\module\mangareader\Reader\ReaderFullscreenController.cs"
+             Link="Reader\ReaderFullscreenController.cs" />
+    <Compile Include="..\..\module\mangareader\Reader\ReaderInputPolicy.cs"
+             Link="Reader\ReaderInputPolicy.cs" />
+    <Compile Include="..\..\module\mangareader\Reader\ReaderInputRouter.cs"
+             Link="Reader\ReaderInputRouter.cs" />
+    <Compile Include="..\..\module\mangareader\Reader\ReaderPinController.cs"
+             Link="Reader\ReaderPinController.cs" />
+    <Compile Include="..\..\module\mangareader\Reader\ReaderPreferencesStore.cs"
+             Link="Reader\ReaderPreferencesStore.cs" />
+    <Compile Include="..\..\module\mangareader\Reader\ReaderResetController.cs"
+             Link="Reader\ReaderResetController.cs" />
+    <Compile Include="..\..\module\mangareader\Reader\ReaderSessionState.cs"
+             Link="Reader\ReaderSessionState.cs" />
+    <Page Include="..\..\module\mangareader\Reader\ReaderToast.xaml"
+          Link="Reader\ReaderToast.xaml" />
+    <Compile Include="..\..\module\mangareader\Reader\ReaderToast.xaml.cs"
+             Link="Reader\ReaderToast.xaml.cs">
+      <DependentUpon>ReaderToast.xaml</DependentUpon>
+    </Compile>
+    <Compile Include="..\..\module\mangareader\Reader\ReaderValuePolicy.cs"
+             Link="Reader\ReaderValuePolicy.cs" />
+    <Compile Include="..\..\module\mangareader\Reader\ReaderViewportNavigator.cs"
+             Link="Reader\ReaderViewportNavigator.cs" />
+    <Compile Include="..\..\module\mangareader\Reader\ReaderViewportStepPolicy.cs"
+             Link="Reader\ReaderViewportStepPolicy.cs" />
+    <Compile Include="..\..\module\mangareader\Reader\ReaderZoomController.cs"
+             Link="Reader\ReaderZoomController.cs" />
+
+    <Compile Include="..\..\module\mangareader\shareLogic\MangaLibrary.cs"
+             Link="ShareLogic\MangaLibrary.cs" />
+    <Compile Include="..\..\module\mangareader\shareLogic\ChapterLoadingContracts.cs"
+             Link="ShareLogic\ChapterLoadingContracts.cs" />
+    <Compile Include="..\..\module\mangareader\shareLogic\ChapterSurfaceModel.cs"
+             Link="ShareLogic\ChapterSurfaceModel.cs" />
+    <Compile Include="..\..\module\mangareader\shareLogic\CbzChapterLoader.cs"
+             Link="ShareLogic\CbzChapterLoader.cs" />
+    <Compile Include="..\..\module\mangareader\shareLogic\ChapterRenderCache.cs"
+             Link="ShareLogic\ChapterRenderCache.cs" />
+    <Compile Include="..\..\module\mangareader\shareLogic\NaturalStringComparer.cs"
+             Link="ShareLogic\NaturalStringComparer.cs" />
+    <Compile Include="..\..\module\mangareader\shareLogic\OpenChapterRequestedEventArgs.cs"
+             Link="ShareLogic\OpenChapterRequestedEventArgs.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Using Include="Xunit" />
+  </ItemGroup>
+
+</Project>

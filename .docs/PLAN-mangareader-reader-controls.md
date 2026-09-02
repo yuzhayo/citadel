@@ -1,6 +1,7 @@
 # PLAN: MangaReader immersive Reader controls
 
-Status: **LOCKED — implementation has not started**
+Status: **IMPLEMENTED — automated, isolation, hygiene, and available-hardware
+live gates passed on 2026-09-02**
 Baseline: `main` at `e792b14` / release `v1.3.0`, clean worktree on
 2026-09-01.
 
@@ -117,7 +118,9 @@ the shared ComboBox style, and Drawer scrolling uses
 
 - Drawer Previous/Next are chapter-level actions, unlike Overlay
   Previous/Next.
-- Drawer Previous/Next and dropdown selection jump directly to the first page
+- The chapter picker occupies its own first row; equal-width Previous/Next
+  buttons occupy the second row. Drawer Previous/Next and dropdown selection
+  jump directly to the first page
   of the target chapter.
 - The dropdown lists every chapter in the title's existing natural order and
   follows the currently active chapter.
@@ -194,13 +197,18 @@ No child control installs a competing `Esc` handler.
 
 - Auto-scroll moves one viewport height per configured number of seconds.
 - Default is `5 seconds / viewport`.
-- Configurable range is `1–60 seconds / viewport`, one-second steps.
+- The Auto-scroll card exposes separate, equal-width `Start` and `Stop`
+  buttons. They issue distinct commands; no toggle command is used.
+- Configurable range is `1–30 seconds / viewport`, one-second steps. Older
+  persisted values above `30` are normalized to `30` on load.
 - The Drawer uses one slider, not a numeric input. Its physical direction is
-  `Slow 60s` on the left to `Fast 1s` on the right, while the stored value
+  `Slow 30s` on the left to `Fast 1s` on the right, while the stored value
   remains the unambiguous seconds-per-viewport number.
 - The current value is displayed as, for example, `5 s / screen`.
 - Movement is elapsed-time based, independent of refresh rate and DPI.
 - Changing the slider while running changes speed immediately.
+- Interacting with Drawer buttons, picker, or speed slider is control input,
+  not manual Reader navigation, and therefore does not stop auto-scroll.
 - Persist only the configured speed. Running state is session-only and always
   starts stopped.
 - The following manual intent stops auto-scroll and it never resumes by
@@ -261,8 +269,10 @@ Children never call one another and never reach back into named fields on
 the canonical state and accepts or rejects each mutation.
 
 `IReaderFeature` has an explicit `Attach(context)` / `Dispose()` lifecycle and
-may publish zero or more typed Drawer contributions. `ReaderDrawer` renders
-those contributions through shared-control data templates. A later feature is
+may publish zero or more typed Drawer card contributions. Each feature owns its
+card composition and reuses the existing shared card, button, slider, and
+picker controls. `ReaderDrawer` only orders and hosts those opaque cards; it has
+no feature-specific template or control layout. A later feature is
 therefore introduced by:
 
 1. adding its own feature file (or one XAML/code-behind visual pair when it
@@ -359,7 +369,7 @@ module/mangareader/Reader/
 ├── ReaderViewportNavigator.cs          90% click-scroll and boundary policy
 ├── ReaderOverlay.xaml(.cs)             three-zone child surface
 ├── ReaderDrawer.xaml(.cs)              contribution renderer over SettingDrawer
-├── ReaderChapterNavigation.cs          Prev/dropdown/Next chapter feature
+├── ReaderChapterNavigation.cs          picker + balanced Previous/Next card
 ├── ReaderFullscreenController.cs       monitor fullscreen + exact restore
 ├── ReaderChromeController.cs           Reader adapter for SettingWindowChrome
 ├── ReaderToast.xaml(.cs)               transient fullscreen hint
@@ -402,7 +412,7 @@ Rules:
 - load before feature attachment so the first visible frame uses final values;
 - validate fields independently;
 - clamp Dim to `0–80` and snap to `5`;
-- clamp speed to `1–60` and snap to whole seconds;
+- clamp speed to `1–30` and snap to whole seconds;
 - missing, empty, oversized, malformed, unknown-version, or unreadable data
   falls back safely to defaults without propagating an exception;
 - an invalid field does not discard a valid sibling field;
@@ -568,7 +578,7 @@ several viewports.
 | fullscreen | covers taskbar on current monitor, stays non-topmost, F11 toggles, exact bounds/state restore |
 | Esc chain | first Esc exits fullscreen, second closes pinned Drawer, third closes Reader |
 | Dim | page viewport alone dims; 0–80/5 steps; Alt shortcuts and local reset work |
-| auto-scroll | 5-second default, 1–60 slider mapping, live speed change, manual/Drawer/deactivation/load/end stop rules |
+| auto-scroll | smooth render-frame movement, 5-second default, 1–30 slider mapping, live speed change, manual/Drawer/deactivation/load/end stop rules |
 | Reset | resets only zoom/dim/speed/running/Pin and preserves chapter, position, Drawer open, fullscreen |
 | restart/update-safe data | Dim and speed restore; every session-only state returns to default |
 
@@ -614,3 +624,49 @@ WPF evidence covers the available hardware before any visual PASS is claimed.
 - adding third-party UI or archive dependencies.
 
 There are no remaining open product decisions for this Reader-control scope.
+
+## 15. Implementation evidence — 2026-09-02
+
+The locked behavior remains the authority. Implementation was repaired against
+it through `.docs/PLAN-mangareader-reader-controls-repair.md`; original and
+live-discovered findings plus their root resolution are retained in
+`.docs/AUDIT-mangareader-reader-controls-2026-09-02.md`.
+
+### Delivered ownership
+
+- `ReaderWindow` is one composition root with fixed named layer hosts.
+- `ReaderFeatureHost` mounts the explicit catalog and reverse-disposes it.
+- `ReaderChapterCoordinator` is the only rolling/load/jump owner and drains
+  async operations explicitly on close.
+- `ReaderInputRouter` is the only window preview-input owner.
+- State, commands, viewport, chapter navigation, input, activity, and
+  notification contracts are focused; children do not reach into named parent
+  controls or public mutable state.
+- Shared `SettingDrawer`, `SettingWindowChrome`, `SettingSlider`, shared
+  ComboBox style, and shared ScrollViewer style own universal behavior; Reader
+  files own only manga semantics and feature contribution layout.
+
+### Final proof
+
+| Gate | Result |
+|---|---|
+| dedicated Reader suite | 91/91 |
+| complete UIA/shared suite | 226/226 |
+| complete Debug solution regression | 495/495, exit code 0 |
+| Setting Debug/Release | 0 warnings, 0 errors |
+| MangaReader Debug/Release | 0 warnings, 0 errors |
+| citizen isolation | Debug/Release contain only MangaReader payload; no `Citadel.*.dll` or third-party dependency |
+| disposable live WPF | 54/54 checks; six captures inspected |
+| sizes | maximized, fullscreen, normal 1180x760, minimum 640x480 |
+| hygiene | diff check, stale-symbol, tracked-temp, dependency, and dirty-scope review pass |
+
+The live machine provided one 2560x1440 96-DPI monitor. Current-monitor
+fullscreen, taskbar coverage, non-topmost behavior, exact restore, physical-top
+chrome reveal, proportional Drawer, real routed Overlay clicks, Reset, and Esc
+priority passed live. Negative monitor coordinates and DPI conversions pass
+deterministic tests; multi-monitor/high-DPI hardware was not available and is
+not claimed as a live visual pass.
+
+No Reader preference, disposable CBZ, harness, screenshot, or cache fixture is
+part of the deliverable worktree. No commit, version bump, package, or release
+is implied by this implementation status.

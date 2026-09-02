@@ -7,6 +7,7 @@ using Citadel.Core.Crl;
 using Citadel.Core.Modules;
 using Citadel.Core.Rpl;
 using Citadel.Core.Tokens;
+using Citadel.Setting.Components;
 using Citadel.Ui.Animations;
 using Citadel.Ui.Controls;
 using Citadel.Ui.Theme;
@@ -110,7 +111,7 @@ public partial class MainWindow : Window
             ? Math.Min(requestedMinHeight, area.Height)
             : requestedMinHeight;
 
-        NativeWindowChrome.Apply(this, _tokens.Color("BgRail"), _tokens.Color("Fg"));
+        NativeWindowChromeBehavior.Apply(this, _tokens.Color("BgRail"), _tokens.Color("Fg"));
 
         // Only the initial size follows the token; a user who resized the
         // window keeps their size, which is why this is not a live binding.
@@ -125,7 +126,7 @@ public partial class MainWindow : Window
     {
         base.OnSourceInitialized(e);
         ApplyStartupBounds();
-        NativeWindowChrome.Apply(this, _tokens.Color("BgRail"), _tokens.Color("Fg"));
+        NativeWindowChromeBehavior.Apply(this, _tokens.Color("BgRail"), _tokens.Color("Fg"));
     }
 
     private void ApplyStartupBounds()

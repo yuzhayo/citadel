@@ -1,0 +1,29 @@
+<UserControl
+    x:Class="Module.Mangareader.ReaderDrawer"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:local="clr-namespace:Module.Mangareader"
+    xmlns:setting="clr-namespace:Citadel.Setting.Components;assembly=Citadel.Setting"
+    Background="{x:Null}">
+    <UserControl.Resources>
+        <DataTemplate DataType="{x:Type local:ReaderDrawerCardContribution}">
+            <ContentPresenter Content="{Binding Card}" />
+        </DataTemplate>
+    </UserControl.Resources>
+
+    <setting:SettingDrawer
+        x:Name="DrawerPanel"
+        WidthFraction="0.25">
+        <Border Background="{DynamicResource BgRail}">
+            <ScrollViewer
+                HorizontalScrollBarVisibility="Disabled"
+                Style="{DynamicResource SettingScrollViewerStyle}"
+                VerticalScrollBarVisibility="Auto">
+                <ItemsControl
+                    Margin="8,16"
+                    ItemsSource="{Binding Contributions, RelativeSource={RelativeSource AncestorType={x:Type local:ReaderDrawer}}}"
+                    HorizontalContentAlignment="Stretch" />
+            </ScrollViewer>
+        </Border>
+    </setting:SettingDrawer>
+</UserControl>

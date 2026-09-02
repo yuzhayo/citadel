@@ -2,14 +2,16 @@ using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Interop;
 
-namespace Citadel.Shell;
+namespace Citadel.Setting.Components;
 
 /// <summary>
-/// Keeps the native resize/minimize/maximize/close chrome while making its
-/// caption visually continuous with Citadel's own header. Unsupported DWM
-/// attributes fail soft; the standard frame remains usable.
+/// Applies DWM dark mode and caption/border/text color to a window handle.
+/// Shared component so both Shell and future standalone windows (e.g. ReaderWindow)
+/// can call the same logic without taking a dependency on Citadel.Shell.
+///
+/// Unsupported DWM attributes fail soft; the standard frame remains usable.
 /// </summary>
-internal static class NativeWindowChrome
+public static class NativeWindowChromeBehavior
 {
     private const int UseImmersiveDarkMode = 20;
     private const int BorderColor = 34;
@@ -31,7 +33,6 @@ internal static class NativeWindowChrome
         _ = DwmSetWindowAttribute(handle, CaptionColor, ref background, sizeof(int));
         _ = DwmSetWindowAttribute(handle, BorderColor, ref background, sizeof(int));
         _ = DwmSetWindowAttribute(handle, TextColor, ref foreground, sizeof(int));
-
     }
 
     private static int ToColorRef(uint argb)

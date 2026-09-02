@@ -19,7 +19,13 @@
                     BorderBrush="{DynamicResource TransparentBrush}"
                     BorderThickness="1"
                     CornerRadius="2" />
-                <Track x:Name="PART_Track">
+                <Track
+                    x:Name="PART_Track"
+                    IsDirectionReversed="{TemplateBinding IsDirectionReversed}"
+                    Maximum="{TemplateBinding Maximum}"
+                    Minimum="{TemplateBinding Minimum}"
+                    Orientation="{TemplateBinding Orientation}"
+                    Value="{TemplateBinding Value}">
                     <Track.Thumb>
                         <Thumb Width="12" Height="12">
                             <Thumb.Template>

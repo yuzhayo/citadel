@@ -151,52 +151,47 @@ work; it does not change Citadel Core or the shared module contract.
       `Ctrl+0` to reset to `100%`; fit modes and reading-direction modes are not
       part of the Reader control scope.
 
-## Immersive Reader controls — locked plan, not implemented
+## Immersive Reader controls — implemented and verified
 
 Canonical contract: `.docs/PLAN-mangareader-reader-controls.md`. Reading
 direction and fit modes are explicitly outside this scope.
 
-- [ ] Refactor `ReaderWindow` once into the stable parent/children feature
+- [x] Refactor `ReaderWindow` once into the stable parent/children feature
       contract, explicit catalog, central state, input router, and named layer
       hosts without changing the rolling chapter engine.
-- [ ] Add the invisible three-zone Overlay: Previous/Menu/Next, with
+- [x] Add the invisible three-zone Overlay: Previous/Menu/Next, with
       Previous/Next scrolling `90%` of the viewport and Menu toggling the
       Drawer.
-- [ ] Add the proportional left Drawer and its chapter navigation, fullscreen,
+- [x] Add the proportional left Drawer and its chapter navigation, fullscreen,
       auto-scroll, Pin, zoom, Dim Pages, and global Reset contributions.
-- [ ] Add themed auto-fading Reader chrome, current-monitor true fullscreen,
+- [x] Add themed auto-fading Reader chrome, current-monitor true fullscreen,
       toast, and the locked fullscreen → Drawer → Reader `Esc` priority.
-- [ ] Persist only Dim and auto-scroll speed with validated atomic fallback;
+- [x] Persist only Dim and auto-scroll speed with validated atomic fallback;
       keep zoom, fullscreen, Drawer, Pin, and running state session-only.
-- [ ] Complete pure behavior, shared-component, regression, and live WPF gates
+- [x] Complete pure behavior, shared-component, regression, and live WPF gates
       before marking this scope implemented.
 
-## Downloader reference — discovery note, not approved for implementation
+## Downloader — locked plan; implementation has not started
 
-- [ ] Treat `.docs/RESEARCH-comix-downloader-2026-09-01.md` as the current
-      evidence record for the Comix target. It documents DNS/browser behavior,
-      APK/upstream contracts, source variants, descrambling, a small CBZ
-      packaging proof, limitations, and the unapproved provisional seam.
-- [ ] Use the removed historical downloader from `C:\VSCODE\manga` only as a
-      behavior reference. Its complete implementation exists in Git history at
-      commit `c730b20` (and remains unchanged through `5df44c7`); commit
-      `9171aed` removed the backend and replaced the current screen with a
-      placeholder. `C:\VSCODE\Manga-Nee` has no downloader implementation.
-- [ ] Preserve the useful sequence: open a chapter URL in a real browser,
-      scroll the actual scroll container until height/image count stabilizes,
-      harvest ordered image URLs, fetch with the page URL as `Referer`, retry
-      bounded failures, detect the image type from bytes, and compile a CBZ.
-- [ ] Do not inherit the historical implementation's limitations: one chapter
-      per manual run, all page buffers retained in RAM, failed pages skipped
-      while still producing a CBZ, generic image heuristics that can capture
-      unrelated assets, and collision handling that silently creates `(2)`
-      files instead of reconciling local chapters.
-- [ ] A Citadel downloader must treat the remote ordered item list as the
-      completeness authority so regular chapters, split chapters, extras,
-      notices, and `Author's Note` remain separate items. Stream downloads to
-      temporary storage, validate every expected page, then finalize the CBZ
-      atomically; never publish a partial archive as complete.
-- [ ] Evaluate `C:\VSCODE\YUZZENI\core\stealthB` as the browser-session layer
-      through an explicit worker/IPC boundary. Citadel is C#/WPF while
-      `stealthB` is async Python/Playwright, so no Citadel assembly should
-      import or copy Python implementation files directly.
+- [x] Record the logged-out Comix/DNS/browser/API/group/descramble/CBZ evidence
+      in `.docs/RESEARCH-comix-downloader-2026-09-01.md`.
+- [x] Lock the two-screen local-first product, feature ownership, explicit
+      network triggers, provider contract, retry/fallback rules, persistent
+      queue, hybrid transport, and atomic output in
+      `.docs/PLAN-mangareader-downloader.md`.
+- [ ] Phase 0: start from a settled Reader worktree, freeze exact live Comix
+      contracts as fixtures, and characterize current CBZ/Library behavior.
+- [ ] Phase 1: implement pure remote identity, source registry, filter/query,
+      queue state, recovery, mapping, and collision policies.
+- [ ] Phase 2: implement backward-compatible PyHost v2 and the direct Camoufox
+      browser backend without depending on `stealthB`.
+- [ ] Phase 3: implement the lazy Comix Browse/detail/group/chapter/page adapter.
+- [ ] Phase 4: implement persistent queue, staging, decoder, failed-page
+      recovery, confirmed whole-chapter source fallback, and atomic publisher.
+- [ ] Phase 5: add only the missing generic shared multi-select/tag components.
+- [ ] Phase 6: integrate the one Downloader tab with Catalog and button-opened
+      Download List routed screens.
+- [ ] Phase 7: integrate safe local-folder mapping, Library refresh, optional
+      existing Cover Builder reuse, and remove redundant code.
+- [ ] Phase 8: pass pure, PyHost, archive, shared UI, WPF, build/deployment, full
+      regression, and one disposable complete live-chapter validation gate.

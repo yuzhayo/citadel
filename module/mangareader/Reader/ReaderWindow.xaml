@@ -1,38 +1,38 @@
-<Window x:Class="Module.Mangareader.ReaderWindow"
-        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        xmlns:local="clr-namespace:Module.Mangareader"
-        xmlns:setting="clr-namespace:Citadel.Setting.Components;assembly=Citadel.Setting"
-        Title="Manga Reader"
-        Width="1180"
-        Height="760"
-        MinWidth="640"
-        MinHeight="480"
-        WindowStartupLocation="CenterOwner"
-        WindowState="Maximized"
-        Background="#05060A"
-        Foreground="{DynamicResource Fg}"
-        UseLayoutRounding="True"
-        SnapsToDevicePixels="True"
-        Loaded="ReaderWindow_Loaded"
-        Closed="ReaderWindow_Closed"
-        PreviewKeyDown="ReaderWindow_PreviewKeyDown">
-    <Grid Background="#05060A">
-        <ScrollViewer x:Name="ReaderScroller"
-                      Visibility="Collapsed"
-                      IsEnabled="False"
-                      VerticalScrollBarVisibility="Auto"
-                      HorizontalScrollBarVisibility="Auto"
-                      IsDeferredScrollingEnabled="False"
-                      PanningMode="VerticalOnly"
-                      Background="#05060A"
-                      Style="{DynamicResource SettingScrollViewerStyle}"
-                      ScrollChanged="ReaderScroller_ScrollChanged"
-                      PreviewMouseWheel="ReaderWindow_PreviewMouseWheel"
-                      SizeChanged="ReaderScroller_SizeChanged">
-            <ItemsControl x:Name="ChapterList"
-                          HorizontalAlignment="Stretch"
-                          Background="#05060A">
+<Window
+    x:Class="Module.Mangareader.ReaderWindow"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:local="clr-namespace:Module.Mangareader"
+    xmlns:setting="clr-namespace:Citadel.Setting.Components;assembly=Citadel.Setting"
+    Title="Manga Reader"
+    Width="1180"
+    Height="760"
+    MinWidth="640"
+    MinHeight="480"
+    WindowStartupLocation="CenterOwner"
+    WindowState="Maximized"
+    WindowStyle="None"
+    ResizeMode="CanResize"
+    Background="#05060A"
+    Foreground="{DynamicResource Fg}"
+    UseLayoutRounding="True"
+    SnapsToDevicePixels="True">
+    <Grid x:Name="RootGrid" Background="#05060A">
+        <ScrollViewer
+            x:Name="ReaderScroller"
+            Panel.ZIndex="0"
+            Visibility="Visible"
+            IsEnabled="False"
+            VerticalScrollBarVisibility="Auto"
+            HorizontalScrollBarVisibility="Auto"
+            IsDeferredScrollingEnabled="False"
+            PanningMode="VerticalOnly"
+            Background="#05060A"
+            Style="{DynamicResource SettingScrollViewerStyle}">
+            <ItemsControl
+                x:Name="ChapterList"
+                HorizontalAlignment="Stretch"
+                Background="#05060A">
                 <ItemsControl.ItemContainerStyle>
                     <Style TargetType="{x:Type ContentPresenter}">
                         <Setter Property="HorizontalAlignment" Value="Stretch" />
@@ -48,13 +48,14 @@
                 <ItemsControl.ItemTemplate>
                     <DataTemplate>
                         <Grid Background="#05060A">
-                            <ItemsControl ItemsSource="{Binding Pages}"
-                                          Width="{Binding SurfaceWidth}"
-                                          HorizontalAlignment="Center">
+                            <ItemsControl
+                                ItemsSource="{Binding Pages}"
+                                Width="{Binding SurfaceWidth}"
+                                HorizontalAlignment="Center">
                                 <ItemsControl.LayoutTransform>
                                     <ScaleTransform
-                                        ScaleX="{Binding RelativeSource={RelativeSource AncestorType={x:Type local:ReaderWindow}}, Path=ZoomScale}"
-                                        ScaleY="{Binding RelativeSource={RelativeSource AncestorType={x:Type local:ReaderWindow}}, Path=ZoomScale}" />
+                                        ScaleX="{Binding DataContext.ZoomScale, RelativeSource={RelativeSource AncestorType={x:Type local:ReaderWindow}}}"
+                                        ScaleY="{Binding DataContext.ZoomScale, RelativeSource={RelativeSource AncestorType={x:Type local:ReaderWindow}}}" />
                                 </ItemsControl.LayoutTransform>
                                 <ItemsControl.ItemContainerStyle>
                                     <Style TargetType="{x:Type ContentPresenter}">
@@ -69,13 +70,14 @@
                                 </ItemsControl.ItemsPanel>
                                 <ItemsControl.ItemTemplate>
                                     <DataTemplate>
-                                        <Image Source="{Binding Bitmap}"
-                                               Width="{Binding DisplayWidth}"
-                                               Height="{Binding DisplayHeight}"
-                                               Stretch="Uniform"
-                                               HorizontalAlignment="Center"
-                                               VerticalAlignment="Top"
-                                               SnapsToDevicePixels="True">
+                                        <Image
+                                            Source="{Binding Bitmap}"
+                                            Width="{Binding DisplayWidth}"
+                                            Height="{Binding DisplayHeight}"
+                                            Stretch="Uniform"
+                                            HorizontalAlignment="Center"
+                                            VerticalAlignment="Top"
+                                            SnapsToDevicePixels="True">
                                             <Image.Style>
                                                 <Style TargetType="{x:Type Image}">
                                                     <Setter Property="RenderOptions.BitmapScalingMode" Value="Fant" />
@@ -96,39 +98,80 @@
             </ItemsControl>
         </ScrollViewer>
 
-        <Border x:Name="LoadingPanel"
-                Panel.ZIndex="30"
-                Background="#05060A">
-            <StackPanel Width="420"
-                        HorizontalAlignment="Center"
-                        VerticalAlignment="Center">
-                <TextBlock x:Name="LoadingTitle"
-                           Text="Preparing chapter"
-                           FontSize="22"
-                           FontWeight="SemiBold"
-                           Foreground="{DynamicResource Fg}"
-                           TextAlignment="Center" />
-                <TextBlock x:Name="LoadingDetail"
-                           Margin="0,10,0,16"
-                           Text="Reading CBZ..."
-                           FontSize="13"
-                           Foreground="{DynamicResource Body}"
-                           TextAlignment="Center"
-                           TextWrapping="Wrap" />
-                <ProgressBar x:Name="LoadingProgress"
-                             Height="4"
-                             Minimum="0"
-                             Maximum="1"
-                             Value="0"
-                             Foreground="{DynamicResource Accent}"
-                             Background="{DynamicResource Hover}" />
-                <setting:SettingButton x:Name="CloseAfterErrorButton"
-                                       Visibility="Collapsed"
-                                       Width="100"
-                                       Margin="0,18,0,0"
-                                       HorizontalAlignment="Center"
-                                       Content="Close"
-                                       Click="CloseAfterErrorButton_Click" />
+        <ContentControl
+            x:Name="DimLayer"
+            Panel.ZIndex="10"
+            HorizontalContentAlignment="Stretch"
+            VerticalContentAlignment="Stretch"
+            IsHitTestVisible="False" />
+        <ContentControl
+            x:Name="DrawerBackdropLayer"
+            Panel.ZIndex="20"
+            HorizontalContentAlignment="Stretch"
+            VerticalContentAlignment="Stretch"
+            IsHitTestVisible="False" />
+        <ContentControl
+            x:Name="OverlayLayer"
+            Panel.ZIndex="30"
+            HorizontalContentAlignment="Stretch"
+            VerticalContentAlignment="Stretch"
+            IsHitTestVisible="False" />
+        <ContentControl
+            x:Name="ChromeLayer"
+            Panel.ZIndex="40"
+            HorizontalContentAlignment="Stretch"
+            VerticalContentAlignment="Top" />
+        <ContentControl
+            x:Name="DrawerLayer"
+            Panel.ZIndex="50"
+            HorizontalContentAlignment="Stretch"
+            VerticalContentAlignment="Stretch" />
+        <ContentControl
+            x:Name="ToastLayer"
+            Panel.ZIndex="60"
+            HorizontalContentAlignment="Stretch"
+            VerticalContentAlignment="Stretch"
+            IsHitTestVisible="False" />
+
+        <Border
+            x:Name="LoadingPanel"
+            Panel.ZIndex="100"
+            Background="#05060A">
+            <StackPanel
+                Width="420"
+                HorizontalAlignment="Center"
+                VerticalAlignment="Center">
+                <TextBlock
+                    x:Name="LoadingTitle"
+                    Text="Preparing chapter"
+                    FontSize="22"
+                    FontWeight="SemiBold"
+                    Foreground="{DynamicResource Fg}"
+                    TextAlignment="Center" />
+                <TextBlock
+                    x:Name="LoadingDetail"
+                    Margin="0,10,0,16"
+                    Text="Reading CBZ..."
+                    FontSize="13"
+                    Foreground="{DynamicResource Body}"
+                    TextAlignment="Center"
+                    TextWrapping="Wrap" />
+                <ProgressBar
+                    x:Name="LoadingProgress"
+                    Height="4"
+                    Minimum="0"
+                    Maximum="1"
+                    Value="0"
+                    Foreground="{DynamicResource Accent}"
+                    Background="{DynamicResource Hover}" />
+                <setting:SettingButton
+                    x:Name="CloseAfterErrorButton"
+                    Visibility="Collapsed"
+                    Width="100"
+                    Margin="0,18,0,0"
+                    HorizontalAlignment="Center"
+                    Content="Close"
+                    Click="CloseAfterErrorButton_Click" />
             </StackPanel>
         </Border>
     </Grid>

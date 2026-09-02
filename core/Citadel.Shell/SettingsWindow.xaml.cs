@@ -3,6 +3,7 @@ using System.Windows.Controls;
 using Citadel.Core;
 using Citadel.Core.Rpl;
 using Citadel.Core.Tokens;
+using Citadel.Setting.Components;
 using Citadel.Ui.Theme;
 
 namespace Citadel.Shell;
@@ -37,7 +38,7 @@ internal partial class SettingsWindow : Window
     protected override void OnSourceInitialized(EventArgs e)
     {
         base.OnSourceInitialized(e);
-        NativeWindowChrome.Apply(
+        NativeWindowChromeBehavior.Apply(
             this,
             Defaults.All["BgRail"].Argb,
             Defaults.All["Fg"].Argb);
