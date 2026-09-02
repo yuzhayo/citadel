@@ -156,58 +156,6 @@ internal sealed class GoogleAccountService
         }
     }
 
-    public async Task<GoogleAccountResult> DetectAsync(
-        string profileId,
-        CancellationToken cancellationToken = default)
-    {
-        var networkResult = await RequireStableNetworkAsync(cancellationToken);
-        if (networkResult is not null)
-        {
-            return networkResult;
-        }
-
-        if (!_sessions.IsOpen(profileId))
-        {
-            await _sessions.OpenAsync(
-                profileId,
-                AccountUrl,
-                headless: false,
-                cancellationToken);
-        }
-        else if (_sessions.IsHeadless(profileId))
-        {
-            await _sessions.CloseAsync(profileId, cancellationToken);
-            await _sessions.OpenAsync(
-                profileId,
-                AccountUrl,
-                headless: false,
-                cancellationToken);
-        }
-
-        var inspection = await _sessions.InspectGoogleAsync(profileId, cancellationToken);
-        var state = ReadState(inspection);
-        var email = ReadEmail(inspection);
-        return state switch
-        {
-            "active" when !string.IsNullOrWhiteSpace(email) => Result(
-                GoogleAccountState.Active,
-                email,
-                "email Google berhasil dideteksi"),
-            "active" => Result(
-                GoogleAccountState.ActionRequired,
-                null,
-                "akun aktif, tetapi email belum dapat dideteksi"),
-            "signed_out" => Result(
-                GoogleAccountState.SignedOut,
-                null,
-                "login Google belum selesai di browser"),
-            _ => Result(
-                GoogleAccountState.ActionRequired,
-                null,
-                "status Google belum dapat dipastikan"),
-        };
-    }
-
     private async Task<GoogleAccountResult?> RequireStableNetworkAsync(
         CancellationToken cancellationToken)
     {

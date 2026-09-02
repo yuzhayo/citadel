@@ -4,6 +4,7 @@ using Citadel.Core.Rpl;
 using Module.Camoprof.Launcher;
 using Module.Camoprof.Network;
 using Module.Camoprof.Providers.Google;
+using Module.Camoprof.Providers.Google.Enrollment;
 using Module.Camoprof.Runtime;
 using Module.Camoprof.SharedLogic;
 
@@ -32,7 +33,8 @@ public partial class CamoprofView : UserControl
         _sessions = new BrowserSessionCoordinator();
         _network = new NetworkMonitor();
         var google = new GoogleAccountService(_network, credentials, _sessions);
-        _launcher = new LauncherView(catalog, _sessions, google, credentials, _network);
+        var enrollment = new GoogleEnrollmentFeature(_sessions, credentials);
+        _launcher = new LauncherView(catalog, _sessions, google, credentials, _network, enrollment);
         _runtime = new RuntimeView(_sessions);
 
         LauncherHost.Content = _launcher;

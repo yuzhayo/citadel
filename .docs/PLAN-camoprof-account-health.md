@@ -2,6 +2,18 @@
 
 Status: **IMPLEMENTED — automated and visual gates pass; linked-account relog smoke awaits LO (2026-09-01)**
 
+> **Partially superseded (2026-09-03) — account pairing rules.** The
+> `Detect account` / manual-password `Save profile` pairing flow described in
+> §3.1 was replaced by Google Enrollment (type-once capture):
+> `module/camoprof/Providers/Google/Enrollment/` + the
+> `google.enrollment.*` pyhost commands (see `module/sharedLogic/pyhost/README.md`).
+> The health-check, relog, and storage rules of this plan remain authoritative
+> EXCEPT where marked [superseded by enrollment] below. The "never captured
+> from Google's page" boundary now reads: the password typed into Google's
+> login page may be captured ONLY by an explicitly-armed enrollment listener
+> (exact `accounts.google.com` origin, password fields only, headed session
+> only, one-shot handover into DPAPI storage) — never by any other path.
+
 Depends on: `PLAN-camoprof-ui-refactor.md` and the existing pyhost v1 contract.
 
 Scope: CamoProf, additive pyhost commands used by CamoProf, and the shared UI
@@ -76,6 +88,11 @@ Detailed rules:
 Citadel does not attempt to scrape or recover the password typed into Google's
 page. The password for future relog is entered explicitly into CamoProf after
 the email has been detected.
+[**superseded by enrollment (2026-09-03):** steps 3–4 above are replaced by
+the enrollment flow — the password typed into Google's own login page is
+captured once by the armed enrollment listener and stored DPAPI-encrypted;
+there is no second password prompt. §1's health-check and relog rules are
+unchanged.]
 
 ### 3.2 Check one Launcher row
 
@@ -162,6 +179,10 @@ Credenz/google/
   file directly.
 - Automation receives the decrypted value only for the active relog command.
 - The password is never echoed in a pyhost response or diagnostic message.
+  [**superseded by enrollment (2026-09-03):** the single exception is the
+  one-shot `google.enrollment.finish` response, which carries email/password
+  exactly once after the account is proven active; every other response —
+  including all enrollment `status`/error responses — remains secret-free.]
 - Storage remains inside the already gitignored Credenz vault.
 - DPAPI does not change the automation flow: the store decrypts immediately
   before relog and passes the value to the existing pyhost request pipe. Do not

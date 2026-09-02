@@ -196,9 +196,139 @@ internal sealed class BrowserSessionCoordinator : IDisposable
         }
     }
 
-    /// <returns>True when a tracked session was closed or proven absent.</returns>
-    public async Task<bool> CloseAsync(
+    /// <summary>
+    /// Enrollment routing. Status is a fast local call on the host — safe to
+    /// poll at 500 ms behind the operation gate. FinishGoogleEnrollmentAsync
+    /// is the one command whose response carries a secret; it is only ever
+    /// called by the Google enrollment service, which stores the credential
+    /// before returning a non-secret result. Launcher/UI layers never see it.
+    /// </summary>
+    public async Task<JsonObject> StartGoogleEnrollmentAsync(
         string profile,
+        string? expectedEmail,
+        CancellationToken cancellationToken = default)
+    {
+        await _operationGate.WaitAsync(cancellationToken);
+        try
+        {
+            ThrowIfDisposed();
+            var session = GetSession(profile)
+                ?? throw new PyHostException(
+                    "SESSION_NOT_FOUND",
+                    "tidak ada session terbuka untuk '" + profile + "'");
+            try
+            {
+                return await EnsureHost().StartGoogleEnrollmentAsync(
+                    session.SessionId, expectedEmail, cancellationToken);
+            }
+            catch (PyHostException ex) when (ex.Code == "BROWSER_GONE")
+            {
+                Forget(profile);
+                throw;
+            }
+        }
+        finally
+        {
+            _operationGate.Release();
+        }
+    }
+
+    public async Task<JsonObject> GoogleEnrollmentStatusAsync(
+        string profile,
+        CancellationToken cancellationToken = default)
+    {
+        await _operationGate.WaitAsync(cancellationToken);
+        try
+        {
+            ThrowIfDisposed();
+            var session = GetSession(profile)
+                ?? throw new PyHostException(
+                    "SESSION_NOT_FOUND",
+                    "tidak ada session terbuka untuk '" + profile + "'");
+            try
+            {
+                return await EnsureHost().GoogleEnrollmentStatusAsync(
+                    session.SessionId, cancellationToken);
+            }
+            catch (PyHostException ex) when (ex.Code == "BROWSER_GONE")
+            {
+                Forget(profile);
+                throw;
+            }
+        }
+        finally
+        {
+            _operationGate.Release();
+        }
+    }
+
+    public async Task<JsonObject> FinishGoogleEnrollmentAsync(
+        string profile,
+        CancellationToken cancellationToken = default)
+    {
+        await _operationGate.WaitAsync(cancellationToken);
+        try
+        {
+            ThrowIfDisposed();
+            var session = GetSession(profile)
+                ?? throw new PyHostException(
+                    "SESSION_NOT_FOUND",
+                    "tidak ada session terbuka untuk '" + profile + "'");
+            try
+            {
+                return await EnsureHost().FinishGoogleEnrollmentAsync(
+                    session.SessionId, cancellationToken);
+            }
+            catch (PyHostException ex) when (ex.Code == "BROWSER_GONE")
+            {
+                Forget(profile);
+                throw;
+            }
+        }
+        finally
+        {
+            _operationGate.Release();
+        }
+    }
+
+    /// <summary>
+    /// Best-effort idempotent teardown. A missing local session means the
+    /// pyhost-side enrollment was already disarmed by the session-death
+    /// lifecycle hook, so the absence is reported rather than thrown.
+    /// </summary>
+    public async Task<JsonObject?> CancelGoogleEnrollmentAsync(
+        string profile,
+        CancellationToken cancellationToken = default)
+    {
+        await _operationGate.WaitAsync(cancellationToken);
+        try
+        {
+            ThrowIfDisposed();
+            var session = GetSession(profile);
+            if (session is null)
+            {
+                return null;
+            }
+
+            try
+            {
+                return await EnsureHost().CancelGoogleEnrollmentAsync(
+                    session.SessionId, cancellationToken);
+            }
+            catch (PyHostException ex) when (ex.Code == "BROWSER_GONE")
+            {
+                Forget(profile);
+                throw;
+            }
+        }
+        finally
+        {
+            _operationGate.Release();
+        }
+    }
+
+    /// <returns>True when a tracked session was closed or proven absent.</returns>
+    public async Task<bool> CloseAsync(        string profile,
         CancellationToken cancellationToken = default)
     {
         await _operationGate.WaitAsync(cancellationToken);

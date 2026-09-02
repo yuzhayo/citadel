@@ -5,7 +5,8 @@ satu objek JSON per baris di stdin, tepat satu respons per request di
 stdout. stdout murni protokol; SEMUA log ke stderr.
 
 v1 commands: ping, session.open, session.navigate, session.verify,
-google.inspect, google.relogin, session.close, shutdown.
+google.inspect, google.relogin, google.enrollment.start/status/finish/
+cancel, session.close, shutdown.
 
 Perilaku Google hidup di providers/google/ (inspection, relogin,
 enrollment); file ini hanya protokol, registry session, dan lifecycle.
@@ -24,7 +25,7 @@ from urllib.parse import urlparse
 
 from providers import PyhostError as _PyhostError, log as _log
 from providers.google import is_browser_closed_error as _is_browser_closed_error
-from providers.google import inspection, relogin
+from providers.google import enrollment, inspection, relogin
 
 PROTOCOL_VERSION = 1
 DEFAULT_TIMEOUT_SEC = 120.0
@@ -60,6 +61,7 @@ class _Host:
     def __init__(self):
         self.credenz = self._read_credenz()
         self.sessions = {}          # sid -> dict(profile, cm, ctx, page, dir)
+        self.enrollments = {}       # profile -> enrollment._Enrollment
         self.next_sid = 0
         self.stopping = False
 
@@ -105,6 +107,11 @@ class _Host:
         sess = self.sessions.get(sid)
         if sess is None:
             return True
+        # Enrollment milik session ini ikut dibuang SEKARANG — semua
+        # jalur kematian session (browser ditutup manual, session.close,
+        # kegagalan launch, close_all saat shutdown/EOF) lewat sini, dan
+        # tidak ada yang boleh meninggalkan secret setelah session mati.
+        enrollment.disarm_for_session(self, sid, sess["profile"])
         try:
             if sess.get("ctx") is not None:
                 await sess["cm"].__aexit__(None, None, None)
@@ -228,6 +235,19 @@ class _Host:
         sess = self._get_session(msg)
         return await relogin.relogin(self, sess, msg.get("session"), msg)
 
+    async def cmd_google_enrollment_start(self, msg):
+        sess = self._get_session(msg)
+        return await enrollment.start(self, sess, msg.get("session"), msg)
+
+    async def cmd_google_enrollment_status(self, msg):
+        return await enrollment.status(self, msg.get("session"))
+
+    async def cmd_google_enrollment_finish(self, msg):
+        return await enrollment.finish(self, msg.get("session"))
+
+    async def cmd_google_enrollment_cancel(self, msg):
+        return await enrollment.cancel(self, msg.get("session"))
+
     async def cmd_session_close(self, msg):
         sid = msg.get("session")
         if sid not in self.sessions:
@@ -264,6 +284,10 @@ HANDLERS = {
     "session.verify": _Host.cmd_session_verify,
     "google.inspect": _Host.cmd_google_inspect,
     "google.relogin": _Host.cmd_google_relogin,
+    "google.enrollment.start": _Host.cmd_google_enrollment_start,
+    "google.enrollment.status": _Host.cmd_google_enrollment_status,
+    "google.enrollment.finish": _Host.cmd_google_enrollment_finish,
+    "google.enrollment.cancel": _Host.cmd_google_enrollment_cancel,
     "session.close": _Host.cmd_session_close,
     "shutdown": _Host.cmd_shutdown,
 }

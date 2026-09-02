@@ -144,6 +144,107 @@ The result state is `active`, `credential_rejected`, or `action_required`.
 steps become `action_required`; pyhost does not bypass them. Email/password are
 request-only data and are never echoed or logged.
 
+### `google.enrollment.*` — type-once credential capture
+
+Four polling-compatible commands on protocol v1. Enrollment lets the user
+type their Google password **once**, directly into Google's real login page in
+a headed resident session; pyhost captures it via a page listener and hands it
+over exactly one time so the C# side can store it DPAPI-encrypted for
+automatic relog. There is no second password dialog and no OS-level keyboard
+capture of any kind.
+
+**Arm-before-navigate (guaranteed order):** `start` creates a dedicated
+enrollment page in the resident context, installs the capture listener, and
+registers the `armed` state — and only THEN navigates that page to Google's
+sign-in. The response returns after `armed`, so a caller may show the "log in
+now" instruction knowing capture is already live. The first keystroke cannot
+be missed.
+
+**Capture boundaries (enforced in JS at event time AND again in Python before
+storing):**
+
+- exact host `accounts.google.com` only (hostname equality, no substring);
+- password fields only (`input[type=password]`; Google's audited field is
+  `input[name="Passwd"]`);
+- the listener exists only on the enrollment page and dies with it;
+- retyping overwrites the held value; values are never logged, never appear in
+  `status`/error responses, and are dropped on consume/teardown.
+
+**State machine:**
+
+```text
+armed → password_observed → waiting_for_google | challenge
+      → complete → consumed
+(any non-terminal state)
+      → cancelled | expired | browser_gone | wrong_account
+```
+
+- one active enrollment per profile; a second `start` while non-terminal fails
+  with `ENROLLMENT_ACTIVE` (terminal states may be replaced by a new `start`);
+- internal lifetime is 10 minutes (not a UI setting): a background task and a
+  status-time deadline check both expire the enrollment, dropping the secret —
+  including from `complete`, which must not wait forever for a `finish`;
+- `finish` is one-shot: after `consumed`, the secret is gone and a second call
+  fails with `ENROLLMENT_CONSUMED`;
+- passkey/QR logins reach `complete` with `has_password: false` — honest: the
+  session is active but there is no secret to hand over;
+- `expected_email` (optional, for password-repair flows): an active identity
+  that differs ends the enrollment as `wrong_account`; `finish` then fails
+  with `WRONG_ACCOUNT` and no stored credential is overwritten;
+- enrollment cleanup follows the **session lifecycle**: every session-death
+  path (manual browser close, `session.close`, launch failure, `close_all` on
+  shutdown/stdin-EOF) funnels through `_drop_session`, which disarms the
+  owning enrollment and drops its secret. No path retains a password after
+  its session is gone;
+- teardown closes the enrollment page and opens a clean replacement page in
+  the same context when it was the last one, so the resident browser stays
+  visibly alive.
+
+#### `google.enrollment.start`
+```json
+> {"id": 8, "cmd": "google.enrollment.start", "session": "s1",
+   "expected_email": "user@gmail.com"}
+< {"id": 8, "ok": true, "session": "s1", "state": "armed"}
+```
+
+Headed sessions only (`HEADLESS_RELOGIN`-style guard: `HEADLESS_ENROLLMENT`).
+`expected_email` is optional and must be a valid email when present
+(`BAD_CREDENTIAL_INPUT`).
+
+#### `google.enrollment.status`
+```json
+> {"id": 9, "cmd": "google.enrollment.status", "session": "s1"}
+< {"id": 9, "ok": true, "session": "s1", "state": "password_observed",
+   "email": null, "has_password": true, "challenge": false,
+   "url": "https://accounts.google.com/signin/v2/identifier"}
+```
+
+Advances the state machine (URL + identity proof) and never carries plaintext.
+`email` is populated only once an active identity has been detected.
+
+#### `google.enrollment.finish`
+```json
+> {"id": 10, "cmd": "google.enrollment.finish", "session": "s1"}
+< {"id": 10, "ok": true, "session": "s1", "email": "user@gmail.com",
+   "password": "one-time-handover"}
+```
+
+Refused before `complete` (`ENROLLMENT_NOT_COMPLETE`), after consumption
+(`ENROLLMENT_CONSUMED`), and on `wrong_account` (`WRONG_ACCOUNT`). `password`
+is `null` for passkey logins. This is the only command that ever carries
+plaintext, exactly once.
+
+#### `google.enrollment.cancel`
+```json
+> {"id": 11, "cmd": "google.enrollment.cancel", "session": "s1"}
+< {"id": 11, "ok": true, "session": "s1", "state": "cancelled"}
+```
+
+Idempotent full teardown: listener, secret, expiry task, and enrollment page.
+An unknown/already-removed enrollment returns `{"state": "none"}`. The
+resident profile and session are untouched — cancel leaves the profile
+unlinked but the browser alive.
+
 ### `session.close`
 ```json
 > {"id": 6, "cmd": "session.close", "session": "s1"}
@@ -192,6 +293,13 @@ Responds first, then closes every context and exits 0.
 | `HEADLESS_RELOGIN` | relog was requested on a headless session |
 | `BAD_CREDENTIAL_INPUT` | relog email/password input is absent or malformed |
 | `RELOGIN_FAILED` | headed relog navigation failed; session kept |
+| `HEADLESS_ENROLLMENT` | enrollment was requested on a headless session |
+| `ENROLLMENT_ACTIVE` | profile already has a live (non-terminal) enrollment |
+| `ENROLLMENT_NOT_FOUND` | no enrollment exists for that session |
+| `ENROLLMENT_NOT_COMPLETE` | `finish` requested before state `complete` |
+| `ENROLLMENT_CONSUMED` | `finish` requested a second time; secret already handed over |
+| `ENROLLMENT_START_FAILED` | listener install or login-page navigation failed |
+| `WRONG_ACCOUNT` | active identity differs from `expected_email` |
 | `SESSION_NOT_FOUND` | unknown session id |
 | `INTERNAL` | anything else (message carries type + detail) |
 

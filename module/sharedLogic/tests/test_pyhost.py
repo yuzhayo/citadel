@@ -666,5 +666,349 @@ class PyHostLifecycleTest(unittest.TestCase):
             credenz.cleanup()
 
 
+class _FakeEnrollmentPage:
+    """Page enrollment: merekam urutan arm/navigate dan callback expose."""
+
+    def __init__(self, ctx, events):
+        self._ctx = ctx
+        self.events = events
+        self.url = "about:blank"
+        self.closed = False
+        self.exposed = {}
+        self.init_scripts = []
+        self.evaluate_result = []
+
+    async def expose_function(self, name, callback):
+        self.events.append("expose")
+        self.exposed[name] = callback
+
+    async def add_init_script(self, script):
+        self.events.append("init")
+        self.init_scripts.append(script)
+
+    async def goto(self, url, **_kwargs):
+        self.events.append("goto")
+        self.url = url
+
+    def is_closed(self):
+        return self.closed
+
+    async def close(self):
+        self.closed = True
+        if self in self._ctx.pages:
+            self._ctx.pages.remove(self)
+
+    async def evaluate(self, _script):
+        return self.evaluate_result
+
+
+class _FakeEnrollmentContext:
+    def __init__(self):
+        self.events = []
+        self.pages = []
+        self.replacement_pages = 0
+
+    async def new_page(self):
+        # Halaman pengganti (teardown) juga dihitung agar test bisa
+        # membedakan "page bersih" dari page enrollment.
+        self.replacement_pages += 1
+        page = _FakeEnrollmentPage(self, self.events)
+        self.pages.append(page)
+        return page
+
+
+class _NullContextManager:
+    async def __aexit__(self, *_args):
+        return None
+
+
+class PyHostEnrollmentTest(unittest.IsolatedAsyncioTestCase):
+    """google.enrollment — urutan arm, capture tervalidasi, state
+    machine, finish satu kali, dan cleanup per jalur kematian session."""
+
+    SIGNIN = "https://accounts.google.com/signin/v2/identifier"
+    MYACCOUNT = "https://myaccount.google.com/"
+
+    def _make_host(self, headless=False):
+        host = PYHOST_MODULE._Host()
+        ctx = _FakeEnrollmentContext()
+        host.sessions["s1"] = {
+            "profile": "probe",
+            "cm": _NullContextManager(),
+            "ctx": ctx,
+            "page": object(),
+            "dir": "unused",
+            "headless": headless,
+        }
+        return host, ctx
+
+    async def _start(self, host, **params):
+        return await PYHOST_MODULE._handle(host, {
+            "id": 1, "cmd": "google.enrollment.start", "session": "s1",
+            **params})
+
+    async def _status(self, host):
+        return await PYHOST_MODULE._handle(host, {
+            "id": 2, "cmd": "google.enrollment.status", "session": "s1"})
+
+    async def _finish(self, host):
+        return await PYHOST_MODULE._handle(host, {
+            "id": 3, "cmd": "google.enrollment.finish", "session": "s1"})
+
+    async def _cancel(self, host):
+        return await PYHOST_MODULE._handle(host, {
+            "id": 4, "cmd": "google.enrollment.cancel", "session": "s1"})
+
+    def _cancel_pending_tasks(self, host):
+        for enr in host.enrollments.values():
+            if enr.expire_task is not None:
+                enr.expire_task.cancel()
+
+    async def _type_password(self, host, value):
+        """Simulasikan event input dari field password Google."""
+        enr = host.enrollments["probe"]
+        callback = next(iter(enr.page.exposed.values()))
+        await callback(value)
+
+    async def test_start_arms_listener_before_navigation(self):
+        host, ctx = self._make_host()
+        response = await self._start(host)
+        self.assertTrue(response["ok"])
+        self.assertEqual(response["state"], "armed")
+        page = host.enrollments["probe"].page
+        # Kontrak urutan: listener hidup SEBELUM halaman login dibuka.
+        self.assertEqual(page.events, ["expose", "init", "goto"])
+        self.assertEqual(len(page.exposed), 1)
+        self.assertIn("accounts.google.com", "".join(page.init_scripts))
+        self.assertIn('input[type=\\"password\\"]',
+                      "".join(page.init_scripts))
+        self._cancel_pending_tasks(host)
+
+    async def test_start_refuses_headless_session(self):
+        host, _ctx = self._make_host(headless=True)
+        response = await self._start(host)
+        self.assertEqual(response["error"]["code"], "HEADLESS_ENROLLMENT")
+        self.assertEqual(host.enrollments, {})
+
+    async def test_start_refuses_second_active_enrollment(self):
+        host, _ctx = self._make_host()
+        await self._start(host)
+        response = await self._start(host)
+        self.assertEqual(response["error"]["code"], "ENROLLMENT_ACTIVE")
+        self._cancel_pending_tasks(host)
+
+    async def test_start_rejects_malformed_expected_email(self):
+        host, _ctx = self._make_host()
+        response = await self._start(host, expected_email="not-an-email")
+        self.assertEqual(response["error"]["code"], "BAD_CREDENTIAL_INPUT")
+        self.assertEqual(host.enrollments, {})
+
+    async def test_capture_ignores_lookalike_origin(self):
+        host, _ctx = self._make_host()
+        await self._start(host)
+        enr = host.enrollments["probe"]
+        # Validasi sisi Python: host harus TEPAT accounts.google.com.
+        for url in ("https://accounts.google.com.evil.example/signin",
+                    "https://example.com/signin",
+                    "https://myaccount.google.com/"):
+            enr.page.url = url
+            await self._type_password(host, "secret-not-echoed")
+        response = await self._status(host)
+        self.assertTrue(response["ok"])
+        self.assertFalse(response["has_password"])
+        self.assertNotIn("secret-not-echoed", json.dumps(response))
+        self._cancel_pending_tasks(host)
+
+    async def test_capture_keeps_last_value(self):
+        host, _ctx = self._make_host()
+        await self._start(host)
+        enr = host.enrollments["probe"]
+        enr.page.url = self.SIGNIN
+        await self._type_password(host, "first-typed")
+        await self._type_password(host, "second-typed")
+        enr.page.url = self.MYACCOUNT
+        enr.page.evaluate_result = ["Account: User (user@gmail.com)"]
+        response = await self._status(host)
+        self.assertEqual(response["state"], "complete")
+        finished = await self._finish(host)
+        self.assertTrue(finished["ok"])
+        self.assertEqual(finished["email"], "user@gmail.com")
+        # Ketikan ulang mengganti nilai lama.
+        self.assertEqual(finished["password"], "second-typed")
+
+    async def test_challenge_waits_for_user(self):
+        host, _ctx = self._make_host()
+        await self._start(host)
+        enr = host.enrollments["probe"]
+        enr.page.url = self.SIGNIN
+        await self._type_password(host, "secret-not-echoed")
+        enr.page.url = "https://accounts.google.com/signin/challenge/totp"
+        response = await self._status(host)
+        self.assertEqual(response["state"], "challenge")
+        self.assertTrue(response["challenge"])
+        self.assertTrue(response["has_password"])
+        self.assertNotIn("secret-not-echoed", json.dumps(response))
+
+    async def test_finish_is_one_shot_and_cleans_up(self):
+        host, ctx = self._make_host()
+        await self._start(host)
+        enr = host.enrollments["probe"]
+        enrollment_page = enr.page
+        enr.page.url = self.SIGNIN
+        await self._type_password(host, "secret-not-echoed")
+        enr.page.url = self.MYACCOUNT
+        enr.page.evaluate_result = ["Account: User (user@gmail.com)"]
+        await self._status(host)
+
+        finished = await self._finish(host)
+        self.assertTrue(finished["ok"])
+        self.assertEqual(finished["password"], "secret-not-echoed")
+        self.assertTrue(enrollment_page.closed)
+        self.assertIsNone(enr.page)
+        self.assertIsNone(enr.password)
+
+        again = await self._finish(host)
+        self.assertEqual(again["error"]["code"], "ENROLLMENT_CONSUMED")
+        self.assertNotIn("secret-not-echoed", json.dumps(again))
+
+        after = await self._status(host)
+        self.assertEqual(after["state"], "consumed")
+        self.assertFalse(after["has_password"])
+        self.assertNotIn("secret-not-echoed", json.dumps(after))
+        # Enrollment page diganti page bersih pada context yang sama.
+        self.assertEqual(len(ctx.pages), 1)
+        self.assertFalse(ctx.pages[0].closed)
+
+    async def test_wrong_account_is_terminal_refusal(self):
+        host, _ctx = self._make_host()
+        await self._start(host, expected_email="expected@gmail.com")
+        enr = host.enrollments["probe"]
+        enr.page.url = self.SIGNIN
+        await self._type_password(host, "secret-not-echoed")
+        enr.page.url = self.MYACCOUNT
+        enr.page.evaluate_result = ["Account: User (actual@gmail.com)"]
+        response = await self._status(host)
+        self.assertEqual(response["state"], "wrong_account")
+        self.assertEqual(response["email"], "actual@gmail.com")
+
+        finished = await self._finish(host)
+        self.assertEqual(finished["error"]["code"], "WRONG_ACCOUNT")
+        self.assertNotIn("secret-not-echoed", json.dumps(finished))
+        self.assertIsNone(enr.password)
+
+    async def test_passkey_completes_without_password(self):
+        host, _ctx = self._make_host()
+        await self._start(host)
+        enr = host.enrollments["probe"]
+        # Login tanpa password (passkey/QR) — tidak ada capture.
+        enr.page.url = self.MYACCOUNT
+        enr.page.evaluate_result = ["Account: User (user@gmail.com)"]
+        response = await self._status(host)
+        self.assertEqual(response["state"], "complete")
+        self.assertFalse(response["has_password"])
+
+        finished = await self._finish(host)
+        self.assertTrue(finished["ok"])
+        self.assertEqual(finished["email"], "user@gmail.com")
+        self.assertIsNone(finished["password"])
+
+    async def test_cancel_is_idempotent_and_disarms(self):
+        host, _ctx = self._make_host()
+        await self._start(host)
+        enr = host.enrollments["probe"]
+        enrollment_page = enr.page
+        enr.page.url = self.SIGNIN
+        await self._type_password(host, "secret-not-echoed")
+
+        first = await self._cancel(host)
+        self.assertTrue(first["ok"])
+        self.assertEqual(first["state"], "cancelled")
+        self.assertTrue(enrollment_page.closed)
+        self.assertIsNone(enr.page)
+        self.assertIsNone(enr.password)
+
+        second = await self._cancel(host)
+        self.assertTrue(second["ok"])
+        self.assertEqual(second["state"], "cancelled")
+
+        # Setelah disarm, page sudah ditutup dan listener ikut mati —
+        # simulasikan event terlambat lewat callback yang masih dipegang.
+        late_callback = next(iter(enrollment_page.exposed.values()))
+        await late_callback("late-secret")
+        after = await self._status(host)
+        self.assertEqual(after["state"], "cancelled")
+        self.assertFalse(after["has_password"])
+        self.assertNotIn("late-secret", json.dumps(after))
+
+    async def test_session_close_disarms_enrollment(self):
+        host, _ctx = self._make_host()
+        await self._start(host)
+        enr = host.enrollments["probe"]
+        enr.page.url = self.SIGNIN
+        await self._type_password(host, "secret-not-echoed")
+
+        closed = await PYHOST_MODULE._handle(host, {
+            "id": 5, "cmd": "session.close", "session": "s1"})
+        self.assertTrue(closed["ok"])
+
+        after = await self._status(host)
+        self.assertEqual(after["state"], "browser_gone")
+        self.assertFalse(after["has_password"])
+        self.assertNotIn("secret-not-echoed", json.dumps(after))
+        self.assertIsNone(enr.password)
+        self.assertIsNone(enr.page)
+
+    async def test_drop_session_disarms_enrollment(self):
+        # Jalur kematian browser manual / launch failure / shutdown:
+        # semuanya lewat _drop_session.
+        host, _ctx = self._make_host()
+        await self._start(host)
+        enr = host.enrollments["probe"]
+        enr.page.url = self.SIGNIN
+        await self._type_password(host, "secret-not-echoed")
+
+        await host._drop_session("s1")
+        self.assertEqual(enr.state, "browser_gone")
+        self.assertIsNone(enr.password)
+
+    async def test_expired_deadline_drops_secret(self):
+        host, _ctx = self._make_host()
+        await self._start(host)
+        enr = host.enrollments["probe"]
+        enrollment_page = enr.page
+        enr.page.url = self.SIGNIN
+        await self._type_password(host, "secret-not-echoed")
+        enr.deadline = asyncio.get_running_loop().time() - 1
+
+        response = await self._status(host)
+        self.assertEqual(response["state"], "expired")
+        self.assertTrue(enrollment_page.closed)
+        self.assertIsNone(enr.page)
+        self.assertIsNone(enr.password)
+        self.assertNotIn("secret-not-echoed", json.dumps(response))
+
+    async def test_expire_task_expires_without_polling(self):
+        host, _ctx = self._make_host()
+        await self._start(host)
+        enr = host.enrollments["probe"]
+        enr.deadline = asyncio.get_running_loop().time() - 1
+        await PYHOST_MODULE.enrollment._expire_later(enr)
+        self.assertEqual(enr.state, "expired")
+        self.assertIsNone(enr.password)
+
+    async def test_status_missing_enrollment(self):
+        host, _ctx = self._make_host()
+        response = await self._status(host)
+        self.assertEqual(response["error"]["code"], "ENROLLMENT_NOT_FOUND")
+
+    async def test_finish_refused_before_complete(self):
+        host, _ctx = self._make_host()
+        await self._start(host)
+        response = await self._finish(host)
+        self.assertEqual(response["error"]["code"],
+                         "ENROLLMENT_NOT_COMPLETE")
+        self._cancel_pending_tasks(host)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

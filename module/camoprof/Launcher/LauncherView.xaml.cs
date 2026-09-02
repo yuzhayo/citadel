@@ -5,13 +5,13 @@ using Citadel.Setting.Components;
 using CitadelBridge;
 using Module.Camoprof.Network;
 using Module.Camoprof.Providers.Google;
+using Module.Camoprof.Providers.Google.Enrollment;
 using Module.Camoprof.SharedLogic;
 
 namespace Module.Camoprof.Launcher;
 
 public partial class LauncherView : UserControl, IDisposable
 {
-    private const string GoogleLoginUrl = "https://accounts.google.com/";
     private const string GitHubUrl = "https://github.com/";
 
     private readonly ProfileCatalog _catalog;
@@ -19,7 +19,9 @@ public partial class LauncherView : UserControl, IDisposable
     private readonly GoogleAccountService _google;
     private readonly GoogleCredentialStore _credentials;
     private readonly NetworkMonitor _network;
+    private readonly GoogleEnrollmentFeature _enrollment;
     private readonly ObservableCollection<LauncherProfileRow> _profiles = [];
+    private CancellationTokenSource? _enrollmentCancellation;
     private bool _busy;
     private bool _disposed;
 
@@ -28,13 +30,15 @@ public partial class LauncherView : UserControl, IDisposable
         BrowserSessionCoordinator sessions,
         GoogleAccountService google,
         GoogleCredentialStore credentials,
-        NetworkMonitor network)
+        NetworkMonitor network,
+        GoogleEnrollmentFeature enrollment)
     {
         _catalog = catalog;
         _sessions = sessions;
         _google = google;
         _credentials = credentials;
         _network = network;
+        _enrollment = enrollment;
         InitializeComponent();
         ProfileTable.ItemsSource = _profiles;
         _sessions.SessionChanged += Sessions_SessionChanged;
@@ -87,13 +91,10 @@ public partial class LauncherView : UserControl, IDisposable
         var profileId = "p_" + Guid.NewGuid().ToString("N");
         await RunActionAsync(async () =>
         {
-            await _sessions.OpenAsync(profileId, GoogleLoginUrl, headless: false);
-            await RefreshAsync();
-            var saved = ShowAccountDialog(profileId, existingEmail: null);
-            await RefreshAsync();
-            SetStatus(saved
-                ? "Profile added and linked."
-                : "Profile added as unlinked; use its Google button to finish pairing.");
+            // Neutral start page: the enrollment command owns Google
+            // navigation, and only after its capture listener is armed.
+            await _sessions.OpenAsync(profileId, headless: false);
+            await RunEnrollmentAsync(profileId, existingEmail: null);
         });
     }
 
@@ -154,13 +155,9 @@ public partial class LauncherView : UserControl, IDisposable
         {
             if (!row.Profile.IsLinked)
             {
-                if (!_sessions.IsOpen(row.ProfileId))
-                {
-                    await _sessions.OpenAsync(row.ProfileId, GoogleLoginUrl, headless: false);
-                }
-                var saved = ShowAccountDialog(row.ProfileId, existingEmail: null);
-                await RefreshAsync();
-                SetStatus(saved ? "Google account linked." : "Google account remains unlinked.");
+                // The service opens a headed resident session itself;
+                // enrollment navigates its own page after arming.
+                await RunEnrollmentAsync(row.ProfileId, existingEmail: null);
                 return;
             }
 
@@ -177,12 +174,7 @@ public partial class LauncherView : UserControl, IDisposable
 
             if (result.State == GoogleAccountState.CredentialRejected)
             {
-                var saved = ShowAccountDialog(row.ProfileId, row.Profile.Email);
-                if (saved)
-                {
-                    await RefreshAsync();
-                    SetStatus("Google password updated.");
-                }
+                await RunEnrollmentAsync(row.ProfileId, row.Profile.Email);
             }
         }, row);
     }
@@ -224,13 +216,33 @@ public partial class LauncherView : UserControl, IDisposable
         });
     }
 
-    private bool ShowAccountDialog(string profileId, string? existingEmail)
+    private async Task RunEnrollmentAsync(string profileId, string? existingEmail)
     {
-        var dialog = new AccountSetupDialog(profileId, existingEmail, _google, _credentials)
+        _enrollmentCancellation = new CancellationTokenSource();
+        GoogleEnrollmentResult? result;
+        try
         {
-            Owner = Window.GetWindow(this),
-        };
-        return dialog.ShowDialog() == true;
+            var dialog = new GoogleEnrollmentDialog(
+                profileId,
+                existingEmail,
+                _enrollment,
+                _enrollmentCancellation.Token)
+            {
+                Owner = Window.GetWindow(this),
+            };
+            dialog.ShowDialog();
+            result = dialog.Result;
+        }
+        finally
+        {
+            _enrollmentCancellation.Dispose();
+            _enrollmentCancellation = null;
+        }
+
+        await RefreshAsync();
+        SetStatus(result is null
+            ? "Enrollment ended."
+            : GoogleEnrollmentPolicy.LauncherStatus(result));
     }
 
     private async Task RunActionAsync(Func<Task> action, LauncherProfileRow? row = null)
@@ -341,6 +353,10 @@ public partial class LauncherView : UserControl, IDisposable
             return;
         }
         _disposed = true;
+        // Navigation away must not orphan a running enrollment: the
+        // linked token cancels the dialog's run and its best-effort
+        // teardown; the pyhost lifecycle hook is the final backstop.
+        _enrollmentCancellation?.Cancel();
         _sessions.SessionChanged -= Sessions_SessionChanged;
         _network.SnapshotChanged -= Network_SnapshotChanged;
     }
