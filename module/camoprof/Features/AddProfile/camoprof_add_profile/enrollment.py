@@ -274,27 +274,24 @@ async def _stop_navigation(enr):
 
 
 async def _teardown(host, enr, state):
-    """Terminal + tukar ke page bersih + tutup page enrollment.
+    """Terminal + buang secret + hentikan task + AKHIRI browser.
 
-    Page F dibuat DULU (context tidak pernah kehabisan page), referensi
-    session ditukar ke F, baru E ditutup — listener ikut mati bersama
-    E. Satu jendela tetap hidup."""
+    Flow berakhir di sini: page enrollment ditutup (listener mati
+    bersamanya), dan karena session ini milik flow, session dijatuhkan
+    sehingga context ikut mati — tidak ada page pengganti, tidak ada
+    jendela menganggur. Pemanggil C# cukup membersihkan registry
+    lokalnya (session.close akan terima SESSION_NOT_FOUND = bukti
+    absen)."""
     _end(enr, state)
     await _stop_navigation(enr)
     page, enr.page = enr.page, None
-    ctx = enr.ctx
-    if page is not None and not _page_is_closed(page) and ctx is not None:
-        try:
-            fresh = await ctx.new_page()
-            host.set_primary_page(enr.sid, fresh)
-        except Exception as e:  # noqa: BLE001 - best effort
-            log("page pengganti gagal dibuat: %s" % type(e).__name__)
     if page is not None:
         try:
             if not _page_is_closed(page):
                 await page.close()
         except Exception as e:  # noqa: BLE001 - best effort
             log("tutup page enrollment gagal: %s" % type(e).__name__)
+    await host._drop_session(enr.sid, forget_on_failure=True)
 
 
 async def _close_quietly(enr):

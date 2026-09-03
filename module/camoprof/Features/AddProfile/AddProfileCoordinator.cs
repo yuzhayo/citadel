@@ -30,6 +30,7 @@ internal sealed class AddProfileCoordinator
     internal Func<string, CancellationToken, Task<JsonObject>> StatusAsync { get; set; } = null!;
     internal Func<string, CancellationToken, Task<JsonObject>> FinishAsync { get; set; } = null!;
     internal Func<string, CancellationToken, Task> CancelAsync { get; set; } = null!;
+    internal Func<string, CancellationToken, Task> CloseSessionAsync { get; set; } = null!;
     internal Func<string, string, string, CancellationToken, Task> SaveCredentialAsync { get; set; } = null!;
 
     public AddProfileCoordinator(
@@ -47,6 +48,8 @@ internal sealed class AddProfileCoordinator
             => sessions.AddProfileFinishAsync(profile, token);
         CancelAsync = async (profile, token) =>
             await sessions.AddProfileCancelAsync(profile, token);
+        CloseSessionAsync = (profile, token)
+            => sessions.CloseAsync(profile, token);
         SaveCredentialAsync = (profile, email, password, token)
             => credentials.SaveAsync(profile, email, password, token);
     }
@@ -64,10 +67,32 @@ internal sealed class AddProfileCoordinator
         var profileId = request.ProfileId;
         try
         {
+            return await RunCoreAsync(
+                request, progress, cancellationToken);
+        }
+        finally
+        {
+            // Flow END: browser milik flow ditutup (Python teardown sudah
+            // menjatuhkan session; ini membersihkan registry lokal agar
+            // row/status UI benar). Idempotent dan tidak pernah gagalkan
+            // hasil.
+            await CancelQuietlyAsync(profileId);
+            await CloseSessionQuietlyAsync(profileId);
+        }
+    }
+
+    private async Task<AddProfileResult> RunCoreAsync(
+        AddProfileRequest request,
+        IProgress<AddProfileUpdate>? progress,
+        CancellationToken cancellationToken)
+    {
+        var profileId = request.ProfileId;
+        try
+        {
             await EnsureHeadedSessionAsync(profileId, cancellationToken);
 
             // start returns only after the listener is armed on the
-            // claimed resident page and its navigation has begun.
+            // enrollment page and its navigation has begun.
             await StartAsync(profileId, request.ExpectedEmail, cancellationToken);
             Report(progress, "armed");
 
@@ -95,12 +120,10 @@ internal sealed class AddProfileCoordinator
         }
         catch (OperationCanceledException)
         {
-            await CancelQuietlyAsync(profileId);
             return Result(AddProfileOutcome.Cancelled, null);
         }
         catch (PyHostException ex)
         {
-            await CancelQuietlyAsync(profileId);
             var outcome = ex.Code switch
             {
                 "BROWSER_GONE" => AddProfileOutcome.BrowserGone,
@@ -111,7 +134,6 @@ internal sealed class AddProfileCoordinator
         }
         catch (Exception ex)
         {
-            await CancelQuietlyAsync(profileId);
             return new AddProfileResult(AddProfileOutcome.Failed, null, ex.Message);
         }
     }
@@ -130,13 +152,11 @@ internal sealed class AddProfileCoordinator
             // Passkey/QR login: the session is genuinely active but there
             // is no secret to retrieve — finish is never called on this
             // branch. Honest outcome, nothing saved.
-            await CancelQuietlyAsync(profileId);
             return Result(AddProfileOutcome.ActiveWithoutPassword, email);
         }
 
         if (string.IsNullOrWhiteSpace(email))
         {
-            await CancelQuietlyAsync(profileId);
             return new AddProfileResult(
                 AddProfileOutcome.Failed,
                 null,
@@ -152,7 +172,6 @@ internal sealed class AddProfileCoordinator
         }
         catch (PyHostException ex)
         {
-            await CancelQuietlyAsync(profileId);
             var outcome = ex.Code == "WRONG_ACCOUNT"
                 ? AddProfileOutcome.WrongAccount
                 : AddProfileOutcome.Failed;
@@ -167,13 +186,11 @@ internal sealed class AddProfileCoordinator
         if (!string.IsNullOrWhiteSpace(expectedEmail)
             && !string.Equals(finishEmail, expectedEmail.Trim(), StringComparison.OrdinalIgnoreCase))
         {
-            await CancelQuietlyAsync(profileId);
             return Result(AddProfileOutcome.WrongAccount, finishEmail);
         }
 
         if (string.IsNullOrEmpty(password))
         {
-            await CancelQuietlyAsync(profileId);
             return Result(AddProfileOutcome.ActiveWithoutPassword, finishEmail);
         }
 
@@ -201,8 +218,21 @@ internal sealed class AddProfileCoordinator
         }
         catch (Exception)
         {
-            // Best effort — the pyhost session-death lifecycle hook is
-            // the backstop for disarm.
+            // Best effort — the pyhost teardown already dropped the
+            // session; a second cancel is proven-absent.
+        }
+    }
+
+    private async Task CloseSessionQuietlyAsync(string profileId)
+    {
+        try
+        {
+            await CloseSessionAsync(profileId, CancellationToken.None);
+        }
+        catch (Exception)
+        {
+            // Best effort — the pyhost teardown already dropped the
+            // session; this only fixes the local registry/row state.
         }
     }
 

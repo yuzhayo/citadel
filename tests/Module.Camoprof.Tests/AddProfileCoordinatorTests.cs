@@ -22,6 +22,7 @@ public class AddProfileCoordinatorTests
         public List<(string Profile, string Email, string Password)> Saved { get; } = [];
         public int FinishCalls;
         public int CancelCalls;
+        public int CloseCalls;
         public Queue<Func<JsonObject>> StatusScript { get; } = [];
 
         public AddProfileCoordinator Build(
@@ -55,6 +56,12 @@ public class AddProfileCoordinatorTests
             {
                 Calls.Add("cancel");
                 CancelCalls++;
+                return Task.CompletedTask;
+            };
+            coordinator.CloseSessionAsync = (profile, _token) =>
+            {
+                Calls.Add("close");
+                CloseCalls++;
                 return Task.CompletedTask;
             };            coordinator.SaveCredentialAsync = (profile, email, password, _token) =>
             {
@@ -105,9 +112,10 @@ public class AddProfileCoordinatorTests
         Assert.Single(harness.Saved);
         Assert.Equal(("probe", "user@gmail.com", "test-secret"), harness.Saved[0]);
         Assert.Equal(1, harness.FinishCalls);
-        // finish performs its own teardown — cancel is not part of the
-        // success path.
-        Assert.Equal(0, harness.CancelCalls);
+        // Flow END: the finally-block cleanup closes the session once;
+        // cancel is idempotent best-effort before it.
+        Assert.Equal(1, harness.CancelCalls);
+        Assert.Equal(1, harness.CloseCalls);
     }
 
     [Fact]

@@ -9,10 +9,10 @@ Add Profile lifecycle with a real headed browser:
                                   THEN navigates it to Google sign-in
                                   (same single window)
   camoprof.add_profile.status  -> sign-in family states, no plaintext
-  camoprof.add_profile.cancel  -> teardown + clean replacement page
-  session.navigate             -> MUST succeed (page reference repaired
-                                  by teardown)
-  session.close / shutdown
+  camoprof.add_profile.cancel  -> teardown: browser ENDS (flow over)
+  session.close                -> SESSION_NOT_FOUND = proof the flow
+                                  cleaned itself up
+  shutdown
 
 Exit code 0 = every gate passed. Rebuild the citizen first:
   dotnet build module/camoprof/Module.Camoprof.csproj -c Release
@@ -104,15 +104,13 @@ def main():
         check("enrollment.cancel", cancelled.get("ok") is True
               and cancelled.get("state") == "cancelled", str(cancelled))
 
-        # The repair gate: teardown must have restored a LIVE resident
-        # page reference — navigate must succeed on it.
-        nav = call("session.navigate", session=sid,
-                   url="https://example.com/")
-        check("navigate on repaired resident page",
-              nav.get("ok") is True, str(nav))
-
+        # The flow-END gate: teardown dropped the session itself —
+        # close proves absence instead of closing anything.
         closed = call("session.close", session=sid)
-        check("session.close", closed.get("ok") is True, str(closed))
+        check("session gone after flow end",
+              closed.get("ok") is False
+              and closed.get("error", {}).get("code") == "SESSION_NOT_FOUND",
+              str(closed))
 
         down = call("shutdown")
         check("shutdown", down.get("ok") is True, str(down))

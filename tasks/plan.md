@@ -36,8 +36,9 @@ Launcher -> AddProfileFeature.ExecuteAsync          (kontrak tunggal)
           segera; cancel tidak pernah mengantri di belakang goto)
   -> status (poll 500ms) — state machine dengan helper Google lama
   -> finish (sekali saja) -> DPAPI save -> dialog tutup
-  teardown (finish/cancel/expiry/gagal): buat page F DULU,
-       sess["page"] = F, tutup E → listener mati bersama E.
+  teardown (finish/cancel/expiry/gagal): FLOW BERAKHIR — page E
+       ditutup (listener mati bersamanya), session dijatuhkan,
+       browser milik flow tutup. Tidak ada page pengganti.
 ```
 
 ## Batas keamanan (tetap penuh, ini kebijakan bukan infrastruktur)
@@ -64,6 +65,15 @@ Diganti: `host.register_commands()`, `host.add_lifecycle_hook()`,
 mengikuti idiom proyek (handler menerima dict session seperti
 google.inspect/relogin). Plugin menerima `host`/`sess` sebagai
 PARAMETER fungsi — tidak menyimpan backlink.
+
+## Flow END (keputusan operator 2026-09-03)
+
+Setelah login sukses (atau cancel/gagal/expiry), flow TAMAT: browser
+yang dibuka flow ditutup. Tidak ada page baru, tidak ada jendela
+menganggur, tidak ada blank page. Listener mati bersama browser.
+Profile persist menyimpan login — Launch/Check berikutnya terbuka
+dalam keadaan sudah login. C# membersihkan registry lokalnya di
+finally (cancel + close, keduanya idempotent).
 
 ## Definition of Done
 

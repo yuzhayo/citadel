@@ -163,19 +163,21 @@ class OneWindowInvariantTest(unittest.IsolatedAsyncioTestCase):
             "sess['page'] menunjuk page mati saat enrollment aktif — "
             "melanggar INV-1")
 
-    async def test_teardown_keeps_session_page_live(self):
-        """INV-1 setelah terminal: teardown menukar ke page bersih dan
-        sess['page'] menunjuk page hidup."""
+    async def test_teardown_ends_the_flow_browser(self):
+        """INV-1 bentuk akhirnya: teardown menutup page enrollment,
+        context mati, dan session dijatuhkan — tidak pernah ada session
+        terdaftar dengan page mati, dan tidak ada page pengganti."""
         await _handle(
             self.host, "camoprof.add_profile.start", session="s1")
         await asyncio.sleep(0)
         await _handle(
             self.host, "camoprof.add_profile.cancel", session="s1")
 
-        session_page = self.host.sessions["s1"]["page"]
-        self.assertFalse(session_page.closed)
-        alive = [page for page in self.ctx.pages if not page.closed]
-        self.assertEqual(len(alive), 1)
+        self.assertNotIn(
+            "s1", self.host.sessions,
+            "session milik flow harus dijatuhkan saat teardown")
+        self.assertTrue(self.ctx.dead,
+                        "context harus mati — flow berakhir, browser tutup")
 
     async def test_manual_window_close_drops_session(self):
         """INV-4: user menutup jendela enrollment manual → session

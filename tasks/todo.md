@@ -11,6 +11,9 @@
       host/sess sebagai parameter (tanpa backlink tersimpan)
 - [ ] Task 4: Port test plugin (26) + rewrite invariant + guard arsitektur
       ke kontrak baru
+- [x] Task 6 (tambahan, disetujui operator): flow END setelah login —
+      teardown tanpa page pengganti; browser milik flow ditutup; C#
+      finally = cancel + close. Blank page setelah login hilang.
 - [ ] Task 5: Full gates (Python 4 suite, solution, live smoke real
       browser) → commit → jalankan aplikasi untuk operator test
 

@@ -218,43 +218,36 @@ class AddProfilePluginTest(unittest.IsolatedAsyncioTestCase):
         gate.set()
         self._cancel_pending_tasks(host)
 
-    async def test_teardown_rotates_page_and_repairs_session_page(self):
+    async def test_teardown_ends_the_browser(self):
         host, ctx = self._make_host()
-        resident = host.sessions["s1"]["page"]
 
         await self._start(host)
+        enr = self._enrollments(host)["probe"]
+        enrollment_page = enr.page
         await self._cancel(host)
 
-        # Page kotor (ber-listener) diganti page bersih; context tidak
-        # pernah kehabisan page; session menunjuk page hidup.
-        self.assertTrue(resident.closed)
-        alive = [page for page in ctx.pages if not page.closed]
-        self.assertEqual(len(alive), 1)
-        self.assertIs(host.sessions["s1"]["page"], alive[0])
+        # Flow END: page enrollment ditutup (listener mati), context
+        # ikut mati, session dijatuhkan — tidak ada page pengganti.
+        self.assertTrue(enrollment_page.closed)
+        self.assertTrue(ctx.dead, "context harus mati bersama page-nya")
+        self.assertNotIn(
+            "s1", host.sessions,
+            "session milik flow harus dijatuhkan saat teardown")
 
-        # Lease sudah lepas — navigate kembali boleh.
-        nav = await self._handle(
-            host, "session.navigate", session="s1", url="https://example.com/")
-        self.assertTrue(nav["ok"], str(nav))
-
-    async def test_navigation_failure_rotates_page(self):
+    async def test_navigation_failure_ends_the_browser(self):
         host, ctx = self._make_host(
             goto_error=RuntimeError("net::ERR_NAME_NOT_RESOLVED"))
-        resident = host.sessions["s1"]["page"]
 
         response = await self._start(host)
         self.assertTrue(response["ok"])
         enr = self._enrollments(host)["probe"]
-        # Tunggu task navigasi selesai gagal (deterministik, bukan sleep).
-        await enr.navigate_task
+        await enr.navigate_task  # deterministik: tunggu kegagalan
 
         after = await self._status(host)
         self.assertEqual(after["state"], "failed")
         self.assertFalse(after["has_password"])
-        self.assertTrue(resident.closed)
-        alive = [page for page in ctx.pages if not page.closed]
-        self.assertEqual(len(alive), 1)
-        self.assertIs(host.sessions["s1"]["page"], alive[0])
+        self.assertTrue(ctx.dead)
+        self.assertNotIn("s1", host.sessions)
 
     # ---- cancel / navigation races ------------------------------------
 
@@ -429,8 +422,9 @@ class AddProfilePluginTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(after["state"], "consumed")
         self.assertFalse(after["has_password"])
         self.assertNotIn("secret-not-echoed", json.dumps(after))
-        alive = [page for page in ctx.pages if not page.closed]
-        self.assertEqual(len(alive), 1)
+        # Flow END: browser milik flow ikut mati setelah finish.
+        self.assertTrue(ctx.dead)
+        self.assertNotIn("s1", host.sessions)
 
     async def test_wrong_account_is_terminal_refusal(self):
         host, _ctx = self._make_host()
@@ -479,6 +473,8 @@ class AddProfilePluginTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(first["state"], "cancelled")
         self.assertIsNone(enr.page)
         self.assertIsNone(enr.password)
+        self.assertTrue(enrollment_page.closed,
+                        "page enrollment ditutup — listener mati")
 
         second = await self._cancel(host)
         self.assertTrue(second["ok"])
