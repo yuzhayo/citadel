@@ -1,48 +1,38 @@
 using System.Text.Json.Nodes;
 using CitadelBridge;
+using Module.Camoprof.Providers.Google;
 using Module.Camoprof.SharedLogic;
 
-namespace Module.Camoprof.Providers.Google.Enrollment;
+namespace Module.Camoprof.Features.AddProfile;
 
 /// <summary>
-/// Runs one enrollment end-to-end: ensures a headed resident session
-/// (neutral start URL — the enrollment command owns Google navigation,
-/// and only after its listener is armed), polls status, and on
-/// Complete-with-password calls <c>finish</c> exactly once and stores the
-/// credential via <see cref="GoogleCredentialStore"/> BEFORE any
+/// End-to-end Add Profile orchestration, owned by the feature:
+/// ensure a headed resident session (the feature decides the start
+/// URL — about:blank, since it claims and navigates the same page),
+/// start enrollment (listener armed before navigation), poll status
+/// at the contracted interval, and on Complete-with-password call
+/// finish exactly once and DPAPI-save the credential BEFORE any
 /// non-secret result leaves this class.
 ///
-/// The has_password:false branch (passkey/QR) never calls finish — there
-/// is no secret to retrieve — and goes straight to cancel/teardown.
+/// The has_password:false branch (passkey/QR) never calls finish —
+/// there is no secret to retrieve — and goes straight to cancel.
 ///
-/// Test seams are delegate properties (no interface hierarchy): tests
-/// replace them with small fakes; production wiring targets the
-/// coordinator and credential store.
+/// Launcher never sees any of this: the only public entry is
+/// <see cref="AddProfileFeature"/>.
 /// </summary>
-internal sealed class GoogleEnrollmentService
+internal sealed class AddProfileCoordinator
 {
     private readonly BrowserSessionCoordinator? _sessions;
     private readonly GoogleCredentialStore? _credentials;
 
-    // Seams are non-nullable in practice: the production constructor
-    // wires all of them, and the test constructor's callers replace all
-    // of them before first use.
-    internal Func<string, string?, CancellationToken, Task> EnsureHeadedSessionAsync { get; set; } = null!;
+    internal Func<string, CancellationToken, Task> EnsureHeadedSessionAsync { get; set; } = null!;
     internal Func<string, string?, CancellationToken, Task<JsonObject>> StartAsync { get; set; } = null!;
     internal Func<string, CancellationToken, Task<JsonObject>> StatusAsync { get; set; } = null!;
     internal Func<string, CancellationToken, Task<JsonObject>> FinishAsync { get; set; } = null!;
     internal Func<string, CancellationToken, Task> CancelAsync { get; set; } = null!;
     internal Func<string, string, string, CancellationToken, Task> SaveCredentialAsync { get; set; } = null!;
 
-    /// <summary>
-    /// Test-only constructor: no coordinator or store is wired — every
-    /// seam is replaced by the test before use.
-    /// </summary>
-    internal GoogleEnrollmentService()
-    {
-    }
-
-    public GoogleEnrollmentService(
+    public AddProfileCoordinator(
         BrowserSessionCoordinator sessions,
         GoogleCredentialStore credentials)
     {
@@ -50,30 +40,35 @@ internal sealed class GoogleEnrollmentService
         _credentials = credentials;
         EnsureHeadedSessionAsync = EnsureHeadedSessionCoreAsync;
         StartAsync = (profile, expectedEmail, token)
-            => sessions.StartGoogleEnrollmentAsync(profile, expectedEmail, token);
+            => sessions.StartAddProfileAsync(profile, expectedEmail, token);
         StatusAsync = (profile, token)
-            => sessions.GoogleEnrollmentStatusAsync(profile, token);
+            => sessions.AddProfileStatusAsync(profile, token);
         FinishAsync = (profile, token)
-            => sessions.FinishGoogleEnrollmentAsync(profile, token);
+            => sessions.AddProfileFinishAsync(profile, token);
         CancelAsync = async (profile, token) =>
-            await sessions.CancelGoogleEnrollmentAsync(profile, token);
+            await sessions.AddProfileCancelAsync(profile, token);
         SaveCredentialAsync = (profile, email, password, token)
             => credentials.SaveAsync(profile, email, password, token);
     }
 
-    public async Task<GoogleEnrollmentResult> EnrollAsync(
-        string profileId,
-        string? expectedEmail,
-        IProgress<GoogleEnrollmentUpdate>? progress = null,
+    /// <summary>Test-only constructor: every seam replaced by the test.</summary>
+    internal AddProfileCoordinator()
+    {
+    }
+
+    internal async Task<AddProfileResult> ExecuteAsync(
+        AddProfileRequest request,
+        IProgress<AddProfileUpdate>? progress = null,
         CancellationToken cancellationToken = default)
     {
+        var profileId = request.ProfileId;
         try
         {
-            await EnsureHeadedSessionAsync(profileId, expectedEmail, cancellationToken);
+            await EnsureHeadedSessionAsync(profileId, cancellationToken);
 
-            // start returns only after the listener is armed and the
-            // enrollment page has navigated to Google's sign-in.
-            await StartAsync(profileId, expectedEmail, cancellationToken);
+            // start returns only after the listener is armed on the
+            // claimed resident page and its navigation has begun.
+            await StartAsync(profileId, request.ExpectedEmail, cancellationToken);
             Report(progress, "armed");
 
             while (true)
@@ -83,7 +78,7 @@ internal sealed class GoogleEnrollmentService
                 var wireState = status["state"]?.GetValue<string>() ?? "unknown";
                 Report(progress, wireState);
 
-                var outcome = GoogleEnrollmentPolicy.OutcomeFor(wireState);
+                var outcome = AddProfilePolicy.OutcomeFor(wireState);
                 if (outcome is not null)
                 {
                     return Result(outcome.Value, ReadEmail(status));
@@ -92,38 +87,36 @@ internal sealed class GoogleEnrollmentService
                 if (wireState == "complete")
                 {
                     return await CompleteAsync(
-                        profileId, expectedEmail, status, cancellationToken);
+                        profileId, request.ExpectedEmail, status, cancellationToken);
                 }
 
-                await Task.Delay(
-                    GoogleEnrollmentPolicy.PollInterval, cancellationToken);
+                await Task.Delay(AddProfilePolicy.PollInterval, cancellationToken);
             }
         }
         catch (OperationCanceledException)
         {
             await CancelQuietlyAsync(profileId);
-            return Result(GoogleEnrollmentOutcome.Cancelled, null);
+            return Result(AddProfileOutcome.Cancelled, null);
         }
         catch (PyHostException ex)
         {
             await CancelQuietlyAsync(profileId);
             var outcome = ex.Code switch
             {
-                "BROWSER_GONE" => GoogleEnrollmentOutcome.BrowserGone,
-                "WRONG_ACCOUNT" => GoogleEnrollmentOutcome.WrongAccount,
-                _ => GoogleEnrollmentOutcome.Failed,
+                "BROWSER_GONE" => AddProfileOutcome.BrowserGone,
+                "WRONG_ACCOUNT" => AddProfileOutcome.WrongAccount,
+                _ => AddProfileOutcome.Failed,
             };
-            return new GoogleEnrollmentResult(outcome, null, ex.Code + ": " + ex.Message);
+            return new AddProfileResult(outcome, null, ex.Code + ": " + ex.Message);
         }
         catch (Exception ex)
         {
             await CancelQuietlyAsync(profileId);
-            return new GoogleEnrollmentResult(
-                GoogleEnrollmentOutcome.Failed, null, ex.Message);
+            return new AddProfileResult(AddProfileOutcome.Failed, null, ex.Message);
         }
     }
 
-    private async Task<GoogleEnrollmentResult> CompleteAsync(
+    private async Task<AddProfileResult> CompleteAsync(
         string profileId,
         string? expectedEmail,
         JsonObject status,
@@ -138,14 +131,14 @@ internal sealed class GoogleEnrollmentService
             // is no secret to retrieve — finish is never called on this
             // branch. Honest outcome, nothing saved.
             await CancelQuietlyAsync(profileId);
-            return Result(GoogleEnrollmentOutcome.ActiveWithoutPassword, email);
+            return Result(AddProfileOutcome.ActiveWithoutPassword, email);
         }
 
         if (string.IsNullOrWhiteSpace(email))
         {
             await CancelQuietlyAsync(profileId);
-            return new GoogleEnrollmentResult(
-                GoogleEnrollmentOutcome.Failed,
+            return new AddProfileResult(
+                AddProfileOutcome.Failed,
                 null,
                 "account active but its identity could not be confirmed");
         }
@@ -161,9 +154,9 @@ internal sealed class GoogleEnrollmentService
         {
             await CancelQuietlyAsync(profileId);
             var outcome = ex.Code == "WRONG_ACCOUNT"
-                ? GoogleEnrollmentOutcome.WrongAccount
-                : GoogleEnrollmentOutcome.Failed;
-            return new GoogleEnrollmentResult(outcome, email, ex.Code + ": " + ex.Message);
+                ? AddProfileOutcome.WrongAccount
+                : AddProfileOutcome.Failed;
+            return new AddProfileResult(outcome, email, ex.Code + ": " + ex.Message);
         }
 
         var finishEmail = ReadEmail(finish) ?? email;
@@ -175,13 +168,13 @@ internal sealed class GoogleEnrollmentService
             && !string.Equals(finishEmail, expectedEmail.Trim(), StringComparison.OrdinalIgnoreCase))
         {
             await CancelQuietlyAsync(profileId);
-            return Result(GoogleEnrollmentOutcome.WrongAccount, finishEmail);
+            return Result(AddProfileOutcome.WrongAccount, finishEmail);
         }
 
         if (string.IsNullOrEmpty(password))
         {
             await CancelQuietlyAsync(profileId);
-            return Result(GoogleEnrollmentOutcome.ActiveWithoutPassword, finishEmail);
+            return Result(AddProfileOutcome.ActiveWithoutPassword, finishEmail);
         }
 
         try
@@ -191,13 +184,13 @@ internal sealed class GoogleEnrollmentService
         catch (Exception ex)
         {
             // Storage failure is never reported as success.
-            return new GoogleEnrollmentResult(
-                GoogleEnrollmentOutcome.Failed,
+            return new AddProfileResult(
+                AddProfileOutcome.Failed,
                 finishEmail,
                 "credential could not be stored: " + ex.Message);
         }
 
-        return Result(GoogleEnrollmentOutcome.Completed, finishEmail);
+        return Result(AddProfileOutcome.Completed, finishEmail);
     }
 
     private async Task CancelQuietlyAsync(string profileId)
@@ -215,16 +208,14 @@ internal sealed class GoogleEnrollmentService
 
     private async Task EnsureHeadedSessionCoreAsync(
         string profileId,
-        string? _expectedEmail,
         CancellationToken cancellationToken)
     {
         var sessions = _sessions!;
         if (!sessions.IsOpen(profileId))
         {
-            // The resident page is transient here: the enrollment command
-            // closes it once its own page is armed, so exactly ONE browser
-            // window stays visible. about:blank keeps that brief page
-            // neutral instead of flashing google.com.
+            // about:blank: the feature claims this very page and
+            // navigates it after arming — the user never sees a
+            // google.com flash before the login page.
             await sessions.OpenAsync(profileId, "about:blank", false, cancellationToken);
         }
         else if (sessions.IsHeadless(profileId))
@@ -235,19 +226,16 @@ internal sealed class GoogleEnrollmentService
     }
 
     private static void Report(
-        IProgress<GoogleEnrollmentUpdate>? progress,
+        IProgress<AddProfileUpdate>? progress,
         string wireState)
         => progress?.Report(
-            new GoogleEnrollmentUpdate(wireState, GoogleEnrollmentPolicy.StatusText(wireState)));
+            new AddProfileUpdate(wireState, AddProfilePolicy.StatusText(wireState)));
 
     private static string? ReadEmail(JsonObject response)
         => response["email"]?.GetValue<string>();
 
-    private static GoogleEnrollmentResult Result(
-        GoogleEnrollmentOutcome outcome,
+    private static AddProfileResult Result(
+        AddProfileOutcome outcome,
         string? email)
-        => new(
-            outcome,
-            email,
-            GoogleEnrollmentPolicy.LauncherStatus(outcome, email));
+        => new(outcome, email, AddProfilePolicy.LauncherStatus(outcome, email));
 }

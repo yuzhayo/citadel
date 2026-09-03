@@ -1,17 +1,21 @@
-r"""Live smoke: real Camoufox + real enrollment commands, disposable profile.
+r"""Live smoke: real Camoufox + real Add Profile plugin, disposable profile.
 
-Drives the CURRENT repo pyhost.py (not the deployed copy) through the full
-enrollment lifecycle with a real headed browser:
+Drives the DEPLOYED pyhost payload (exactly what Citadel.Shell runs —
+repo source, rebuilt and mirrored beside the shell exe) through the full
+Add Profile lifecycle with a real headed browser:
 
-  session.open          -> one browser window (resident page, about:blank)
-  google.enrollment.start -> resident page closed, enrollment page armed
-                           THEN navigated to Google sign-in (one window)
-  google.enrollment.status -> armed / signed_out family, no plaintext
-  google.enrollment.cancel -> teardown + clean replacement page
-  session.navigate      -> MUST succeed (sess["page"] repaired by teardown)
+  session.open                 -> one browser window (about:blank)
+  camoprof.add_profile.start   -> claims the resident page, arms capture,
+                                  THEN navigates it to Google sign-in
+                                  (same single window)
+  camoprof.add_profile.status  -> sign-in family states, no plaintext
+  camoprof.add_profile.cancel  -> teardown + clean replacement page
+  session.navigate             -> MUST succeed (page reference repaired
+                                  by teardown)
   session.close / shutdown
 
-Exit code 0 = every gate passed.
+Exit code 0 = every gate passed. Rebuild the citizen first:
+  dotnet build module/camoprof/Module.Camoprof.csproj -c Release
 """
 
 import json
@@ -21,8 +25,11 @@ import sys
 import tempfile
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-PYHOST = os.path.join(
-    REPO_ROOT, "module", "sharedLogic", "pyhost", "pyhost.py")
+# The deployed payload: what the real app executes. This is the same
+# copy Citizen.targets mirrors beside the shell executable.
+DEPLOYED_PYHOST = os.path.join(
+    REPO_ROOT, "core", "Citadel.Shell", "bin", "Release",
+    "net10.0-windows", "sharedLogic", "pyhost", "pyhost.py")
 PYTHON = os.path.join(
     os.environ["LOCALAPPDATA"], "Citadel", "runtime", ".venv",
     "Scripts", "python.exe")
@@ -38,10 +45,17 @@ def check(name, condition, detail=""):
 
 
 def main():
+    if not os.path.exists(DEPLOYED_PYHOST):
+        print("deployed payload missing: %s" % DEPLOYED_PYHOST)
+        print("run: dotnet build module/camoprof/Module.Camoprof.csproj "
+              "-c Release")
+        return 2
+
     credenz = tempfile.mkdtemp(prefix="CitadelEnrollSmoke-")
-    env = {**os.environ, "CITADEL_CREDENZ": credenz}
+    env = {**os.environ, "CITADEL_CREDENZ": credenz,
+        "CITADEL_PYHOST_PLUGINS": "camoprof_add_profile"}
     proc = subprocess.Popen(
-        [PYTHON, "-u", PYHOST],
+        [PYTHON, "-u", DEPLOYED_PYHOST],
         stdin=subprocess.PIPE, stdout=subprocess.PIPE,
         stderr=subprocess.PIPE, text=True, encoding="utf-8", env=env)
     rid = 0
@@ -66,7 +80,7 @@ def main():
         check("session.open", opened.get("ok") is True, str(opened))
         sid = opened.get("session")
 
-        started = call("google.enrollment.start", session=sid)
+        started = call("camoprof.add_profile.start", session=sid)
         check("enrollment.start returns armed",
               started.get("ok") is True
               and started.get("state") == "armed", str(started))
@@ -74,7 +88,7 @@ def main():
         # Give the background navigation a moment, then poll status.
         import time
         time.sleep(4)
-        status = call("google.enrollment.status", session=sid)
+        status = call("camoprof.add_profile.status", session=sid)
         check("enrollment.status ok", status.get("ok") is True, str(status))
         check("status never carries a password",
               "password" not in status, str(sorted(status)))
@@ -86,7 +100,7 @@ def main():
               "accounts.google.com" in (status.get("url") or ""),
               status.get("url", "?"))
 
-        cancelled = call("google.enrollment.cancel", session=sid)
+        cancelled = call("camoprof.add_profile.cancel", session=sid)
         check("enrollment.cancel", cancelled.get("ok") is True
               and cancelled.get("state") == "cancelled", str(cancelled))
 

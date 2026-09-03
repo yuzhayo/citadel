@@ -241,11 +241,12 @@ class PrimaryPageInvariantTest(unittest.IsolatedAsyncioTestCase):
 
 class FeatureBoundaryTest(unittest.TestCase):
     def test_enrollment_module_holds_no_registry_backlink(self):
-        """INV-3: kode fitur (providers/google/enrollment.py) tidak boleh
-        menyimpan referensi ke _Host/registry (enr.host, host.sessions).
-        Kode sekarang menyimpan enr.host → red."""
+        """INV-3: kode fitur (plugin enrollment.py) tidak boleh menyimpan
+        referensi mutable ke _Host/registry (enr.host, host.sessions).
+        Akses page hanya boleh lewat lease."""
         source = _load(os.path.join(
-            ROOT, "pyhost", "providers", "google", "enrollment.py"))
+            ROOT, "..", "camoprof", "Features", "AddProfile",
+            "camoprof_add_profile", "enrollment.py"))
         self.assertNotIn(
             "self.host", source,
             "enrollment menyimpan backlink ke registry host — melanggar "

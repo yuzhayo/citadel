@@ -2,11 +2,14 @@
 
 Status: **IMPLEMENTED — automated and visual gates pass; linked-account relog smoke awaits LO (2026-09-01)**
 
-> **Partially superseded (2026-09-03) — account pairing rules.** The
-> `Detect account` / manual-password `Save profile` pairing flow described in
-> §3.1 was replaced by Google Enrollment (type-once capture):
-> `module/camoprof/Providers/Google/Enrollment/` + the
-> `google.enrollment.*` pyhost commands (see `module/sharedLogic/pyhost/README.md`).
+> **Partially superseded (2026-09-03, updated same day) — account pairing
+> rules.** The `Detect account` / manual-password `Save profile` pairing flow
+> described in §3.1 was replaced by Add Profile (type-once capture):
+> `module/camoprof/Features/AddProfile/` + the
+> `camoprof.add_profile.*` pyhost plugin commands (see
+> `module/sharedLogic/pyhost/README.md`). The earlier
+> `providers/Google/Enrollment` + `google.enrollment.*` interim
+> implementation was deleted; ownership moved to the feature folder.
 > The health-check, relog, and storage rules of this plan remain authoritative
 > EXCEPT where marked [superseded by enrollment] below. The "never captured
 > from Google's page" boundary now reads: the password typed into Google's

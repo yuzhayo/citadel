@@ -122,6 +122,21 @@ class SessionHost:
     def owner_of(self, sid):
         return self._owners.get(sid)
 
+    def get(self, sid):
+        """Baca-only view metadata session (profile, headless). Fitur
+        memakai ini — bukan dict registry mentah."""
+        sess = self.sessions.get(sid)
+        if sess is None:
+            return None
+        return {
+            "profile": sess.get("profile"),
+            "headless": bool(sess.get("headless")),
+        }
+
+    def profile_of(self, sid):
+        sess = self.sessions.get(sid)
+        return None if sess is None else sess.get("profile")
+
     def claim_primary(self, sid, owner):
         """Ambil lease eksklusif. Owner lain aktif -> SESSION_BUSY."""
         if sid not in self.sessions:

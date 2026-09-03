@@ -1,16 +1,18 @@
 using System.Reflection;
-using Module.Camoprof.Providers.Google.Enrollment;
+using Module.Camoprof.Features.AddProfile;
 using Xunit;
 
 namespace Module.Camoprof.Tests;
 
 /// <summary>
-/// The compiler-level security boundary: the types that leave the
-/// Enrollment folder toward Launcher/UI must not even be able to carry
-/// a secret. If someone adds a Password-like property to these records,
-/// this test fails before any review has to catch it.
+/// The compiler-level security boundary: the types that leave the Add
+/// Profile feature toward Launcher/UI must not even be able to carry a
+/// secret. If someone adds a Password-like property to these records,
+/// this test fails before any review has to catch it. Also guards the
+/// one-way Launcher contract: ExecuteAsync's shape must not grow an
+/// escape hatch.
 /// </summary>
-public class GoogleEnrollmentContractTests
+public class AddProfileContractTests
 {
     private static readonly string[] SecretNameFragments =
     {
@@ -23,9 +25,9 @@ public class GoogleEnrollmentContractTests
 
     public static IEnumerable<object[]> UiVisibleTypes()
     {
-        yield return new object[] { typeof(GoogleEnrollmentResult) };
-        yield return new object[] { typeof(GoogleEnrollmentUpdate) };
-        yield return new object[] { typeof(GoogleEnrollmentOutcome) };
+        yield return new object[] { typeof(AddProfileResult) };
+        yield return new object[] { typeof(AddProfileUpdate) };
+        yield return new object[] { typeof(AddProfileOutcome) };
     }
 
     [Theory]
@@ -48,9 +50,9 @@ public class GoogleEnrollmentContractTests
     }
 
     [Fact]
-    public void GoogleEnrollmentResult_fields_are_non_secret()
+    public void AddProfileResult_fields_are_non_secret()
     {
-        var fields = typeof(GoogleEnrollmentResult)
+        var fields = typeof(AddProfileResult)
             .GetFields(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance)
             .Where(field => SecretNameFragments.Any(fragment =>
                 field.Name.Contains(fragment, StringComparison.OrdinalIgnoreCase)))
@@ -58,21 +60,22 @@ public class GoogleEnrollmentContractTests
 
         Assert.True(
             fields.Count == 0,
-            "GoogleEnrollmentResult carries secret-shaped fields: "
+            "AddProfileResult carries secret-shaped fields: "
             + string.Join(", ", fields.Select(field => field.Name)));
     }
 
     [Fact]
-    public void Enrollment_feature_contract_is_secret_free_by_shape()
+    public void Feature_contract_shape_is_secret_free_and_one_way()
     {
-        // EnrollAsync's signature must stay (string, string?, IProgress,
-        // CancellationToken) -> Task<GoogleEnrollmentResult>: no out/ref,
-        // no object-returning escape hatch a password could hide in.
-        var method = typeof(GoogleEnrollmentFeature).GetMethod(
-            "EnrollAsync",
+        // ExecuteAsync must stay
+        // (AddProfileRequest, IProgress, CancellationToken)
+        //     -> Task<AddProfileResult>: no out/ref parameters a
+        // password could hide in, and the request is a plain record.
+        var method = typeof(AddProfileFeature).GetMethod(
+            "ExecuteAsync",
             BindingFlags.Public | BindingFlags.Instance);
         Assert.NotNull(method);
-        Assert.Equal(typeof(Task<GoogleEnrollmentResult>), method.ReturnType);
+        Assert.Equal(typeof(Task<AddProfileResult>), method.ReturnType);
         Assert.All(
             method.GetParameters(),
             parameter => Assert.True(

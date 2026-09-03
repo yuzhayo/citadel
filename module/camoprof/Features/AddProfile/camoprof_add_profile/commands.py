@@ -1,19 +1,21 @@
 """Batasan command fitur Add Profile: validasi + delegasi ke enrollment.
 
 Lapisan ini memastikan handler menerima bentuk pesan yang benar sebelum
-menyentuh state machine, dan mengembalikan nama field yang stabil.
+menyentuh state machine. Akses metadata session lewat SessionHost
+(baca-only) — plugin tidak memegang registry mentah.
 """
 
 from providers import PyhostError
 
 from camoprof_add_profile import enrollment
-from camoprof_add_profile.add_profile_state import TERMINAL_STATES
 
 
 async def cmd_start(host, msg):
     sid = _session_of(msg)
-    sess = _get_session(host, sid)
-    return await enrollment.start(host, sess, sid, msg)
+    info = host.session_host.get(sid)
+    if info is None:
+        raise PyhostError("SESSION_NOT_FOUND", "session: %r" % (sid,))
+    return await enrollment.start(host, info, sid, msg)
 
 
 async def cmd_status(host, msg):
@@ -33,10 +35,3 @@ def _session_of(msg):
     if not isinstance(sid, str) or not sid:
         raise PyhostError("SESSION_NOT_FOUND", "session: %r" % (sid,))
     return sid
-
-
-def _get_session(host, sid):
-    sess = host.sessions.get(sid)
-    if sess is None:
-        raise PyhostError("SESSION_NOT_FOUND", "session: %r" % (sid,))
-    return sess

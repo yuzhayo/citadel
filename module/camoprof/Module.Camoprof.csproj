@@ -17,7 +17,6 @@
   -->
   <PropertyGroup>
     <PyhostPluginName>camoprof_add_profile</PyhostPluginName>
-    <PyhostPluginFeature>AddProfile</PyhostPluginFeature>
   </PropertyGroup>
 
 </Project>

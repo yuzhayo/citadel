@@ -1,20 +1,20 @@
 using System.IO;
 using System.Text.Json.Nodes;
 using CitadelBridge;
-using Module.Camoprof.Providers.Google.Enrollment;
+using Module.Camoprof.Features.AddProfile;
 using Xunit;
 
 namespace Module.Camoprof.Tests;
 
 /// <summary>
-/// Drives GoogleEnrollmentService through its delegate seams — no
+/// Drives AddProfileCoordinator through its delegate seams — no
 /// browser, no pyhost process, no real DPAPI writes. Asserts the four
 /// contracts that matter: credential saved exactly once on
 /// Complete-with-password; has_password:false never calls finish;
 /// storage failure is never success; cancellation and pyhost errors map
 /// to non-secret outcomes.
 /// </summary>
-public class GoogleEnrollmentServiceTests
+public class AddProfileCoordinatorTests
 {
     private sealed class Harness
     {
@@ -24,40 +24,39 @@ public class GoogleEnrollmentServiceTests
         public int CancelCalls;
         public Queue<Func<JsonObject>> StatusScript { get; } = [];
 
-        public GoogleEnrollmentService Build(
+        public AddProfileCoordinator Build(
             JsonObject? finishResponse = null,
             Exception? saveFailure = null)
         {
-            var service = new GoogleEnrollmentService();
-            service.EnsureHeadedSessionAsync = (profile, _email, _token) =>
+            var coordinator = new AddProfileCoordinator();
+            coordinator.EnsureHeadedSessionAsync = (profile, _token) =>
             {
                 Calls.Add("ensure:" + profile);
                 return Task.CompletedTask;
             };
-            service.StartAsync = (profile, _email, _token) =>
+            coordinator.StartAsync = (profile, _email, _token) =>
             {
                 Calls.Add("start:" + profile);
                 return Task.FromResult(new JsonObject { ["state"] = "armed" });
             };
-            service.StatusAsync = (profile, _token) =>
+            coordinator.StatusAsync = (profile, _token) =>
             {
                 Calls.Add("status");
                 return Task.FromResult(StatusScript.Dequeue()());
             };
-            service.FinishAsync = (profile, _token) =>
+            coordinator.FinishAsync = (profile, _token) =>
             {
                 Calls.Add("finish");
                 FinishCalls++;
                 return Task.FromResult(
                     finishResponse ?? new JsonObject());
             };
-            service.CancelAsync = (profile, _token) =>
+            coordinator.CancelAsync = (profile, _token) =>
             {
                 Calls.Add("cancel");
                 CancelCalls++;
                 return Task.CompletedTask;
-            };
-            service.SaveCredentialAsync = (profile, email, password, _token) =>
+            };            coordinator.SaveCredentialAsync = (profile, email, password, _token) =>
             {
                 if (saveFailure is not null)
                 {
@@ -67,7 +66,7 @@ public class GoogleEnrollmentServiceTests
                 Saved.Add((profile, email, password));
                 return Task.CompletedTask;
             };
-            return service;
+            return coordinator;
         }
 
         public static JsonObject Status(
@@ -88,7 +87,7 @@ public class GoogleEnrollmentServiceTests
     public async Task Complete_with_password_saves_exactly_once()
     {
         var harness = new Harness();
-        var service = harness.Build(
+        var coordinator = harness.Build(
             finishResponse: new JsonObject
             {
                 ["email"] = "user@gmail.com",
@@ -97,9 +96,10 @@ public class GoogleEnrollmentServiceTests
         harness.StatusScript.Enqueue(() => Harness.Status(
             "complete", "user@gmail.com", hasPassword: true));
 
-        var result = await service.EnrollAsync("probe", null);
+        var result = await coordinator.ExecuteAsync(
+            new AddProfileRequest("probe"));
 
-        Assert.Equal(GoogleEnrollmentOutcome.Completed, result.Outcome);
+        Assert.Equal(AddProfileOutcome.Completed, result.Outcome);
         Assert.Equal("user@gmail.com", result.Email);
         Assert.True(result.SavedCredential);
         Assert.Single(harness.Saved);
@@ -114,13 +114,14 @@ public class GoogleEnrollmentServiceTests
     public async Task Complete_without_password_never_calls_finish()
     {
         var harness = new Harness();
-        var service = harness.Build();
+        var coordinator = harness.Build();
         harness.StatusScript.Enqueue(() => Harness.Status(
             "complete", "user@gmail.com", hasPassword: false));
 
-        var result = await service.EnrollAsync("probe", null);
+        var result = await coordinator.ExecuteAsync(
+            new AddProfileRequest("probe"));
 
-        Assert.Equal(GoogleEnrollmentOutcome.ActiveWithoutPassword, result.Outcome);
+        Assert.Equal(AddProfileOutcome.ActiveWithoutPassword, result.Outcome);
         Assert.False(result.SavedCredential);
         Assert.Empty(harness.Saved);
         Assert.Equal(0, harness.FinishCalls);
@@ -131,13 +132,14 @@ public class GoogleEnrollmentServiceTests
     public async Task Complete_without_identity_fails_honestly()
     {
         var harness = new Harness();
-        var service = harness.Build();
+        var coordinator = harness.Build();
         harness.StatusScript.Enqueue(() => Harness.Status(
             "complete", null, hasPassword: true));
 
-        var result = await service.EnrollAsync("probe", null);
+        var result = await coordinator.ExecuteAsync(
+            new AddProfileRequest("probe"));
 
-        Assert.Equal(GoogleEnrollmentOutcome.Failed, result.Outcome);
+        Assert.Equal(AddProfileOutcome.Failed, result.Outcome);
         Assert.Empty(harness.Saved);
         Assert.Equal(0, harness.FinishCalls);
     }
@@ -146,7 +148,7 @@ public class GoogleEnrollmentServiceTests
     public async Task Expected_email_mismatch_at_boundary_never_saves()
     {
         var harness = new Harness();
-        var service = harness.Build(
+        var coordinator = harness.Build(
             finishResponse: new JsonObject
             {
                 ["email"] = "other@gmail.com",
@@ -155,9 +157,10 @@ public class GoogleEnrollmentServiceTests
         harness.StatusScript.Enqueue(() => Harness.Status(
             "complete", "user@gmail.com", hasPassword: true));
 
-        var result = await service.EnrollAsync("probe", "user@gmail.com");
+        var result = await coordinator.ExecuteAsync(
+            new AddProfileRequest("probe", "user@gmail.com"));
 
-        Assert.Equal(GoogleEnrollmentOutcome.WrongAccount, result.Outcome);
+        Assert.Equal(AddProfileOutcome.WrongAccount, result.Outcome);
         Assert.Empty(harness.Saved);
         Assert.Equal(1, harness.CancelCalls);
     }
@@ -166,7 +169,7 @@ public class GoogleEnrollmentServiceTests
     public async Task Storage_failure_is_never_reported_as_success()
     {
         var harness = new Harness();
-        var service = harness.Build(
+        var coordinator = harness.Build(
             finishResponse: new JsonObject
             {
                 ["email"] = "user@gmail.com",
@@ -176,9 +179,10 @@ public class GoogleEnrollmentServiceTests
         harness.StatusScript.Enqueue(() => Harness.Status(
             "complete", "user@gmail.com", hasPassword: true));
 
-        var result = await service.EnrollAsync("probe", null);
+        var result = await coordinator.ExecuteAsync(
+            new AddProfileRequest("probe"));
 
-        Assert.Equal(GoogleEnrollmentOutcome.Failed, result.Outcome);
+        Assert.Equal(AddProfileOutcome.Failed, result.Outcome);
         Assert.False(result.SavedCredential);
         Assert.Empty(harness.Saved);
         Assert.Contains("disk full", result.Reason);
@@ -194,13 +198,14 @@ public class GoogleEnrollmentServiceTests
         string expectedOutcomeName)
     {
         var harness = new Harness();
-        var service = harness.Build();
+        var coordinator = harness.Build();
         harness.StatusScript.Enqueue(() => Harness.Status(wireState));
 
-        var result = await service.EnrollAsync("probe", null);
+        var result = await coordinator.ExecuteAsync(
+            new AddProfileRequest("probe"));
 
         Assert.Equal(
-            Enum.Parse<GoogleEnrollmentOutcome>(expectedOutcomeName),
+            Enum.Parse<AddProfileOutcome>(expectedOutcomeName),
             result.Outcome);
         Assert.Empty(harness.Saved);
         Assert.Equal(0, harness.FinishCalls);
@@ -210,14 +215,15 @@ public class GoogleEnrollmentServiceTests
     public async Task Cancellation_cancels_and_reports_cancelled()
     {
         var harness = new Harness();
-        var service = harness.Build();
+        var coordinator = harness.Build();
         harness.StatusScript.Enqueue(() => Harness.Status("armed"));
         harness.StatusScript.Enqueue(() =>
             throw new OperationCanceledException());
 
-        var result = await service.EnrollAsync("probe", null);
+        var result = await coordinator.ExecuteAsync(
+            new AddProfileRequest("probe"));
 
-        Assert.Equal(GoogleEnrollmentOutcome.Cancelled, result.Outcome);
+        Assert.Equal(AddProfileOutcome.Cancelled, result.Outcome);
         Assert.Empty(harness.Saved);
         Assert.Equal(1, harness.CancelCalls);
     }
@@ -231,14 +237,15 @@ public class GoogleEnrollmentServiceTests
         string expectedOutcomeName)
     {
         var harness = new Harness();
-        var service = harness.Build();
+        var coordinator = harness.Build();
         harness.StatusScript.Enqueue(() =>
             throw new PyHostException(code, code + " detail"));
 
-        var result = await service.EnrollAsync("probe", null);
+        var result = await coordinator.ExecuteAsync(
+            new AddProfileRequest("probe"));
 
         Assert.Equal(
-            Enum.Parse<GoogleEnrollmentOutcome>(expectedOutcomeName),
+            Enum.Parse<AddProfileOutcome>(expectedOutcomeName),
             result.Outcome);
         Assert.Empty(harness.Saved);
         Assert.Equal(1, harness.CancelCalls);
@@ -248,22 +255,23 @@ public class GoogleEnrollmentServiceTests
     public async Task Progress_receives_armed_then_terminal_updates()
     {
         var harness = new Harness();
-        var service = harness.Build();
+        var coordinator = harness.Build();
         harness.StatusScript.Enqueue(() => Harness.Status(
             "challenge", null, hasPassword: true));
         harness.StatusScript.Enqueue(() => Harness.Status("expired"));
 
         var collected = new CollectingProgress();
-        var result = await service.EnrollAsync("probe", null, collected, default);
+        var result = await coordinator.ExecuteAsync(
+            new AddProfileRequest("probe"), collected, default);
 
-        Assert.Equal(GoogleEnrollmentOutcome.Expired, result.Outcome);
+        Assert.Equal(AddProfileOutcome.Expired, result.Outcome);
         Assert.Equal(new[] { "armed", "challenge", "expired" }, collected.States);
     }
 
-    private sealed class CollectingProgress : IProgress<GoogleEnrollmentUpdate>
+    private sealed class CollectingProgress : IProgress<AddProfileUpdate>
     {
         public List<string> States { get; } = [];
 
-        public void Report(GoogleEnrollmentUpdate value) => States.Add(value.WireState);
+        public void Report(AddProfileUpdate value) => States.Add(value.WireState);
     }
 }

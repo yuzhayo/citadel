@@ -144,21 +144,25 @@ The result state is `active`, `credential_rejected`, or `action_required`.
 steps become `action_required`; pyhost does not bypass them. Email/password are
 request-only data and are never echoed or logged.
 
-### `google.enrollment.*` — type-once credential capture
+### `camoprof.add_profile.*` — type-once credential capture (plugin)
 
-Four polling-compatible commands on protocol v1. Enrollment lets the user
-type their Google password **once**, directly into Google's real login page in
-a headed resident session; pyhost captures it via a page listener and hands it
-over exactly one time so the C# side can store it DPAPI-encrypted for
-automatic relog. There is no second password dialog and no OS-level keyboard
-capture of any kind.
+Four polling-compatible commands registered by the **camoprof_add_profile
+feature plugin** (loaded via `CITADEL_PYHOST_PLUGINS`). Add Profile lets the
+user type their Google password **once**, directly into Google's real login
+page in a headed resident session; the plugin captures it via a page listener
+and hands it over exactly one time so the C# feature can store it
+DPAPI-encrypted for automatic relog. There is no second password dialog and
+no OS-level keyboard capture of any kind. The shared core knows none of this:
+plugins register command namespaces and lifecycle hooks; the dependency
+direction is always plugin → core.
 
-**Arm-before-navigate (guaranteed order):** `start` creates a dedicated
-enrollment page in the resident context, installs the capture listener, and
-registers the `armed` state — and only THEN navigates that page to Google's
-sign-in. The response returns after `armed`, so a caller may show the "log in
-now" instruction knowing capture is already live. The first keystroke cannot
-be missed.
+**Claim-before-navigate (guaranteed order):** `start` CLAIMS the
+resident primary page through the SessionHost lease (exactly one page owner;
+foreign commands get `SESSION_BUSY`), installs the capture listener on that
+same page, registers the `armed` state — and only THEN navigates it to
+Google's sign-in. No second page or window is ever created. The response
+returns after `armed`, so a caller may show the "log in now" instruction
+knowing capture is already live. The first keystroke cannot be missed.
 
 **Non-blocking start:** the navigation itself runs as an enrollment-owned
 background task, not inside the `start` response. Protocol v1 processes
@@ -208,18 +212,18 @@ armed → password_observed → waiting_for_google | challenge
   shutdown/stdin-EOF) funnels through `_drop_session`, which disarms the
   owning enrollment and drops its secret. No path retains a password after
   its session is gone;
-- **one visible window:** in a headed browser `ctx.new_page()` is a new
-  window, so `start` closes the neutral resident page once the enrollment
-  page is armed — the user sees exactly one Camofox window during
-  enrollment. Teardown (and the navigation-failure path) opens a clean
-  replacement page and repairs the session's `page` reference, so later
-  `session.navigate`/`google.inspect`/`google.relogin` hit a live page.
-  Cookies and session state live in the context, not the page — closing the
-  resident page loses nothing.
+- **one visible window, by construction:** `start` claims the resident
+  page — no `ctx.new_page()` exists anywhere in the flow, so no window is
+  ever created-then-discarded. Teardown (and the navigation-failure path)
+  rotates the claimed page to a clean replacement THROUGH the lease (the
+  new page is created BEFORE the old one closes, so the context never
+  drops to zero live pages) and repairs the session's `page` reference,
+  so later `session.navigate`/`google.inspect`/`google.relogin` hit a
+  live page. Cookies and session state live in the context, not the page.
 
-#### `google.enrollment.start`
+#### `camoprof.add_profile.start`
 ```json
-> {"id": 8, "cmd": "google.enrollment.start", "session": "s1",
+> {"id": 8, "cmd": "camoprof.add_profile.start", "session": "s1",
    "expected_email": "user@gmail.com"}
 < {"id": 8, "ok": true, "session": "s1", "state": "armed"}
 ```
@@ -230,9 +234,9 @@ Headed sessions only (`HEADLESS_RELOGIN`-style guard: `HEADLESS_ENROLLMENT`).
 armed; the login-page navigation proceeds in the background and a non-browser
 failure surfaces later as state `failed` via `status`.
 
-#### `google.enrollment.status`
+#### `camoprof.add_profile.status`
 ```json
-> {"id": 9, "cmd": "google.enrollment.status", "session": "s1"}
+> {"id": 9, "cmd": "camoprof.add_profile.status", "session": "s1"}
 < {"id": 9, "ok": true, "session": "s1", "state": "password_observed",
    "email": null, "has_password": true, "challenge": false,
    "url": "https://accounts.google.com/signin/v2/identifier"}
@@ -241,9 +245,9 @@ failure surfaces later as state `failed` via `status`.
 Advances the state machine (URL + identity proof) and never carries plaintext.
 `email` is populated only once an active identity has been detected.
 
-#### `google.enrollment.finish`
+#### `camoprof.add_profile.finish`
 ```json
-> {"id": 10, "cmd": "google.enrollment.finish", "session": "s1"}
+> {"id": 10, "cmd": "camoprof.add_profile.finish", "session": "s1"}
 < {"id": 10, "ok": true, "session": "s1", "email": "user@gmail.com",
    "password": "one-time-handover"}
 ```
@@ -253,9 +257,9 @@ Refused before `complete` (`ENROLLMENT_NOT_COMPLETE`), after consumption
 is `null` for passkey logins. This is the only command that ever carries
 plaintext, exactly once.
 
-#### `google.enrollment.cancel`
+#### `camoprof.add_profile.cancel`
 ```json
-> {"id": 11, "cmd": "google.enrollment.cancel", "session": "s1"}
+> {"id": 11, "cmd": "camoprof.add_profile.cancel", "session": "s1"}
 < {"id": 11, "ok": true, "session": "s1", "state": "cancelled"}
 ```
 

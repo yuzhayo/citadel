@@ -197,13 +197,13 @@ internal sealed class BrowserSessionCoordinator : IDisposable
     }
 
     /// <summary>
-    /// Enrollment routing. Status is a fast local call on the host — safe to
-    /// poll at 500 ms behind the operation gate. FinishGoogleEnrollmentAsync
+    /// Add Profile routing. Status is a fast local call on the host — safe to
+    /// poll at 500 ms behind the operation gate. AddProfileFinishAsync
     /// is the one command whose response carries a secret; it is only ever
-    /// called by the Google enrollment service, which stores the credential
+    /// called by the Add Profile coordinator, which stores the credential
     /// before returning a non-secret result. Launcher/UI layers never see it.
     /// </summary>
-    public async Task<JsonObject> StartGoogleEnrollmentAsync(
+    public async Task<JsonObject> StartAddProfileAsync(
         string profile,
         string? expectedEmail,
         CancellationToken cancellationToken = default)
@@ -218,7 +218,7 @@ internal sealed class BrowserSessionCoordinator : IDisposable
                     "tidak ada session terbuka untuk '" + profile + "'");
             try
             {
-                return await EnsureHost().StartGoogleEnrollmentAsync(
+                return await EnsureHost().StartAddProfileAsync(
                     session.SessionId, expectedEmail, cancellationToken);
             }
             catch (PyHostException ex) when (ex.Code == "BROWSER_GONE")
@@ -233,7 +233,7 @@ internal sealed class BrowserSessionCoordinator : IDisposable
         }
     }
 
-    public async Task<JsonObject> GoogleEnrollmentStatusAsync(
+    public async Task<JsonObject> AddProfileStatusAsync(
         string profile,
         CancellationToken cancellationToken = default)
     {
@@ -247,7 +247,7 @@ internal sealed class BrowserSessionCoordinator : IDisposable
                     "tidak ada session terbuka untuk '" + profile + "'");
             try
             {
-                return await EnsureHost().GoogleEnrollmentStatusAsync(
+                return await EnsureHost().AddProfileStatusAsync(
                     session.SessionId, cancellationToken);
             }
             catch (PyHostException ex) when (ex.Code == "BROWSER_GONE")
@@ -262,7 +262,7 @@ internal sealed class BrowserSessionCoordinator : IDisposable
         }
     }
 
-    public async Task<JsonObject> FinishGoogleEnrollmentAsync(
+    public async Task<JsonObject> AddProfileFinishAsync(
         string profile,
         CancellationToken cancellationToken = default)
     {
@@ -276,7 +276,7 @@ internal sealed class BrowserSessionCoordinator : IDisposable
                     "tidak ada session terbuka untuk '" + profile + "'");
             try
             {
-                return await EnsureHost().FinishGoogleEnrollmentAsync(
+                return await EnsureHost().AddProfileFinishAsync(
                     session.SessionId, cancellationToken);
             }
             catch (PyHostException ex) when (ex.Code == "BROWSER_GONE")
@@ -296,7 +296,7 @@ internal sealed class BrowserSessionCoordinator : IDisposable
     /// pyhost-side enrollment was already disarmed by the session-death
     /// lifecycle hook, so the absence is reported rather than thrown.
     /// </summary>
-    public async Task<JsonObject?> CancelGoogleEnrollmentAsync(
+    public async Task<JsonObject?> AddProfileCancelAsync(
         string profile,
         CancellationToken cancellationToken = default)
     {
@@ -312,7 +312,7 @@ internal sealed class BrowserSessionCoordinator : IDisposable
 
             try
             {
-                return await EnsureHost().CancelGoogleEnrollmentAsync(
+                return await EnsureHost().AddProfileCancelAsync(
                     session.SessionId, cancellationToken);
             }
             catch (PyHostException ex) when (ex.Code == "BROWSER_GONE")
@@ -424,7 +424,10 @@ internal sealed class BrowserSessionCoordinator : IDisposable
                 throw new InvalidOperationException("payload pyhost tidak ter-deploy: " + script);
             }
 
-            _host = PyHost.Start(python, script, CredenzPath.Resolve());
+            // The Add Profile feature plugin is activated by name; the
+            // shared pyhost core stays feature-free.
+            _host = PyHost.Start(
+                python, script, CredenzPath.Resolve(), "camoprof_add_profile");
             return _host;
         }
     }

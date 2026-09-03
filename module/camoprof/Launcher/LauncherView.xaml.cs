@@ -3,9 +3,9 @@ using System.Windows;
 using System.Windows.Controls;
 using Citadel.Setting.Components;
 using CitadelBridge;
+using Module.Camoprof.Features.AddProfile;
 using Module.Camoprof.Network;
 using Module.Camoprof.Providers.Google;
-using Module.Camoprof.Providers.Google.Enrollment;
 using Module.Camoprof.SharedLogic;
 
 namespace Module.Camoprof.Launcher;
@@ -19,9 +19,9 @@ public partial class LauncherView : UserControl, IDisposable
     private readonly GoogleAccountService _google;
     private readonly GoogleCredentialStore _credentials;
     private readonly NetworkMonitor _network;
-    private readonly GoogleEnrollmentFeature _enrollment;
+    private readonly AddProfileFeature _addProfile;
     private readonly ObservableCollection<LauncherProfileRow> _profiles = [];
-    private CancellationTokenSource? _enrollmentCancellation;
+    private CancellationTokenSource? _addProfileCancellation;
     private bool _busy;
     private bool _disposed;
 
@@ -31,14 +31,14 @@ public partial class LauncherView : UserControl, IDisposable
         GoogleAccountService google,
         GoogleCredentialStore credentials,
         NetworkMonitor network,
-        GoogleEnrollmentFeature enrollment)
+        AddProfileFeature addProfile)
     {
         _catalog = catalog;
         _sessions = sessions;
         _google = google;
         _credentials = credentials;
         _network = network;
-        _enrollment = enrollment;
+        _addProfile = addProfile;
         InitializeComponent();
         ProfileTable.ItemsSource = _profiles;
         _sessions.SessionChanged += Sessions_SessionChanged;
@@ -91,10 +91,10 @@ public partial class LauncherView : UserControl, IDisposable
         var profileId = "p_" + Guid.NewGuid().ToString("N");
         await RunActionAsync(async () =>
         {
-            // Neutral start page: the enrollment command owns Google
-            // navigation, and only after its capture listener is armed.
-            await _sessions.OpenAsync(profileId, headless: false);
-            await RunEnrollmentAsync(profileId, existingEmail: null);
+            // One call, one contract: the feature owns the browser
+            // session, the claim, and the credential — Launcher only
+            // displays the non-secret result.
+            await RunAddProfileAsync(new AddProfileRequest(profileId));
         });
     }
 
@@ -155,9 +155,11 @@ public partial class LauncherView : UserControl, IDisposable
         {
             if (!row.Profile.IsLinked)
             {
-                // The service opens a headed resident session itself;
-                // enrollment navigates its own page after arming.
-                await RunEnrollmentAsync(row.ProfileId, existingEmail: null);
+                // Credential repair and initial pairing share the one
+                // feature contract; neither path reaches enrollment
+                // internals.
+                await RunAddProfileAsync(
+                    new AddProfileRequest(row.ProfileId));
                 return;
             }
 
@@ -174,7 +176,8 @@ public partial class LauncherView : UserControl, IDisposable
 
             if (result.State == GoogleAccountState.CredentialRejected)
             {
-                await RunEnrollmentAsync(row.ProfileId, row.Profile.Email);
+                await RunAddProfileAsync(
+                    new AddProfileRequest(row.ProfileId, row.Profile.Email));
             }
         }, row);
     }
@@ -216,17 +219,16 @@ public partial class LauncherView : UserControl, IDisposable
         });
     }
 
-    private async Task RunEnrollmentAsync(string profileId, string? existingEmail)
+    private async Task RunAddProfileAsync(AddProfileRequest request)
     {
-        _enrollmentCancellation = new CancellationTokenSource();
-        GoogleEnrollmentResult? result;
+        _addProfileCancellation = new CancellationTokenSource();
+        AddProfileResult? result;
         try
         {
-            var dialog = new GoogleEnrollmentDialog(
-                profileId,
-                existingEmail,
-                _enrollment,
-                _enrollmentCancellation.Token)
+            var dialog = new AddProfileDialog(
+                request,
+                _addProfile,
+                _addProfileCancellation.Token)
             {
                 Owner = Window.GetWindow(this),
             };
@@ -235,14 +237,14 @@ public partial class LauncherView : UserControl, IDisposable
         }
         finally
         {
-            _enrollmentCancellation.Dispose();
-            _enrollmentCancellation = null;
+            _addProfileCancellation.Dispose();
+            _addProfileCancellation = null;
         }
 
         await RefreshAsync();
         SetStatus(result is null
-            ? "Enrollment ended."
-            : GoogleEnrollmentPolicy.LauncherStatus(result));
+            ? "Add Profile ended."
+            : AddProfilePolicy.LauncherStatus(result));
     }
 
     private async Task RunActionAsync(Func<Task> action, LauncherProfileRow? row = null)
@@ -353,10 +355,10 @@ public partial class LauncherView : UserControl, IDisposable
             return;
         }
         _disposed = true;
-        // Navigation away must not orphan a running enrollment: the
-        // linked token cancels the dialog's run and its best-effort
+        // Navigation away must not orphan a running Add Profile run:
+        // the linked token cancels the dialog's run and its best-effort
         // teardown; the pyhost lifecycle hook is the final backstop.
-        _enrollmentCancellation?.Cancel();
+        _addProfileCancellation?.Cancel();
         _sessions.SessionChanged -= Sessions_SessionChanged;
         _network.SnapshotChanged -= Network_SnapshotChanged;
     }

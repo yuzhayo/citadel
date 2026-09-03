@@ -164,7 +164,7 @@ public sealed class PyHost : IDisposable
             .ConfigureAwait(false);
 
     /// <summary>
-    /// Enrollment commands (protocol v1). Start arms the capture listener
+    /// Add Profile plugin commands (camoprof.add_profile.*). Start arms the capture listener
     /// BEFORE navigating the enrollment page to Google's sign-in, so the
     /// response returning means capture is live. Status never carries
     /// plaintext. Finish is the ONLY command whose response contains a
@@ -172,7 +172,7 @@ public sealed class PyHost : IDisposable
     /// is responsible for not forwarding it to UI layers. Cancel is an
     /// idempotent full teardown.
     /// </summary>
-    public async Task<JsonObject> StartGoogleEnrollmentAsync(
+    public async Task<JsonObject> StartAddProfileAsync(
         string sessionId,
         string? expectedEmail = null,
         CancellationToken cancellationToken = default)
@@ -184,35 +184,35 @@ public sealed class PyHost : IDisposable
         }
 
         return await SendAsync(
-                "google.enrollment.start",
+                "camoprof.add_profile.start",
                 parameters,
                 DefaultTimeout,
                 cancellationToken)
             .ConfigureAwait(false);
     }
 
-    public async Task<JsonObject> GoogleEnrollmentStatusAsync(
+    public async Task<JsonObject> AddProfileStatusAsync(
         string sessionId, CancellationToken cancellationToken = default)
         => await SendAsync(
-                "google.enrollment.status",
+                "camoprof.add_profile.status",
                 new JsonObject { ["session"] = sessionId },
                 DefaultTimeout,
                 cancellationToken)
             .ConfigureAwait(false);
 
-    public async Task<JsonObject> FinishGoogleEnrollmentAsync(
+    public async Task<JsonObject> AddProfileFinishAsync(
         string sessionId, CancellationToken cancellationToken = default)
         => await SendAsync(
-                "google.enrollment.finish",
+                "camoprof.add_profile.finish",
                 new JsonObject { ["session"] = sessionId },
                 DefaultTimeout,
                 cancellationToken)
             .ConfigureAwait(false);
 
-    public async Task<JsonObject> CancelGoogleEnrollmentAsync(
+    public async Task<JsonObject> AddProfileCancelAsync(
         string sessionId, CancellationToken cancellationToken = default)
         => await SendAsync(
-                "google.enrollment.cancel",
+                "camoprof.add_profile.cancel",
                 new JsonObject { ["session"] = sessionId },
                 DefaultTimeout,
                 cancellationToken)

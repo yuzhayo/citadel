@@ -2,12 +2,12 @@ using System.ComponentModel;
 using System.Windows;
 using Citadel.Setting.Components;
 
-namespace Module.Camoprof.Providers.Google.Enrollment;
+namespace Module.Camoprof.Features.AddProfile;
 
 /// <summary>
-/// CamoProf enrollment content hosted by shared SettingDialog chrome and
-/// composed only from shared setting controls. The dialog owns the
-/// enrollment cancellation: it starts the run on Loaded with a single
+/// CamoProf Add Profile content hosted by shared SettingDialog chrome
+/// and composed only from shared setting controls. The dialog owns the
+/// run's cancellation: it starts the feature on Loaded with a single
 /// linked CancellationTokenSource; Cancel and the window Close (X) both
 /// cancel and AWAIT cleanup before the window may vanish, and a
 /// completion arriving after close never touches the UI.
@@ -17,24 +17,21 @@ namespace Module.Camoprof.Providers.Google.Enrollment;
 /// login worked but no password can be saved, and the Launcher status
 /// line carries that honest message.
 /// </summary>
-public sealed partial class GoogleEnrollmentDialog : SettingDialog
+public sealed partial class AddProfileDialog : SettingDialog
 {
-    private readonly string _profileId;
-    private readonly string? _expectedEmail;
-    private readonly GoogleEnrollmentFeature _feature;
+    private readonly AddProfileRequest _request;
+    private readonly AddProfileFeature _feature;
     private readonly CancellationTokenSource _cts;
     private Task? _run;
     private bool _closed;
     private bool _instructionShown;
 
-    internal GoogleEnrollmentDialog(
-        string profileId,
-        string? expectedEmail,
-        GoogleEnrollmentFeature feature,
+    internal AddProfileDialog(
+        AddProfileRequest request,
+        AddProfileFeature feature,
         CancellationToken externalCancellation)
     {
-        _profileId = profileId;
-        _expectedEmail = expectedEmail;
+        _request = request;
         _feature = feature;
         _cts = CancellationTokenSource.CreateLinkedTokenSource(externalCancellation);
         InitializeComponent();
@@ -44,7 +41,7 @@ public sealed partial class GoogleEnrollmentDialog : SettingDialog
     }
 
     /// <summary>Non-secret outcome; valid after the dialog has closed.</summary>
-    internal GoogleEnrollmentResult? Result { get; private set; }
+    internal AddProfileResult? Result { get; private set; }
 
     private void Dialog_Loaded(object sender, RoutedEventArgs e)
     {
@@ -53,27 +50,26 @@ public sealed partial class GoogleEnrollmentDialog : SettingDialog
             return;
         }
 
-        // RunAsync never throws — it maps every path to a result.
+        // ExecuteAsync never throws — it maps every path to a result.
         _run = RunAsync();
     }
 
     private async Task RunAsync()
     {
-        GoogleEnrollmentResult result;
+        AddProfileResult result;
         try
         {
-            result = await _feature.EnrollAsync(
-                _profileId,
-                _expectedEmail,
-                new Progress<GoogleEnrollmentUpdate>(OnUpdate),
+            result = await _feature.ExecuteAsync(
+                _request,
+                new Progress<AddProfileUpdate>(OnUpdate),
                 _cts.Token);
         }
         catch (Exception)
         {
-            // The service maps every failure; this is a belt-and-braces
+            // The coordinator maps every failure; this is a belt-and-braces
             // guard so the dialog always reaches a terminal state.
-            result = new GoogleEnrollmentResult(
-                GoogleEnrollmentOutcome.Failed, null, "unexpected enrollment failure");
+            result = new AddProfileResult(
+                AddProfileOutcome.Failed, null, "unexpected add-profile failure");
         }
 
         Result = result;
@@ -82,10 +78,10 @@ public sealed partial class GoogleEnrollmentDialog : SettingDialog
             return;
         }
 
-        DialogResult = result.Outcome == GoogleEnrollmentOutcome.Completed;
+        DialogResult = result.Outcome == AddProfileOutcome.Completed;
     }
 
-    private void OnUpdate(GoogleEnrollmentUpdate update)
+    private void OnUpdate(AddProfileUpdate update)
     {
         if (_closed)
         {
@@ -110,9 +106,10 @@ public sealed partial class GoogleEnrollmentDialog : SettingDialog
             return;
         }
 
-        // The window may not vanish while enrollment cleanup is pending:
-        // cancel, AWAIT the run (the service does best-effort teardown),
-        // then let the close complete. No callback may touch a dead window.
+        // The window may not vanish while feature cleanup is pending:
+        // cancel, AWAIT the run (the coordinator does best-effort
+        // teardown), then let the close complete. No callback may touch
+        // a dead window.
         e.Cancel = true;
         _cts.Cancel();
         try

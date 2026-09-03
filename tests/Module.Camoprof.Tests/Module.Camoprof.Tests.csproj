@@ -14,26 +14,26 @@
 
   <!--
     The CamoProf citizen remains outside the solution dependency graph
-    (Citizen.targets contract). Enrollment policy/result/service/feature
+    (Citizen.targets contract). Add Profile contract/coordinator/feature
     sources are linked exactly as compiled by the citizen, alongside the
     coordinator, the credential store, and the shared pyhost client
     sources they reference — same-assembly internals, no
-    InternalsVisibleTo. Tests drive the service through its delegate
+    InternalsVisibleTo. Tests drive the coordinator through its delegate
     seams: no browser, no pyhost process, no real DPAPI writes. The
     dialog is deliberately NOT linked here: its post-close guard and
     cancellation ownership are code-reviewed only — a WPF harness was
     judged not worth the flake risk for one dialog; live smoke covers
-    the real behavior and is tracked in tasks/todo.md Phase 3.
+    the real behavior and is tracked in tasks/todo.md.
   -->
   <ItemGroup>
     <Compile Include="..\..\module\sharedLogic\cs\**\*.cs" />
     <Compile Include="..\..\module\camoprof\sharedLogic\BrowserSessionCoordinator.cs" />
     <Compile Include="..\..\module\camoprof\Providers\Google\GoogleAccountRecord.cs" />
     <Compile Include="..\..\module\camoprof\Providers\Google\GoogleCredentialStore.cs" />
-    <Compile Include="..\..\module\camoprof\Providers\Google\Enrollment\GoogleEnrollmentResult.cs" />
-    <Compile Include="..\..\module\camoprof\Providers\Google\Enrollment\GoogleEnrollmentPolicy.cs" />
-    <Compile Include="..\..\module\camoprof\Providers\Google\Enrollment\GoogleEnrollmentService.cs" />
-    <Compile Include="..\..\module\camoprof\Providers\Google\Enrollment\GoogleEnrollmentFeature.cs" />
+    <Compile Include="..\..\module\camoprof\Features\AddProfile\AddProfileContract.cs" />
+    <Compile Include="..\..\module\camoprof\Features\AddProfile\AddProfileCoordinator.cs" />
+    <Compile Include="..\..\module\camoprof\Features\AddProfile\AddProfileFeature.cs" />
+    <Compile Include="..\..\module\camoprof\Features\AddProfile\AddProfilePyHostClient.cs" />
   </ItemGroup>
 
 </Project>

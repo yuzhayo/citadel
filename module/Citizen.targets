@@ -186,29 +186,29 @@
              Text="SharedLogic payload deployed to $(SharedLogicRuntimeRoot)" />
   </Target>
   <!--
-    DeployPyhostPlugins: citizen-owned pyhost plugin folders are deployed
-    beside the shared pyhost payload as importable packages. A plugin
-    folder lives at <citizen>\Features\<Feature>\PyHost\ and deploys FLAT
-    as <output>\sharedLogic\pyhost\<python_package>\*.py. The source
-    structure Features\<Feature>\PyHost\ is flattened: glob RelativeDir
-    contains it, so the destination re-derives the leaf filename and
-    drops every directory segment. The feature declares its package name
-    via the PyhostPluginName property. Shared core stays feature-free;
-    the C# host activates the plugin via CITADEL_PYHOST_PLUGINS.
+    DeployPyhostPlugins: citizen-owned pyhost plugin packages are deployed
+    beside the shared pyhost payload. A plugin lives at
+    <citizen>\Features\<Feature>\<python_package>\ (the last folder IS
+    the importable package name) and deploys FLAT as
+    <output>\sharedLogic\pyhost\<python_package>\*.py — the C# host
+    activates it via CITADEL_PYHOST_PLUGINS. plugin.py additionally
+    deploys as the package __init__.py so importing the package runs
+    registration. Shared core stays feature-free.
   -->
   <Target Name="DeployPyhostPlugins" AfterTargets="DeploySharedLogic">
     <ItemGroup>
-      <PyhostPlugin Include="$(MSBuildProjectDirectory)\Features\*\PyHost\*.py" />
+      <PyhostPlugin Include="$(MSBuildProjectDirectory)\Features\*\$(PyhostPluginName)\*.py" />
+      <!-- plugin.py IS the package __init__: the loader imports the
+           package, so the same file deploys under both names. -->
+      <PyhostPluginInit Include="$(MSBuildProjectDirectory)\Features\*\$(PyhostPluginName)\plugin.py" />
     </ItemGroup>
     <Copy SourceFiles="@(PyhostPlugin)"
           DestinationFiles="@(PyhostPlugin->'$(SharedLogicRuntimeRoot)pyhost\$(PyhostPluginName)\%(Filename)%(Extension)')"
           Condition="'$(PyhostPluginName)' != ''"
           SkipUnchangedFiles="true" />
-    <!-- plugin.py IS the package __init__: the loader imports the
-         package, so the same file deploys under both names. -->
-    <Copy SourceFiles="$(MSBuildProjectDirectory)\Features\$(PyhostPluginFeature)\PyHost\plugin.py"
+    <Copy SourceFiles="@(PyhostPluginInit)"
           DestinationFiles="$(SharedLogicRuntimeRoot)pyhost\$(PyhostPluginName)\__init__.py"
-          Condition="'$(PyhostPluginName)' != '' And '$(PyhostPluginFeature)' != ''"
+          Condition="'$(PyhostPluginName)' != ''"
           SkipUnchangedFiles="true" />
     <Message Importance="high"
              Condition="'@(PyhostPlugin)' != '' And '$(PyhostPluginName)' != ''"

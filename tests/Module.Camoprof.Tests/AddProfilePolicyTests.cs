@@ -1,9 +1,9 @@
-using Module.Camoprof.Providers.Google.Enrollment;
+using Module.Camoprof.Features.AddProfile;
 using Xunit;
 
 namespace Module.Camoprof.Tests;
 
-public class GoogleEnrollmentPolicyTests
+public class AddProfilePolicyTests
 {
     [Theory]
     [InlineData("armed")]
@@ -16,10 +16,11 @@ public class GoogleEnrollmentPolicyTests
     [InlineData("expired")]
     [InlineData("browser_gone")]
     [InlineData("wrong_account")]
+    [InlineData("failed")]
     [InlineData("something-new")] // unknown wire states degrade, never crash
     public void StatusText_is_nonempty_for_every_wire_state(string wireState)
     {
-        var text = GoogleEnrollmentPolicy.StatusText(wireState);
+        var text = AddProfilePolicy.StatusText(wireState);
         Assert.False(string.IsNullOrWhiteSpace(text));
     }
 
@@ -34,8 +35,8 @@ public class GoogleEnrollmentPolicyTests
         string expectedOutcome)
     {
         Assert.Equal(
-            Enum.Parse<GoogleEnrollmentOutcome>(expectedOutcome),
-            GoogleEnrollmentPolicy.OutcomeFor(wireState));
+            Enum.Parse<AddProfileOutcome>(expectedOutcome),
+            AddProfilePolicy.OutcomeFor(wireState));
     }
 
     [Theory]
@@ -47,14 +48,7 @@ public class GoogleEnrollmentPolicyTests
     [InlineData("unknown")]
     public void OutcomeFor_returns_null_for_non_terminal_states(string wireState)
     {
-        Assert.Null(GoogleEnrollmentPolicy.OutcomeFor(wireState));
-    }
-
-    [Fact]
-    public void StatusText_covers_the_failed_navigation_state()
-    {
-        Assert.False(string.IsNullOrWhiteSpace(
-            GoogleEnrollmentPolicy.StatusText("failed")));
+        Assert.Null(AddProfilePolicy.OutcomeFor(wireState));
     }
 
     [Theory]
@@ -67,8 +61,8 @@ public class GoogleEnrollmentPolicyTests
     [InlineData("Failed")]
     public void LauncherStatus_is_nonempty_for_every_outcome(string outcomeName)
     {
-        var text = GoogleEnrollmentPolicy.LauncherStatus(
-            Enum.Parse<GoogleEnrollmentOutcome>(outcomeName), "user@gmail.com");
+        var text = AddProfilePolicy.LauncherStatus(
+            Enum.Parse<AddProfileOutcome>(outcomeName), "user@gmail.com");
         Assert.False(string.IsNullOrWhiteSpace(text));
     }
 
@@ -77,13 +71,13 @@ public class GoogleEnrollmentPolicyTests
     {
         Assert.Contains(
             "user@gmail.com",
-            GoogleEnrollmentPolicy.LauncherStatus(
-                GoogleEnrollmentOutcome.Completed, "user@gmail.com"));
+            AddProfilePolicy.LauncherStatus(
+                AddProfileOutcome.Completed, "user@gmail.com"));
     }
 
     [Fact]
     public void PollInterval_is_the_contracted_500ms()
     {
-        Assert.Equal(TimeSpan.FromMilliseconds(500), GoogleEnrollmentPolicy.PollInterval);
+        Assert.Equal(TimeSpan.FromMilliseconds(500), AddProfilePolicy.PollInterval);
     }
 }

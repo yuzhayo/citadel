@@ -68,19 +68,22 @@ class AddProfileEnrollment:
         return self.lease.page
 
 
-async def start(host, sess, sid, msg):
+async def start(host, session_info, sid, msg):
     """Claim resident primary page, arm listener, BARU navigasi.
 
     Urutan: lease di-claim -> listener dipasang pada page RESIDENT ->
     state armed didaftarkan -> navigasi berjalan sebagai task milik
     enrollment (start kembali segera; protokol v1 berurutan, goto yang
     ditunggu akan mengantri cancel di belakangnya).
+
+    ``session_info`` adalah view baca-only dari SessionHost
+    (profile/headless) — bukan dict registry mentah.
     """
-    if sess.get("headless"):
+    if session_info.get("headless"):
         raise PyhostError("HEADLESS_ENROLLMENT",
                           "enrollment harus memakai browser headed")
 
-    profile = sess["profile"]
+    profile = session_info["profile"]
     existing = host.add_profile_enrollments.get(profile)
     if existing is not None and existing.state not in TERMINAL_STATES:
         raise PyhostError("ENROLLMENT_ACTIVE",
