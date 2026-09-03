@@ -375,26 +375,41 @@ async def _stop_navigation(enr):
 
 
 async def _teardown(enr, state):
-    """Transisi terminal + hentikan navigasi + tutup enrollment page;
-    ganti page bersih pada context yang sama bila itu page terakhir
-    (browser tetap hidup)."""
+    """Transisi terminal + hentikan navigasi + tutup enrollment page
+    dengan aman; perbaiki page resident (lihat _restore_resident_page)."""
     _end(enr, state)
     await _stop_navigation(enr)
-    page, enr.page = enr.page, None
-    if page is not None:
-        try:
-            if not page.is_closed():
-                await page.close()
-        except Exception as e:  # noqa: BLE001 - best effort
-            log("tutup enrollment page gagal: %s" % type(e).__name__)
-    ctx = enr.ctx
-    if ctx is not None:
-        try:
-            if not ctx.pages:
-                await ctx.new_page()
-        except Exception as e:  # noqa: BLE001 - best effort
-            log("ganti page bersih gagal: %s" % type(e).__name__)
+    await _close_enrollment_page(enr)
     await _restore_resident_page(enr)
+
+
+async def _close_enrollment_page(enr):
+    """Tutup enrollment page — dengan satu jebakan Playwright yang nyata:
+    menutup page TERAKHIR dari sebuah context justru MEMATIKAN context
+    itu (browser keluar). Karena start menutup page resident demi satu
+    jendela, enrollment page sering menjadi page terakhir — jadi page
+    pengganti harus dibuat DULU, baru enrollment page ditutup."""
+    page = enr.page
+    enr.page = None
+    if page is None:
+        return
+    try:
+        if page.is_closed():
+            return
+    except Exception:  # noqa: BLE001 - page mati dianggap tertutup
+        return
+    try:
+        ctx = enr.ctx
+        if ctx is not None:
+            others = [item for item in ctx.pages if item is not page]
+            if not others:
+                await ctx.new_page()
+    except Exception as e:  # noqa: BLE001 - best effort
+        log("page pengganti gagal dibuat: %s" % type(e).__name__)
+    try:
+        await page.close()
+    except Exception as e:  # noqa: BLE001 - best effort
+        log("tutup enrollment page gagal: %s" % type(e).__name__)
 
 
 async def _restore_resident_page(enr):
@@ -436,7 +451,7 @@ async def _navigate_later(host, enr):
             return
         log("navigasi enrollment gagal: %s: %s" % (type(e).__name__, e))
         _end(enr, "failed")
-        await _close_page_quietly(enr)
+        await _close_enrollment_page(enr)
         await _restore_resident_page(enr)
 
 

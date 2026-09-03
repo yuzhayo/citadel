@@ -708,6 +708,10 @@ class _FakeEnrollmentPage:
         self.closed = True
         if self in self._ctx.pages:
             self._ctx.pages.remove(self)
+        # Perilaku Playwright NYATA yang ditemukan live smoke: menutup
+        # page TERAKHIR mematikan context — new_page setelah itu melempar.
+        if not self._ctx.pages:
+            self._ctx.dead = True
 
     async def evaluate(self, _script):
         return self.evaluate_result
@@ -718,10 +722,13 @@ class _FakeEnrollmentContext:
         self.events = []
         self.pages = []
         self.replacement_pages = 0
+        self.dead = False
         self._goto_gate = goto_gate
         self._goto_error = goto_error
 
     async def new_page(self):
+        if self.dead:
+            raise RuntimeError("context closed")
         # Halaman pengganti (teardown) juga dihitung agar test bisa
         # membedakan "page bersih" dari page enrollment.
         self.replacement_pages += 1
