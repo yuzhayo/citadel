@@ -10,4 +10,14 @@
     <Compile Include="..\sharedLogic\cs\**\*.cs" />
   </ItemGroup>
 
+  <!--
+    CamoProf's pyhost feature plugins deploy beside the shared pyhost
+    payload. PyhostPluginName is the importable package name; the C# host
+    activates it via CITADEL_PYHOST_PLUGINS at spawn.
+  -->
+  <PropertyGroup>
+    <PyhostPluginName>camoprof_add_profile</PyhostPluginName>
+    <PyhostPluginFeature>AddProfile</PyhostPluginFeature>
+  </PropertyGroup>
+
 </Project>

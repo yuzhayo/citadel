@@ -48,8 +48,18 @@ public sealed class PyHost : IDisposable
     /// <summary>pyhost's stderr, line by line — diagnostics only.</summary>
     public event Action<string>? Diagnostic;
 
-    /// <summary>Spawn a host. All three paths must be absolute.</summary>
-    public static PyHost Start(string pythonExe, string pyhostScript, string credenzDir)
+    /// <summary>
+    /// Spawn a host. All three paths must be absolute.
+    /// <paramref name="pyhostPlugins"/> is an optional comma-separated
+    /// list of feature-plugin package names to activate via
+    /// CITADEL_PYHOST_PLUGINS (e.g. "camoprof_add_profile"); the shared
+    /// core stays feature-free and loads plugins by name only.
+    /// </summary>
+    public static PyHost Start(
+        string pythonExe,
+        string pyhostScript,
+        string credenzDir,
+        string? pyhostPlugins = null)
     {
         var startInfo = new ProcessStartInfo
         {
@@ -65,6 +75,10 @@ public sealed class PyHost : IDisposable
         startInfo.ArgumentList.Add("-u"); // unbuffered: NDJSON must flush per line
         startInfo.ArgumentList.Add(pyhostScript);
         startInfo.Environment["CITADEL_CREDENZ"] = credenzDir;
+        if (!string.IsNullOrWhiteSpace(pyhostPlugins))
+        {
+            startInfo.Environment["CITADEL_PYHOST_PLUGINS"] = pyhostPlugins;
+        }
 
         var process = new Process { StartInfo = startInfo, EnableRaisingEvents = true };
         if (!process.Start())

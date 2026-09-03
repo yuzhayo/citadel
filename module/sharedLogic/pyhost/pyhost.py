@@ -5,11 +5,13 @@ satu objek JSON per baris di stdin, tepat satu respons per request di
 stdout. stdout murni protokol; SEMUA log ke stderr.
 
 v1 commands: ping, session.open, session.navigate, session.verify,
-google.inspect, google.relogin, google.enrollment.start/status/finish/
-cancel, session.close, shutdown.
+google.inspect, google.relogin, session.close, shutdown — plus
+namespace plugin yang dipasang lewat CITADEL_PYHOST_PLUGINS (fitur
+Add Profile camoprof mendaftarkan camoprof.add_profile.*).
 
-Perilaku Google hidup di providers/google/ (inspection, relogin,
-enrollment); file ini hanya protokol, registry session, dan lifecycle.
+Perilaku Google umum (inspect/relogin) hidup di providers/google/;
+perilaku fitur Add Profile hidup di plugin milik camoprof. File ini
+hanya protokol, registry session, lifecycle, dan core infrastruktur.
 Resep browser dipindahkan (ported) dari reference/human_login.py —
 AsyncCamoufox langsung, persistent context, headed. BUKAN lewat stealthB.
 """
@@ -25,7 +27,7 @@ from urllib.parse import urlparse
 
 from providers import PyhostError as _PyhostError, log as _log
 from providers.google import is_browser_closed_error as _is_browser_closed_error
-from providers.google import enrollment, inspection, relogin
+from providers.google import inspection, relogin
 from core import CommandRegistry, SessionHost
 
 PROTOCOL_VERSION = 1
@@ -62,7 +64,6 @@ class _Host:
     def __init__(self):
         self.credenz = self._read_credenz()
         self.sessions = {}          # sid -> dict(profile, cm, ctx, page, dir)
-        self.enrollments = {}       # profile -> enrollment._Enrollment
         self.next_sid = 0
         self.stopping = False
         # Core infrastruktur: registry command + pemilik tunggal akses
@@ -70,8 +71,33 @@ class _Host:
         # inti menjaga primary page lewat guard owner (SESSION_BUSY).
         self.registry = CommandRegistry()
         self.session_host = SessionHost(self.sessions)
+        self._lifecycle_hooks = []   # (host, sid, profile) -> None
         self._register_core_commands()
         self._register_provider_commands()
+        self._load_feature_plugins()
+
+    def add_lifecycle_hook(self, hook):
+        """Hook mati-session generik — core tidak tahu isi hook; plugin
+        fitur yang memasangnya (disarm secret, dsb)."""
+        self._lifecycle_hooks.append(hook)
+
+    def _load_feature_plugins(self):
+        """Muat plugin fitur (namespace command + lifecycle hook).
+
+        Plugin ditemukan lewat env ``CITADEL_PYHOST_PLUGINS`` — daftar
+        nama package dipisah koma, di-import dan ``install(host)``
+        dipanggil. Core tidak hardcode nama fitur apapun; composition
+        root C# yang menentukan plugin mana yang hidup.
+        """
+        raw = os.environ.get("CITADEL_PYHOST_PLUGINS", "")
+        for name in [item.strip() for item in raw.split(",") if item.strip()]:
+            try:
+                module = __import__(name, fromlist=["install"])
+                module.install(self)
+                _log("plugin %s terpasang" % name)
+            except Exception as e:  # noqa: BLE001 - plugin gagal != host mati
+                _log("plugin %s gagal: %s: %s"
+                     % (name, type(e).__name__, e))
 
     @staticmethod
     def _read_credenz():
@@ -115,11 +141,15 @@ class _Host:
         sess = self.sessions.get(sid)
         if sess is None:
             return True
-        # Enrollment milik session ini ikut dibuang SEKARANG — semua
-        # jalur kematian session (browser ditutup manual, session.close,
-        # kegagalan launch, close_all saat shutdown/EOF) lewat sini, dan
-        # tidak ada yang boleh meninggalkan secret setelah session mati.
-        enrollment.disarm_for_session(self, sid, sess["profile"])
+        # Hook mati-session generik (plugin fitur): secret dan state
+        # fitur dibuang SEKARANG — semua jalur kematian session (browser
+        # ditutup manual, session.close, kegagalan launch, close_all
+        # saat shutdown/EOF) lewat sini.
+        for hook in list(self._lifecycle_hooks):
+            try:
+                hook(self, sid, sess["profile"])
+            except Exception as e:  # noqa: BLE001 - hook tak boleh melempar
+                _log("lifecycle hook gagal: %s: %s" % (type(e).__name__, e))
         try:
             if sess.get("ctx") is not None:
                 await sess["cm"].__aexit__(None, None, None)
@@ -158,10 +188,6 @@ class _Host:
         self.registry.register_namespace("providers", "google", {
             "google.inspect": _Host.cmd_google_inspect,
             "google.relogin": _Host.cmd_google_relogin,
-            "google.enrollment.start": _Host.cmd_google_enrollment_start,
-            "google.enrollment.status": _Host.cmd_google_enrollment_status,
-            "google.enrollment.finish": _Host.cmd_google_enrollment_finish,
-            "google.enrollment.cancel": _Host.cmd_google_enrollment_cancel,
         })
 
     async def cmd_ping(self, _msg):
@@ -272,19 +298,6 @@ class _Host:
         sess = self._get_session(msg)
         return await relogin.relogin(self, sess, msg.get("session"), msg)
 
-    async def cmd_google_enrollment_start(self, msg):
-        sess = self._get_session(msg)
-        return await enrollment.start(self, sess, msg.get("session"), msg)
-
-    async def cmd_google_enrollment_status(self, msg):
-        return await enrollment.status(self, msg.get("session"))
-
-    async def cmd_google_enrollment_finish(self, msg):
-        return await enrollment.finish(self, msg.get("session"))
-
-    async def cmd_google_enrollment_cancel(self, msg):
-        return await enrollment.cancel(self, msg.get("session"))
-
     async def cmd_session_close(self, msg):
         sid = msg.get("session")
         if sid not in self.sessions:
@@ -321,10 +334,6 @@ HANDLERS = {
     "session.verify": _Host.cmd_session_verify,
     "google.inspect": _Host.cmd_google_inspect,
     "google.relogin": _Host.cmd_google_relogin,
-    "google.enrollment.start": _Host.cmd_google_enrollment_start,
-    "google.enrollment.status": _Host.cmd_google_enrollment_status,
-    "google.enrollment.finish": _Host.cmd_google_enrollment_finish,
-    "google.enrollment.cancel": _Host.cmd_google_enrollment_cancel,
     "session.close": _Host.cmd_session_close,
     "shutdown": _Host.cmd_shutdown,
 }

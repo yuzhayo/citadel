@@ -84,6 +84,14 @@ class SessionLease:
         sess["page"] = page
         return page
 
+    def drop_session(self):
+        """Session ini terbukti mati (page/context-nya). Lepas owner +
+        hapus dari registry, lalu tandai lease mati. Pembersihan async
+        context tetap jalur tanggung jawab host (``_drop_session``)."""
+        if not self._released:
+            self._released = True
+            self._host.drop_dead_session(self._sid)
+
     def release(self):
         """Lepas kepemilikan — idempotent. Session tetap terdaftar."""
         if not self._released:
@@ -149,3 +157,15 @@ class SessionHost:
             raise PyhostError(
                 "SESSION_BUSY",
                 "session %s dipakai oleh %r" % (sid, owner))
+
+    def drop_dead_session(self, sid):
+        """Halangi pengeksposan session dengan page/context mati (INV-1).
+
+        Dipanggil oleh apapun yang baru saja membuktikan page/session
+        mati (contoh: fitur mendeteksi jendela enrollment ditutup
+        manual). Melepas owner dan MENGHAPUS session dari registry —
+        pembersihan context async tetap tanggung jawab pemanggil via
+        ``drop_session``-nya host; fungsi ini sinkron dan tidak gagal.
+        """
+        self._owners.pop(sid, None)
+        self.sessions.pop(sid, None)

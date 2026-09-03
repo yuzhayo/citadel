@@ -31,8 +31,16 @@ import unittest
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 PYHOST = os.path.join(ROOT, "pyhost", "pyhost.py")
 sys.path.insert(0, os.path.join(ROOT, "pyhost"))
+# Plugin fitur hidup sebagai package camoprof_add_profile di
+# module/camoprof/Features/AddProfile/ — deploy menempatkannya di
+# samping pyhost.py; untuk test sumber, parent folder-nya didaftarkan
+# (dan pyhost dir sudah terdaftar untuk dependency `providers`).
+sys.path.insert(0, os.path.join(
+    ROOT, "..", "camoprof", "Features", "AddProfile"))
 
 import importlib.util  # noqa: E402
+
+os.environ.setdefault("CITADEL_PYHOST_PLUGINS", "camoprof_add_profile")
 
 SPEC = importlib.util.spec_from_file_location("citadel_pyhost_red", PYHOST)
 PYHOST_MODULE = importlib.util.module_from_spec(SPEC)
@@ -133,7 +141,9 @@ class PrimaryPageInvariantTest(unittest.IsolatedAsyncioTestCase):
         self.host, self.ctx, self.resident = _host_with_session()
 
     def tearDown(self):
-        for enr in self.host.enrollments.values():
+        enrollments = getattr(
+            self.host, "add_profile_enrollments", {})
+        for enr in list(enrollments.values()):
             if getattr(enr, "expire_task", None) is not None:
                 enr.expire_task.cancel()
             if getattr(enr, "navigate_task", None) is not None:
@@ -147,11 +157,11 @@ class PrimaryPageInvariantTest(unittest.IsolatedAsyncioTestCase):
         setelah start harus = resident sebelumnya → red sekarang."""
         resident_before = self.resident
         response = await _handle(
-            self.host, "google.enrollment.start", session="s1")
+            self.host, "camoprof.add_profile.start", session="s1")
         await asyncio.sleep(0)
 
         self.assertTrue(response.get("ok"), str(response))
-        enrollment_page = self.host.enrollments["probe"].page
+        enrollment_page = self.host.add_profile_enrollments["probe"].page
         self.assertIs(
             enrollment_page, resident_before,
             "enrollment page bukan resident page yang di-claim — start "
@@ -166,7 +176,7 @@ class PrimaryPageInvariantTest(unittest.IsolatedAsyncioTestCase):
         """INV-1: selama enrollment AKTIF, sess['page'] harus hidup.
         Kode sekarang menutup resident saat start → red."""
         response = await _handle(
-            self.host, "google.enrollment.start", session="s1")
+            self.host, "camoprof.add_profile.start", session="s1")
         await asyncio.sleep(0)
         self.assertTrue(response.get("ok"), str(response))
 
@@ -181,7 +191,7 @@ class PrimaryPageInvariantTest(unittest.IsolatedAsyncioTestCase):
         """INV-4: command lain saat enrollment aktif → SESSION_BUSY,
         bukan beroperasi pada page mati. Kode sekarang: page resident
         sudah ditutup → navigate kena page mati → red."""
-        await _handle(self.host, "google.enrollment.start", session="s1")
+        await _handle(self.host, "camoprof.add_profile.start", session="s1")
         await asyncio.sleep(0)
 
         response = await _handle(
@@ -203,9 +213,9 @@ class PrimaryPageInvariantTest(unittest.IsolatedAsyncioTestCase):
         kena PROFILE_BUSY palsu). Kode sekarang: status melaporkan
         browser_gone tapi session tetap terdaftar dan navigate pada
         context mati baru melempar belakangan → red."""
-        await _handle(self.host, "google.enrollment.start", session="s1")
+        await _handle(self.host, "camoprof.add_profile.start", session="s1")
         await asyncio.sleep(0)
-        enr = self.host.enrollments.get("probe")
+        enr = self.host.add_profile_enrollments.get("probe")
         self.assertIsNotNone(enr)
 
         # User menutup jendela enrollment (bukan pyhost yang menutup).
@@ -213,7 +223,7 @@ class PrimaryPageInvariantTest(unittest.IsolatedAsyncioTestCase):
         await enrollment_page.close()
 
         status = await _handle(
-            self.host, "google.enrollment.status", session="s1")
+            self.host, "camoprof.add_profile.status", session="s1")
         self.assertEqual(
             status.get("state"), "browser_gone",
             "manual close jendela enrollment harus terdeteksi sebagai "
