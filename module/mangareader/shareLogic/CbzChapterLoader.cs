@@ -1,17 +1,14 @@
 using System.IO;
-using System.IO.Compression;
 using System.Runtime.ExceptionServices;
 using System.Windows.Media.Imaging;
+using Module.Mangareader.Archive;
 
 namespace Module.Mangareader.ShareLogic;
 
 public sealed class CbzChapterLoader
 {
-    private static readonly HashSet<string> SupportedExtensions = new(
-        new[] { ".jpg", ".jpeg", ".png", ".bmp", ".gif", ".tif", ".tiff" },
-        StringComparer.OrdinalIgnoreCase);
-
     private readonly ChapterRenderCache _cache = new();
+    private readonly ArchivePageReader _archives = new();
 
     public Task<LoadedChapter> LoadAsync(
         ChapterInfo chapter,
@@ -36,7 +33,7 @@ public sealed class CbzChapterLoader
     {
         if (!File.Exists(chapter.FilePath))
         {
-            throw new FileNotFoundException("CBZ chapter was not found.", chapter.FilePath);
+            throw new FileNotFoundException("Chapter archive was not found.", chapter.FilePath);
         }
 
         var chapterCacheFolder = _cache.GetChapterFolder(chapter);
@@ -158,25 +155,20 @@ public sealed class CbzChapterLoader
             return prepared;
         }
 
-        progress?.Report(new ChapterLoadProgress(0, prepared.Length, "Reading CBZ"));
-        using var file = OpenFile(chapter.FilePath);
-        using (var archive = new ZipArchive(file, ZipArchiveMode.Read, leaveOpen: false))
+        progress?.Report(new ChapterLoadProgress(0, prepared.Length, "Reading archive"));
+        var entries = new Dictionary<string, ArchivePage>(StringComparer.Ordinal);
+        foreach (var entry in _archives.ReadPages(chapter.FilePath, cancellationToken))
+            entries.TryAdd(entry.Name, entry);
+        foreach (var index in missing)
         {
-            var entries = BuildEntryMap(archive);
-            foreach (var index in missing)
+            cancellationToken.ThrowIfCancellationRequested();
+            var name = prepared[index].Metadata.Name;
+            if (!entries.TryGetValue(name, out var entry))
             {
-                cancellationToken.ThrowIfCancellationRequested();
-                var name = prepared[index].Metadata.Name;
-                if (!entries.TryGetValue(name, out var entry))
-                {
-                    throw new InvalidDataException($"Page '{name}' is missing from the CBZ.");
-                }
-
-                prepared[index] = prepared[index] with
-                {
-                    Bytes = ReadEntry(entry, cancellationToken),
-                };
+                throw new InvalidDataException($"Page '{name}' is missing from the archive.");
             }
+
+            prepared[index] = prepared[index] with { Bytes = entry.Bytes };
         }
 
         return prepared;
@@ -188,39 +180,29 @@ public sealed class CbzChapterLoader
         IProgress<ChapterLoadProgress>? progress,
         CancellationToken cancellationToken)
     {
-        progress?.Report(new ChapterLoadProgress(0, 1, "Indexing CBZ"));
-        using var file = OpenFile(chapter.FilePath);
-        using (var archive = new ZipArchive(file, ZipArchiveMode.Read, leaveOpen: false))
+        progress?.Report(new ChapterLoadProgress(0, 1, "Indexing archive"));
+        var entries = _archives.ReadPages(chapter.FilePath, cancellationToken);
+        if (entries.Count == 0)
         {
-            var entries = archive.Entries
-                .Where(entry => entry.Name.Length > 0
-                    && SupportedExtensions.Contains(Path.GetExtension(entry.Name)))
-                .OrderBy(entry => entry.FullName, NaturalStringComparer.OrdinalIgnoreCase)
-                .ToArray();
-
-            if (entries.Length == 0)
-            {
-                throw new InvalidDataException("The CBZ does not contain a supported image page.");
-            }
-
-            progress?.Report(new ChapterLoadProgress(0, entries.Length, "Reading CBZ"));
-            var pages = new PreparedPage[entries.Length];
-            for (var index = 0; index < entries.Length; index++)
-            {
-                cancellationToken.ThrowIfCancellationRequested();
-                var bytes = ReadEntry(entries[index], cancellationToken);
-                var (width, height) = ReadDimensions(bytes);
-                pages[index] = new PreparedPage(
-                    new CachedPageMetadata(entries[index].FullName, width, height),
-                    index,
-                    bytes);
-            }
-
-            TryWriteManifest(
-                chapterCacheFolder,
-                pages.Select(page => page.Metadata).ToArray());
-            return pages;
+            throw new InvalidDataException("The archive does not contain a supported image page.");
         }
+
+        progress?.Report(new ChapterLoadProgress(0, entries.Count, "Reading archive"));
+        var pages = new PreparedPage[entries.Count];
+        for (var index = 0; index < entries.Count; index++)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var (width, height) = ReadDimensions(entries[index].Bytes);
+            pages[index] = new PreparedPage(
+                new CachedPageMetadata(entries[index].Name, width, height),
+                index,
+                entries[index].Bytes);
+        }
+
+        TryWriteManifest(
+            chapterCacheFolder,
+            pages.Select(page => page.Metadata).ToArray());
+        return pages;
     }
 
     private BitmapSource LoadBitmap(
@@ -237,71 +219,19 @@ public sealed class CbzChapterLoader
         var cached = _cache.TryReadPage(cachePath);
         if (cached is not null) return cached;
 
-        var bytes = page.Bytes ?? ReadSingleEntry(
-            chapter.FilePath,
-            page.Metadata.Name,
-            cancellationToken);
+        var bytes = page.Bytes ?? _archives
+            .ReadPages(chapter.FilePath, cancellationToken)
+            .FirstOrDefault(candidate => string.Equals(
+                candidate.Name,
+                page.Metadata.Name,
+                StringComparison.Ordinal))?.Bytes
+            ?? throw new InvalidDataException($"Page '{page.Metadata.Name}' is missing from the archive.");
         var decodePixelWidth = Math.Min(
             page.Metadata.NaturalPixelWidth,
             decodeMaximumPixelWidth);
         var bitmap = Decode(bytes, decodePixelWidth);
         TryWritePage(cachePath, bitmap);
         return bitmap;
-    }
-
-    private static FileStream OpenFile(string path) =>
-        new(
-            path,
-            FileMode.Open,
-            FileAccess.Read,
-            FileShare.Read,
-            64 * 1024,
-            FileOptions.SequentialScan);
-
-    private static Dictionary<string, ZipArchiveEntry> BuildEntryMap(ZipArchive archive)
-    {
-        var entries = new Dictionary<string, ZipArchiveEntry>(StringComparer.Ordinal);
-        foreach (var entry in archive.Entries)
-        {
-            if (entry.Name.Length == 0) continue;
-            entries.TryAdd(entry.FullName, entry);
-        }
-        return entries;
-    }
-
-    private static byte[] ReadSingleEntry(
-        string archivePath,
-        string entryName,
-        CancellationToken cancellationToken)
-    {
-        using var file = OpenFile(archivePath);
-        using (var archive = new ZipArchive(file, ZipArchiveMode.Read, leaveOpen: false))
-        {
-            var entry = archive.Entries.FirstOrDefault(candidate =>
-                string.Equals(candidate.FullName, entryName, StringComparison.Ordinal));
-            if (entry is null)
-            {
-                throw new InvalidDataException($"Page '{entryName}' is missing from the CBZ.");
-            }
-            return ReadEntry(entry, cancellationToken);
-        }
-    }
-
-    private static byte[] ReadEntry(ZipArchiveEntry entry, CancellationToken cancellationToken)
-    {
-        using var source = entry.Open();
-        using var destination = new MemoryStream();
-        var buffer = new byte[64 * 1024];
-
-        while (true)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            var read = source.Read(buffer, 0, buffer.Length);
-            if (read == 0) break;
-            destination.Write(buffer, 0, read);
-        }
-
-        return destination.ToArray();
     }
 
     private static (int Width, int Height) ReadDimensions(byte[] bytes)

@@ -128,6 +128,6 @@ public sealed class ArchiveSignatureDetectorTests : ArchiveTestFixture
         Assert.Equal(ArchiveFormat.Rar5, validation.Format);
         Assert.Equal(ArchiveState.Healthy, validation.State);
         Assert.True(validation.Capabilities.Recognized);
-        Assert.False(validation.Capabilities.CoverWritable);
+        Assert.True(validation.Capabilities.CoverWritable);
     }
 }

@@ -2,4 +2,23 @@
 
   <Import Project="..\Citizen.targets" />
 
+  <ItemGroup>
+    <None Update="Features\Rar\Rar.exe"
+          CopyToOutputDirectory="PreserveNewest"
+          CopyToPublishDirectory="PreserveNewest" />
+    <None Update="Features\Rar\rarreg.key"
+          CopyToOutputDirectory="PreserveNewest"
+          CopyToPublishDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <Target Name="DeployMangaReaderRar" AfterTargets="DeployCitizen">
+    <PropertyGroup>
+      <MangaReaderRarRuntimeFolder>$(CitizenRuntimeFolder)Features\Rar\</MangaReaderRarRuntimeFolder>
+    </PropertyGroup>
+    <MakeDir Directories="$(MangaReaderRarRuntimeFolder)" />
+    <Copy SourceFiles="$(MSBuildProjectDirectory)\Features\Rar\Rar.exe;$(MSBuildProjectDirectory)\Features\Rar\rarreg.key"
+          DestinationFolder="$(MangaReaderRarRuntimeFolder)"
+          SkipUnchangedFiles="true" />
+  </Target>
+
 </Project>

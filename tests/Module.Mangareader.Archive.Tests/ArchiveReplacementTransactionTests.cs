@@ -1,5 +1,7 @@
 using System.IO;
+using System.Diagnostics;
 using Module.Mangareader.Archive;
+using Module.Mangareader.Features.Rar;
 
 namespace Module.Mangareader.Archive.Tests;
 
@@ -99,19 +101,76 @@ public sealed class ArchiveReplacementTransactionTests : ArchiveTestFixture
     [Fact]
     public async Task UnsupportedFormatDoesNotMutateSourceOrCreateBackup()
     {
-        var chapter = ChapterPath("chapter.cbr");
-        File.WriteAllBytes(chapter, Rar4Content());
+        var chapter = ChapterPath("chapter.cb7");
+        File.WriteAllBytes(chapter, SevenZipContent());
         var before = Sha256HexOfFile(chapter);
         var transaction = CreateTransaction();
 
         var result = await transaction.BakeAsync(chapter, MinimalPng(), CancellationToken.None);
 
         Assert.Equal(CoverBakeStatus.UnsupportedFormat, result.Status);
-        Assert.Equal(ArchiveFormat.Rar4, result.Format);
-        Assert.Contains("RAR4", result.Detail, StringComparison.Ordinal);
+        Assert.Equal(ArchiveFormat.SevenZip, result.Format);
+        Assert.Contains("7z", result.Detail, StringComparison.Ordinal);
         Assert.Null(result.BackupPath);
         Assert.Equal(before, Sha256HexOfFile(chapter));
         Assert.Empty(Directory.EnumerateFiles(BackupRoot()));
+    }
+
+    [Fact]
+    public async Task RarBakeKeepsRarAndPreservesOriginalPages()
+    {
+        var chapter = CreateRarChapter();
+        var before = File.ReadAllBytes(chapter);
+        var reader = new RarArchiveFeature();
+        var originalPages = reader.ReadPages(chapter, CancellationToken.None)
+            .ToDictionary(page => page.Name, page => page.Bytes);
+
+        var result = await CreateTransaction()
+            .BakeAsync(chapter, MinimalPng(), CancellationToken.None);
+
+        Assert.Equal(CoverBakeStatus.Baked, result.Status);
+        Assert.Equal(ArchiveFormat.Rar5, new ArchiveSignatureDetector().Detect(chapter).Format);
+        Assert.Equal(before, File.ReadAllBytes(result.BackupPath!));
+
+        var bakedPages = reader.ReadPages(chapter, CancellationToken.None);
+        Assert.Equal(MinimalPng(), Assert.Single(
+            bakedPages,
+            page => page.Name == CoverArchiveWriter.GeneratedCoverEntryName).Bytes);
+        foreach (var original in originalPages)
+            Assert.Equal(original.Value, Assert.Single(bakedPages, page => page.Name == original.Key).Bytes);
+    }
+
+    private string CreateRarChapter()
+    {
+        var staging = Path.Combine(Root, "rar source");
+        Directory.CreateDirectory(staging);
+        File.WriteAllBytes(Path.Combine(staging, "001.png"), PageOne);
+        File.WriteAllBytes(Path.Combine(staging, "002.png"), PageTwo);
+        var chapter = ChapterPath("chapter with spaces.cbr");
+        var executable = Path.Combine(
+            AppContext.BaseDirectory,
+            "Features",
+            "Rar",
+            "Rar.exe");
+        var startInfo = new ProcessStartInfo
+        {
+            FileName = executable,
+            WorkingDirectory = staging,
+            UseShellExecute = false,
+            CreateNoWindow = true,
+        };
+        foreach (var argument in new[]
+        {
+            "a", "-inul", "-ep", "-o+", "-y", "--", chapter, "001.png", "002.png",
+        })
+        {
+            startInfo.ArgumentList.Add(argument);
+        }
+
+        using var process = Process.Start(startInfo)!;
+        process.WaitForExit();
+        Assert.Equal(0, process.ExitCode);
+        return chapter;
     }
 
     [Fact]

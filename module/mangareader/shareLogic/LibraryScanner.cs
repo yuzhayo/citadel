@@ -1,9 +1,16 @@
 using System.IO;
+using Module.Mangareader.Archive;
 
 namespace Module.Mangareader.ShareLogic;
 
 public sealed class LibraryScanner
 {
+    private static readonly HashSet<string> ChapterExtensions = new(
+        [".cbz", ".cbr", ".rar"],
+        StringComparer.OrdinalIgnoreCase);
+
+    private readonly ArchivePageReader _archives = new();
+
     public Task<IReadOnlyList<MangaTitle>> ScanAsync(
         string libraryPath,
         CancellationToken cancellationToken)
@@ -16,7 +23,7 @@ public sealed class LibraryScanner
             cancellationToken);
     }
 
-    private static IReadOnlyList<MangaTitle> Scan(
+    private IReadOnlyList<MangaTitle> Scan(
         string libraryPath,
         CancellationToken cancellationToken)
     {
@@ -38,10 +45,8 @@ public sealed class LibraryScanner
 
             var chapters = Directory
                 .GetFiles(folder, "*", SearchOption.TopDirectoryOnly)
-                .Where(path => string.Equals(
-                    Path.GetExtension(path),
-                    ".cbz",
-                    StringComparison.OrdinalIgnoreCase))
+                .Where(path => ChapterExtensions.Contains(Path.GetExtension(path)))
+                .Where(_archives.IsSupportedArchive)
                 .OrderBy(
                     path => Path.GetFileName(path) ?? string.Empty,
                     NaturalStringComparer.OrdinalIgnoreCase)

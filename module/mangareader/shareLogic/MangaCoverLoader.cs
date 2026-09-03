@@ -1,16 +1,13 @@
 using System.IO;
-using System.IO.Compression;
 using System.Windows.Media.Imaging;
+using Module.Mangareader.Archive;
 
 namespace Module.Mangareader.ShareLogic;
 
 public sealed class MangaCoverLoader
 {
-    private static readonly HashSet<string> SupportedExtensions = new(
-        new[] { ".jpg", ".jpeg", ".png", ".bmp", ".gif", ".tif", ".tiff" },
-        StringComparer.OrdinalIgnoreCase);
-
     private readonly ChapterRenderCache _cache = new();
+    private readonly ArchivePageReader _archives = new();
 
     public Task<BitmapSource?> LoadAsync(
         MangaTitle title,
@@ -40,34 +37,10 @@ public sealed class MangaCoverLoader
         if (cached is not null) return cached;
 
         cancellationToken.ThrowIfCancellationRequested();
-        using var file = new FileStream(
-            chapter.FilePath,
-            FileMode.Open,
-            FileAccess.Read,
-            FileShare.Read,
-            64 * 1024,
-            FileOptions.SequentialScan);
-        using var archive = new ZipArchive(file, ZipArchiveMode.Read, leaveOpen: false);
+        var page = _archives.ReadPages(chapter.FilePath, cancellationToken).FirstOrDefault();
+        if (page is null) return null;
 
-        var entry = archive.Entries
-            .Where(candidate => candidate.Name.Length > 0
-                && SupportedExtensions.Contains(Path.GetExtension(candidate.Name)))
-            .OrderBy(candidate => candidate.FullName, NaturalStringComparer.OrdinalIgnoreCase)
-            .FirstOrDefault();
-        if (entry is null) return null;
-
-        using var entryStream = entry.Open();
-        using var payload = new MemoryStream();
-        var buffer = new byte[64 * 1024];
-        while (true)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            var read = entryStream.Read(buffer, 0, buffer.Length);
-            if (read == 0) break;
-            payload.Write(buffer, 0, read);
-        }
-
-        payload.Position = 0;
+        using var payload = new MemoryStream(page.Bytes, writable: false);
         var bitmap = new BitmapImage();
         bitmap.BeginInit();
         bitmap.CacheOption = BitmapCacheOption.OnLoad;

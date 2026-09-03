@@ -98,7 +98,7 @@
                         <TextBlock Text="Safe archive update"
                                    FontWeight="SemiBold" />
                         <TextBlock Margin="0,5,16,0"
-                                   Text="The original CBZ is backed up under Citadel LocalAppData. The chapter is replaced only after the new archive is complete."
+                                   Text="The original chapter archive is backed up under Citadel LocalAppData. It is replaced only after the new archive is complete."
                                    TextWrapping="Wrap"
                                    Foreground="{DynamicResource Body}" />
                         <TextBlock x:Name="StatusText"

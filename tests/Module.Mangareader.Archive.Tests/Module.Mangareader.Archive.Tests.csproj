@@ -20,6 +20,16 @@
   <ItemGroup>
     <Compile Include="..\..\module\mangareader\shareLogic\Archive\*.cs"
              Link="Archive\%(Filename)%(Extension)" />
+    <Compile Include="..\..\module\mangareader\shareLogic\NaturalStringComparer.cs"
+             Link="ShareLogic\NaturalStringComparer.cs" />
+    <Compile Include="..\..\module\mangareader\Features\Rar\RarArchiveFeature.cs"
+             Link="Features\Rar\RarArchiveFeature.cs" />
+    <None Include="..\..\module\mangareader\Features\Rar\Rar.exe"
+          Link="Features\Rar\Rar.exe"
+          CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\module\mangareader\Features\Rar\rarreg.key"
+          Link="Features\Rar\rarreg.key"
+          CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
   <ItemGroup>

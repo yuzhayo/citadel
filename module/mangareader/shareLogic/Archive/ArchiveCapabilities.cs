@@ -22,13 +22,13 @@ public sealed record ArchiveCapabilities(
         ArchiveFormat.Rar4 => new ArchiveCapabilities(
             format,
             true,
-            false,
-            "RAR4/CBR chapters are recognized, but only ZIP/CBZ chapters can be rewritten."),
+            true,
+            "RAR4/CBR chapters can be read and rewritten."),
         ArchiveFormat.Rar5 => new ArchiveCapabilities(
             format,
             true,
-            false,
-            "RAR5/CBR chapters are recognized, but only ZIP/CBZ chapters can be rewritten."),
+            true,
+            "RAR5/CBR chapters can be read and rewritten."),
         ArchiveFormat.SevenZip => new ArchiveCapabilities(
             format,
             true,

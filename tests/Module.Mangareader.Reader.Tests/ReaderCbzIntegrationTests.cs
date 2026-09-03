@@ -1,5 +1,6 @@
 using System.IO;
 using System.IO.Compression;
+using System.Diagnostics;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using Module.Mangareader.ShareLogic;
@@ -63,6 +64,24 @@ public sealed class ReaderCbzIntegrationTests : IDisposable
         });
     }
 
+    [Fact]
+    public void RealDisposableCbr_LoadsThroughTheExistingReaderAdapter()
+    {
+        WpfTest.Run(() =>
+        {
+            var chapter = CreateRarChapter();
+            _chapters.Add(chapter);
+
+            var loaded = new CbzReaderChapterLoader().LoadAsync(
+                chapter,
+                new ChapterRenderRequest(700, 700, 1, PageRenderQuality.Full),
+                progress: null,
+                CancellationToken.None).GetAwaiter().GetResult();
+
+            Assert.Equal(["page-1.png", "page-2.png"], loaded.Pages.Select(page => page.Name));
+        });
+    }
+
     private ChapterInfo CreateChapter(int index)
     {
         var path = Path.Combine(_root, $"chapter-{index + 1}.cbz");
@@ -101,6 +120,45 @@ public sealed class ReaderCbzIntegrationTests : IDisposable
         encoded.Position = 0;
         using var stream = archive.CreateEntry(name, CompressionLevel.Fastest).Open();
         encoded.CopyTo(stream);
+    }
+
+    private ChapterInfo CreateRarChapter()
+    {
+        var staging = Path.Combine(_root, "rar-pages");
+        Directory.CreateDirectory(staging);
+        WritePageFile(Path.Combine(staging, "page-2.png"), 80, 130);
+        WritePageFile(Path.Combine(staging, "page-1.png"), 90, 140);
+        var chapterPath = Path.Combine(_root, "chapter.cbr");
+        var startInfo = new ProcessStartInfo
+        {
+            FileName = Path.Combine(AppContext.BaseDirectory, "Features", "Rar", "Rar.exe"),
+            WorkingDirectory = staging,
+            UseShellExecute = false,
+            CreateNoWindow = true,
+        };
+        foreach (var argument in new[]
+        {
+            "a", "-inul", "-ep", "-o+", "-y", "--", chapterPath, "page-2.png", "page-1.png",
+        }) startInfo.ArgumentList.Add(argument);
+
+        using var process = Process.Start(startInfo)!;
+        process.WaitForExit();
+        Assert.Equal(0, process.ExitCode);
+        return new ChapterInfo("Chapter RAR", chapterPath);
+    }
+
+    private static void WritePageFile(string path, int width, int height)
+    {
+        var pixels = new byte[width * height * 4];
+        for (var offset = 0; offset < pixels.Length; offset += 4)
+            pixels[offset + 3] = 0xFF;
+        var bitmap = BitmapSource.Create(
+            width, height, 96, 96, PixelFormats.Bgra32, null, pixels, width * 4);
+        bitmap.Freeze();
+        var encoder = new PngBitmapEncoder();
+        encoder.Frames.Add(BitmapFrame.Create(bitmap));
+        using var output = File.Create(path);
+        encoder.Save(output);
     }
 
     public void Dispose()
