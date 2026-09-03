@@ -4,8 +4,8 @@ Behavior suite for the thin puzzle-block contract (tasks/plan.md):
 - start creates a fresh enrollment page (proven pattern), arms the
   listener on it BEFORE navigation, swaps sess["page"] via the generic
   host helper, then closes the resident page — one visible window;
-- teardown creates the clean replacement page FIRST, swaps the
-  reference, then closes the enrollment page (listener dies with it);
+- teardown retires the session immediately, then closes the enrollment
+  page and browser context in the background (listener dies with it);
 - no lease/claim machinery anywhere; host/sess are function params.
 
 Run:

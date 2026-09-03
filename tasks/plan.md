@@ -61,7 +61,8 @@ Launcher -> AddProfileFeature.ExecuteAsync          (kontrak tunggal)
 - semua mekanisme claim/lease/rotasi di plugin
 
 Diganti: `host.register_commands()`, `host.add_lifecycle_hook()`,
-`host.set_primary_page()` — tiga method kecil generik di pyhost.py
+`host.set_primary_page()`, `host.retire_session()` — empat method kecil
+generik di pyhost.py
 mengikuti idiom proyek (handler menerima dict session seperti
 google.inspect/relogin). Plugin menerima `host`/`sess` sebagai
 PARAMETER fungsi — tidak menyimpan backlink.

@@ -9,9 +9,9 @@ Adapter tipis di atas blok generik yang sudah ada (kontrak tasks/plan.md):
   ``sess["page"]`` ditukar lewat helper generik ``host.set_primary_page``
   sehingga selalu menunjuk page hidup.
 - host/sess adalah PARAMETER fungsi — tidak ada backlink tersimpan.
-- teardown (finish/cancel/expiry/gagal navigasi) membuat page bersih F
-  DULU, menukar referensi, baru menutup E: listener mati bersama E,
-  satu jendela tetap hidup.
+- teardown (finish/cancel/expiry/gagal navigasi) mengakhiri flow:
+  registry session dilepas segera, lalu page E dan context ditutup di
+  latar. Tidak ada replacement page atau browser menganggur.
 - state machine, validasi origin/field, one-shot finish, empty-clear,
   dan mati-secret-bersama-session memakai helper Google lama
   (providers/google) — kebijakan lama, tidak diubah.

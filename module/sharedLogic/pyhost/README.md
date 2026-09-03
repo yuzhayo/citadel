@@ -156,13 +156,12 @@ no OS-level keyboard capture of any kind. The shared core knows none of this:
 plugins register command namespaces and lifecycle hooks; the dependency
 direction is always plugin → core.
 
-**Claim-before-navigate (guaranteed order):** `start` CLAIMS the
-resident primary page through the SessionHost lease (exactly one page owner;
-foreign commands get `SESSION_BUSY`), installs the capture listener on that
-same page, registers the `armed` state — and only THEN navigates it to
-Google's sign-in. No second page or window is ever created. The response
-returns after `armed`, so a caller may show the "log in now" instruction
-knowing capture is already live. The first keystroke cannot be missed.
+**Arm-before-navigate (guaranteed order):** `start` creates the enrollment
+page in the existing persistent context, installs the capture listener on it,
+sets it as the session's primary page, then closes the initial `about:blank`
+page. Only after the listener is armed does background navigation to Google's
+sign-in begin. When `start` returns, exactly one live page remains and capture
+is already active, so the first password keystroke cannot be missed.
 
 **Non-blocking start:** the navigation itself runs as an enrollment-owned
 background task, not inside the `start` response. Protocol v1 processes
@@ -212,14 +211,11 @@ armed → password_observed → waiting_for_google | challenge
   shutdown/stdin-EOF) funnels through `_drop_session`, which disarms the
   owning enrollment and drops its secret. No path retains a password after
   its session is gone;
-- **one visible window, by construction:** `start` claims the resident
-  page — no `ctx.new_page()` exists anywhere in the flow, so no window is
-  ever created-then-discarded. Teardown (and the navigation-failure path)
-  rotates the claimed page to a clean replacement THROUGH the lease (the
-  new page is created BEFORE the old one closes, so the context never
-  drops to zero live pages) and repairs the session's `page` reference,
-  so later `session.navigate`/`google.inspect`/`google.relogin` hit a
-  live page. Cookies and session state live in the context, not the page.
+- **one live window after enrollment starts:** the listener-owned page is
+  installed as the session primary page before the initial page is closed.
+  Teardown retires the session synchronously and closes the page plus browser
+  context in the background. The Add Profile browser therefore ends with the
+  flow; there is no replacement or idle blank page.
 
 #### `camoprof.add_profile.start`
 ```json
@@ -268,10 +264,10 @@ response never waits on a browser dying.
 < {"id": 11, "ok": true, "session": "s1", "state": "cancelled"}
 ```
 
-Idempotent full teardown: listener, secret, expiry task, and enrollment page.
-An unknown/already-removed enrollment returns `{"state": "none"}`. The
-resident profile and session are untouched — cancel leaves the profile
-unlinked but the browser alive.
+Idempotent full teardown: listener, secret, expiry task, enrollment page, and
+the session owned by this flow. An unknown enrollment returns
+`{"state": "none"}`. Browser shutdown runs in the background, while the
+cancel response returns immediately.
 
 ### `session.close`
 ```json

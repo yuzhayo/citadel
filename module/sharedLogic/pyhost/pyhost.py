@@ -59,9 +59,10 @@ def _pkg_version(name):
 class _Host:
     """Menyimpan state runtime: credenz, registry session, flag shutdown.
 
-    Tiga method generik kecil melayani plugin fitur (idiom proyek —
+    Empat method generik kecil melayani plugin fitur (idiom proyek —
     handler menerima dict session seperti google.inspect/relogin):
-    register_commands, add_lifecycle_hook, set_primary_page.
+    register_commands, add_lifecycle_hook, set_primary_page,
+    retire_session.
     """
 
     def __init__(self):

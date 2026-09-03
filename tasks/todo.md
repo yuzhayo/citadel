@@ -3,13 +3,12 @@
 ## Bongkar menara + adapter tipis
 
 - [x] Task 1: Rewrite kontrak (tasks/plan.md) ke puzzle-block
-- [ ] Task 2: Hapus `core/` (SessionHost/lease/CommandRegistry); pyhost.py
-      dapat 3 method generik kecil (register_commands, add_lifecycle_hook,
-      set_primary_page); revert guard navigate
-- [ ] Task 3: Plugin enrollment.py tipis: buat E → arm → set primary →
-      tutup R → navigasi latar; teardown buat F dulu baru tutup E;
+- [x] Task 2: Hapus `core/` (SessionHost/lease/CommandRegistry); pyhost.py
+      memakai helper generik register/lifecycle/page/session retirement
+- [x] Task 3: Plugin enrollment.py tipis: buat E → arm → set primary →
+      tutup R → navigasi latar; teardown mengakhiri browser di latar;
       host/sess sebagai parameter (tanpa backlink tersimpan)
-- [ ] Task 4: Port test plugin (26) + rewrite invariant + guard arsitektur
+- [x] Task 4: Port test plugin (26) + rewrite invariant + guard arsitektur
       ke kontrak baru
 - [x] Task 6 (tambahan, disetujui operator): flow END setelah login —
       teardown tanpa page pengganti; browser milik flow ditutup; C#
@@ -18,7 +17,7 @@
       browser) → commit → jalankan aplikasi untuk operator test
 
 ### Checkpoint
-- [ ] test_pyhost (23) hijau tanpa perubahan
+- [x] test_pyhost (23) hijau tanpa perubahan
 - [ ] Satu jendela terbukti di live smoke
 - [ ] Operator login test lulus
 
