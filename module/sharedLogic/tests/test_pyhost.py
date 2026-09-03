@@ -757,11 +757,15 @@ class PyHostEnrollmentTest(unittest.IsolatedAsyncioTestCase):
         host = PYHOST_MODULE._Host()
         ctx = _FakeEnrollmentContext(
             goto_gate=goto_gate, goto_error=goto_error)
+        # Page resident "netral" seperti yang dibuat session.open —
+        # enrollment start harus menutupnya demi satu jendela.
+        resident = _FakeEnrollmentPage(ctx, ctx.events)
+        ctx.pages.append(resident)
         host.sessions["s1"] = {
             "profile": "probe",
             "cm": _NullContextManager(),
             "ctx": ctx,
-            "page": object(),
+            "page": resident,
             "dir": "unused",
             "headless": headless,
         }
@@ -794,6 +798,46 @@ class PyHostEnrollmentTest(unittest.IsolatedAsyncioTestCase):
         enr = host.enrollments["probe"]
         callback = next(iter(enr.page.exposed.values()))
         await callback(value)
+
+    async def test_start_leaves_exactly_one_visible_window(self):
+        # Regression: ctx.new_page() di browser headed adalah jendela
+        # baru — membiarkan page resident netral terbuka membuat user
+        # melihat "CamoFox dibuka 2x". Start harus menutup resident;
+        # teardown memulihkan page hidup DAN referensi sess["page"].
+        host, ctx = self._make_host()
+        resident = host.sessions["s1"]["page"]
+
+        await self._start(host)
+        await asyncio.sleep(0)  # biarkan task navigasi berjalan
+
+        self.assertTrue(resident.closed)
+        alive = [page for page in ctx.pages if not page.closed]
+        self.assertEqual(len(alive), 1)
+        self.assertIs(host.enrollments["probe"].page, alive[0])
+
+        await self._cancel(host)
+        alive = [page for page in ctx.pages if not page.closed]
+        self.assertEqual(len(alive), 1)
+        # Perintah berikutnya (navigate/inspect) mengenai page hidup.
+        self.assertIs(host.sessions["s1"]["page"], alive[0])
+        self.assertFalse(alive[0].closed)
+
+    async def test_navigation_failure_restores_resident_page(self):
+        # Jalur failed juga harus memulihkan page resident: tanpa itu,
+        # context kehabisan page hidup setelah resident ditutup.
+        host, ctx = self._make_host(
+            goto_error=RuntimeError("net::ERR_NAME_NOT_RESOLVED"))
+        resident = host.sessions["s1"]["page"]
+
+        await self._start(host)
+        await asyncio.sleep(0)
+
+        self.assertTrue(resident.closed)
+        after = await self._status(host)
+        self.assertEqual(after["state"], "failed")
+        alive = [page for page in ctx.pages if not page.closed]
+        self.assertEqual(len(alive), 1)
+        self.assertIs(host.sessions["s1"]["page"], alive[0])
 
     async def test_start_arms_listener_before_navigation(self):
         host, ctx = self._make_host()

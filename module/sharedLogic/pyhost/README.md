@@ -208,9 +208,14 @@ armed → password_observed → waiting_for_google | challenge
   shutdown/stdin-EOF) funnels through `_drop_session`, which disarms the
   owning enrollment and drops its secret. No path retains a password after
   its session is gone;
-- teardown closes the enrollment page and opens a clean replacement page in
-  the same context when it was the last one, so the resident browser stays
-  visibly alive.
+- **one visible window:** in a headed browser `ctx.new_page()` is a new
+  window, so `start` closes the neutral resident page once the enrollment
+  page is armed — the user sees exactly one Camofox window during
+  enrollment. Teardown (and the navigation-failure path) opens a clean
+  replacement page and repairs the session's `page` reference, so later
+  `session.navigate`/`google.inspect`/`google.relogin` hit a live page.
+  Cookies and session state live in the context, not the page — closing the
+  resident page loses nothing.
 
 #### `google.enrollment.start`
 ```json

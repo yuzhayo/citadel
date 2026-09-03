@@ -34,6 +34,13 @@ Mengosongkan field password (event input dengan nilai kosong) membuang
 kandidat yang tertangkap — nilai lama/parsial tidak pernah bisa menjadi
 credential relog hanya karena user sempat mengetik lalu menghapus.
 
+SATU JENDELA: di browser headed, ``ctx.new_page()`` adalah jendela baru.
+``start`` menutup page resident netral begitu enrollment page terpasang,
+sehingga user melihat tepat satu jendela Camofox selama enrollment;
+teardown membuka page bersih sebagai pengganti dan memperbaiki referensi
+``sess["page"]`` (cookies/session hidup di context, bukan di page —
+menutup page resident tidak menghilangkan apa pun).
+
 Cleanup mengikuti lifecycle session: ``_drop_session`` di pyhost.py
 memanggil ``disarm_for_session`` — browser ditutup manual,
 session.close, kegagalan launch, shutdown, dan stdin EOF semuanya
@@ -92,7 +99,7 @@ _INIT_SCRIPT = """
 class _Enrollment:
     __slots__ = ("profile", "sid", "ctx", "page", "expected_email",
                  "deadline", "state", "password", "email", "expire_task",
-                 "navigate_task")
+                 "navigate_task", "host", "took_over_window")
 
     def __init__(self, profile, sid, ctx, expected_email, deadline):
         self.profile = profile
@@ -106,6 +113,8 @@ class _Enrollment:
         self.email = None
         self.expire_task = None
         self.navigate_task = None
+        self.host = None
+        self.took_over_window = False
 
 
 # ---- commands ---------------------------------------------------------
@@ -134,6 +143,7 @@ async def start(host, sess, sid, msg):
     loop = asyncio.get_running_loop()
     enr = _Enrollment(profile, sid, sess["ctx"], expected_email,
                       loop.time() + ENROLLMENT_TIMEOUT_SEC)
+    enr.host = host
     try:
         page = await sess["ctx"].new_page()
         enr.page = page
@@ -156,6 +166,22 @@ async def start(host, sess, sid, msg):
     # (protokol v1 berurutan) dan penutupan dialog bisa menggantung
     # sampai 45 detik. Teardown membatalkan task ini.
     enr.navigate_task = asyncio.ensure_future(_navigate_later(host, enr))
+
+    # SATU JENDELA: tutup page resident (jendela awal yang dinavigasi
+    # session.open ke halaman netral) — di browser headed, ctx.new_page()
+    # adalah jendela baru, dan membiarkan keduanya terbuka terlihat
+    # seperti "CamoFox dibuka 2x". Enrollment page menjadi satu-satunya
+    # yang terlihat; teardown membuka page bersih sebagai pengganti dan
+    # memperbaiki referensi sess["page"] (lihat _restore_resident_page).
+    resident = sess.get("page")
+    if resident is not None and resident is not enr.page:
+        try:
+            if not resident.is_closed():
+                await resident.close()
+            enr.took_over_window = True
+        except Exception as e:  # noqa: BLE001 - best effort
+            log("tutup page resident gagal: %s" % type(e).__name__)
+
     return {"session": sid, "state": "armed"}
 
 
@@ -368,6 +394,27 @@ async def _teardown(enr, state):
                 await ctx.new_page()
         except Exception as e:  # noqa: BLE001 - best effort
             log("ganti page bersih gagal: %s" % type(e).__name__)
+    await _restore_resident_page(enr)
+
+
+async def _restore_resident_page(enr):
+    """Pemulihan setelah enrollment page ditutup, ketika start menutup
+    page resident demi satu jendela: pastikan context punya page hidup
+    dan perbaiki referensi ``sess["page"]`` agar perintah berikutnya
+    (navigate/inspect/relogin) tidak mengenai page yang sudah mati."""
+    if not enr.took_over_window or enr.ctx is None:
+        return
+    try:
+        pages = list(enr.ctx.pages)
+        if not pages:
+            pages = [await enr.ctx.new_page()]
+        host = enr.host
+        if host is not None:
+            sess = host.sessions.get(enr.sid)
+            if sess is not None:
+                sess["page"] = pages[0]
+    except Exception as e:  # noqa: BLE001 - best effort
+        log("pemulihan page resident gagal: %s" % type(e).__name__)
 
 
 async def _navigate_later(host, enr):
@@ -390,6 +437,7 @@ async def _navigate_later(host, enr):
         log("navigasi enrollment gagal: %s: %s" % (type(e).__name__, e))
         _end(enr, "failed")
         await _close_page_quietly(enr)
+        await _restore_resident_page(enr)
 
 
 async def _close_page_quietly(enr):

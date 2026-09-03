@@ -221,14 +221,16 @@ internal sealed class GoogleEnrollmentService
         var sessions = _sessions!;
         if (!sessions.IsOpen(profileId))
         {
-            // No start URL: the resident page stays neutral; the
-            // enrollment command navigates its own page after arming.
-            await sessions.OpenAsync(profileId, null, false, cancellationToken);
+            // The resident page is transient here: the enrollment command
+            // closes it once its own page is armed, so exactly ONE browser
+            // window stays visible. about:blank keeps that brief page
+            // neutral instead of flashing google.com.
+            await sessions.OpenAsync(profileId, "about:blank", false, cancellationToken);
         }
         else if (sessions.IsHeadless(profileId))
         {
             await sessions.CloseAsync(profileId, cancellationToken);
-            await sessions.OpenAsync(profileId, null, false, cancellationToken);
+            await sessions.OpenAsync(profileId, "about:blank", false, cancellationToken);
         }
     }
 
