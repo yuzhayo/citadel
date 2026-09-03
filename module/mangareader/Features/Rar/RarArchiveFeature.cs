@@ -13,7 +13,7 @@ public sealed record RarPage(string Name, byte[] Bytes);
 public sealed class RarArchiveFeature
 {
     private static readonly HashSet<string> ImageExtensions = new(
-        [".jpg", ".jpeg", ".png", ".bmp", ".gif", ".tif", ".tiff"],
+        [".jpg", ".jpeg", ".png", ".webp", ".bmp", ".gif", ".tif", ".tiff"],
         StringComparer.OrdinalIgnoreCase);
 
     private static readonly TimeSpan CommandTimeout = TimeSpan.FromMinutes(5);
@@ -21,11 +21,21 @@ public sealed class RarArchiveFeature
 
     public RarArchiveFeature(string? executablePath = null)
     {
-        _executablePath = executablePath ?? Path.Combine(
-            Path.GetDirectoryName(typeof(RarArchiveFeature).Assembly.Location)!,
+        _executablePath = executablePath ?? ResolveBundledExecutable();
+    }
+
+    private static string ResolveBundledExecutable()
+    {
+        var modulePayload = Path.Combine(
+            AppContext.BaseDirectory,
+            "module",
+            "mangareader",
             "Features",
             "Rar",
             "Rar.exe");
+        return File.Exists(modulePayload)
+            ? modulePayload
+            : Path.Combine(AppContext.BaseDirectory, "Features", "Rar", "Rar.exe");
     }
 
     public IReadOnlyList<RarPage> ReadPages(

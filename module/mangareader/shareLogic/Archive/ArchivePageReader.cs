@@ -11,7 +11,7 @@ public sealed record ArchivePage(string Name, byte[] Bytes);
 public sealed class ArchivePageReader
 {
     private static readonly HashSet<string> ImageExtensions = new(
-        [".jpg", ".jpeg", ".png", ".bmp", ".gif", ".tif", ".tiff"],
+        [".jpg", ".jpeg", ".png", ".webp", ".bmp", ".gif", ".tif", ".tiff"],
         StringComparer.OrdinalIgnoreCase);
 
     private readonly ArchiveSignatureDetector _detector = new();
