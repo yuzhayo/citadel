@@ -26,6 +26,7 @@ from urllib.parse import urlparse
 from providers import PyhostError as _PyhostError, log as _log
 from providers.google import is_browser_closed_error as _is_browser_closed_error
 from providers.google import enrollment, inspection, relogin
+from core import CommandRegistry, SessionHost
 
 PROTOCOL_VERSION = 1
 DEFAULT_TIMEOUT_SEC = 120.0
@@ -64,6 +65,13 @@ class _Host:
         self.enrollments = {}       # profile -> enrollment._Enrollment
         self.next_sid = 0
         self.stopping = False
+        # Core infrastruktur: registry command + pemilik tunggal akses
+        # session. Fitur mendaftarkan namespace-nya sendiri; command
+        # inti menjaga primary page lewat guard owner (SESSION_BUSY).
+        self.registry = CommandRegistry()
+        self.session_host = SessionHost(self.sessions)
+        self._register_core_commands()
+        self._register_provider_commands()
 
     @staticmethod
     def _read_credenz():
@@ -130,6 +138,31 @@ class _Host:
         return True
 
     # ---- commands -----------------------------------------------------
+
+    def _register_core_commands(self):
+        self.registry.register_namespace("core", "session", {
+            "session.open": _Host.cmd_session_open,
+            "session.navigate": _Host.cmd_session_navigate,
+            "session.verify": _Host.cmd_session_verify,
+            "session.close": _Host.cmd_session_close,
+        })
+        self.registry.register_namespace("core", "shutdown", {
+            "shutdown": _Host.cmd_shutdown,
+        })
+        # ping tidak namespaced (kompatibilitas protokol v1).
+        self.registry.register_namespace("core", "ping", {
+            "ping": _Host.cmd_ping,
+        })
+
+    def _register_provider_commands(self):
+        self.registry.register_namespace("providers", "google", {
+            "google.inspect": _Host.cmd_google_inspect,
+            "google.relogin": _Host.cmd_google_relogin,
+            "google.enrollment.start": _Host.cmd_google_enrollment_start,
+            "google.enrollment.status": _Host.cmd_google_enrollment_status,
+            "google.enrollment.finish": _Host.cmd_google_enrollment_finish,
+            "google.enrollment.cancel": _Host.cmd_google_enrollment_cancel,
+        })
 
     async def cmd_ping(self, _msg):
         return {
@@ -210,6 +243,10 @@ class _Host:
     async def cmd_session_navigate(self, msg):
         sess = self._get_session(msg)
         sid = msg.get("session")
+        # Guard owner: fitur yang memegang lease primary page menolak
+        # command lain (SESSION_BUSY) — navigate tidak boleh beroperasi
+        # di page yang dimiliki fitur atau sudah mati.
+        self.session_host.guard_page_user(sid, "core")
         url = msg.get("url")
         parsed = urlparse(url) if isinstance(url, str) else None
         if (parsed is None or parsed.scheme not in ("http", "https")
@@ -296,7 +333,7 @@ HANDLERS = {
 async def _handle(host, msg):
     rid = msg.get("id")
     cmd = msg.get("cmd")
-    handler = HANDLERS.get(cmd)
+    handler = HANDLERS.get(cmd) or host.registry.get(cmd)
     if handler is None:
         return _err(rid, "UNKNOWN_COMMAND", "cmd: %r" % (cmd,))
     try:

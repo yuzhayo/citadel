@@ -8,9 +8,9 @@
 - [x] Task 2: Commit 1 `refactor: extract Google inspect/relogin from pyhost.py into providers/google` — `da0779b`
 
 ### Checkpoint: Phase 1
-- [ ] Python suite green with unchanged tests
-- [ ] Build clean, deployed payload includes providers tree
-- [ ] Commit landed
+- [x] Python suite green with unchanged tests
+- [x] Build clean, deployed payload includes providers tree
+- [x] Commit landed
 
 ## Phase 2 — Commit 2: enrollment feature
 
@@ -39,10 +39,35 @@
 - [x] UI-visible types carry no password property (reflection test)
 - [x] Old dialog/detect path fully removed
 
-## Phase 3 — Live smoke (operator-driven; not claimed PASS until run)
+## Phase 3 — Mandatory Add Profile ownership refactor
+
+The checked Phase 2b double-window items are historical workaround evidence,
+not final architecture. They are superseded by `tasks/plan.md` and may not be
+used to claim the Add Profile feature complete.
+
+- [ ] Task 12: Add RED tests for the current closed `sess["page"]` invariant violation, Launcher double ownership, and manual-window-close stale session.
+- [ ] Task 13: Extract generic command registry and opaque session/page lease into pyhost core; preserve existing non-enrollment behavior.
+- [ ] Task 14: Move Add Profile Python semantics under `module/camoprof/Features/AddProfile/PyHost/` and register `camoprof.add_profile.*` commands.
+- [ ] Task 15: Claim and reuse the resident primary page during enrollment; route every terminal path through the shared lease.
+- [ ] Task 16: Make `AddProfileFeature` the sole Launcher-facing entry point; remove direct Add Profile calls to `_sessions.OpenAsync` and other lifecycle internals.
+- [ ] Task 17: Route existing-profile credential repair through the same public feature contract without exposing enrollment internals.
+- [ ] Task 18: Delete old `google.enrollment.*` routing, `took_over_window`, host backlink, `_restore_resident_page`, redundant session opening, and workaround-specific tests/comments.
+- [ ] Task 19: Add architecture guards for dependency direction, private session registry, unique command namespace, one page owner, and no Launcher lifecycle bypass.
+
+### Checkpoint: Phase 3
+
+- [ ] Python and CamoProf focused suites pass.
+- [ ] Ordinary Launch, GitHub, inspect, relogin, close, shutdown, and EOF behavior remain green.
+- [ ] Search confirms shared core contains no Add Profile/Google semantics.
+- [ ] Search confirms Add Profile never accesses the mutable session registry.
+- [ ] Registered sessions always expose one live primary page owner.
+
+## Phase 4 — Live smoke (operator-driven; not claimed PASS until run)
 
 - [ ] Add Profile → login in browser → dialog auto-closes → row Active
 - [ ] Restart app → Check Google → auto-relog without prompt
 - [ ] Cancel mid-enrollment → row Unlinked, capture disarmed
 - [ ] Close browser mid-enrollment → status reflects it, no secret retained
 - [ ] No password in stderr logs or credenz files except `password.dat`
+- [ ] Disposable-profile harness verifies the actual OS window count is exactly one while enrollment is active
+- [ ] No orphan pyhost/Camoufox process, stale session, or `PROFILE_BUSY` remains after every terminal path
