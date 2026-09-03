@@ -151,13 +151,11 @@ public sealed class ReaderPolicyTests
     }
 
     [Fact]
-    public void DrawerPin_PreservesOrdinaryReaderActionsButNotExplicitCloseRouting()
+    public void DrawerOverlayToggle_ClosesOnlyAnOpenUnpinnedDrawer()
     {
-        Assert.True(ReaderDrawerPolicy.ShouldCloseForActivity(ReaderActivityOrigin.OverlayStep, false));
-        Assert.True(ReaderDrawerPolicy.ShouldCloseForActivity(ReaderActivityOrigin.ChapterJump, false));
-        Assert.True(ReaderDrawerPolicy.ShouldCloseForActivity(ReaderActivityOrigin.Zoom, false));
-        Assert.False(ReaderDrawerPolicy.ShouldCloseForActivity(ReaderActivityOrigin.OverlayStep, true));
-        Assert.False(ReaderDrawerPolicy.ShouldCloseForActivity(ReaderActivityOrigin.ManualWheel, false));
+        Assert.True(ReaderDrawerPolicy.CanToggleFromOverlay(false, false));
+        Assert.True(ReaderDrawerPolicy.CanToggleFromOverlay(true, false));
+        Assert.False(ReaderDrawerPolicy.CanToggleFromOverlay(true, true));
     }
 
     [Fact]

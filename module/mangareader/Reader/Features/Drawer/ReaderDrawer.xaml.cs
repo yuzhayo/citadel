@@ -55,7 +55,6 @@ public sealed partial class ReaderDrawer : UserControl,
         _commands.ToggleDrawerRequested += ToggleDrawer;
         _commands.CloseDrawerRequested += CloseDrawer;
         _state.PropertyChanged += OnStateChanged;
-        _activity.ActivityOccurred += OnActivity;
         ApplyState();
     }
 
@@ -65,7 +64,17 @@ public sealed partial class ReaderDrawer : UserControl,
         foreach (var contribution in contributions) _contributions.Add(contribution);
     }
 
-    private void ToggleDrawer() => SetOpen(!_state.IsDrawerOpen);
+    private void ToggleDrawer()
+    {
+        if (!ReaderDrawerPolicy.CanToggleFromOverlay(
+                _state.IsDrawerOpen,
+                _state.IsDrawerPinned))
+        {
+            return;
+        }
+
+        SetOpen(!_state.IsDrawerOpen);
+    }
 
     private void CloseDrawer() => SetOpen(false);
 
@@ -79,15 +88,6 @@ public sealed partial class ReaderDrawer : UserControl,
     private void OnStateChanged(object? sender, PropertyChangedEventArgs e)
     {
         if (e.PropertyName == nameof(IReaderStateView.IsDrawerOpen)) ApplyState();
-    }
-
-    private void OnActivity(object? sender, ReaderActivityEventArgs e)
-    {
-        if (_state.IsDrawerOpen
-            && ReaderDrawerPolicy.ShouldCloseForActivity(e.Origin, _state.IsDrawerPinned))
-        {
-            SetOpen(false);
-        }
     }
 
     private void ApplyState()
@@ -104,7 +104,6 @@ public sealed partial class ReaderDrawer : UserControl,
         _commands.ToggleDrawerRequested -= ToggleDrawer;
         _commands.CloseDrawerRequested -= CloseDrawer;
         _state.PropertyChanged -= OnStateChanged;
-        _activity.ActivityOccurred -= OnActivity;
         _contributions.Clear();
         DrawerPanel.IsOpen = false;
     }
