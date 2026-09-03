@@ -158,18 +158,16 @@
     are deliberately NOT deployed; runtime state is built by RuntimeSetup.
     Runs after any citizen build and no-ops when the source tree has no
     sharedLogic folder, so citizens that predate it keep building.
+
+    The release orchestrator cleans the whole publish directory once before
+    building citizens. This target must not remove pyhost here: that directory
+    also contains plugins owned by sibling citizens built earlier in the same
+    release.
   -->
   <Target Name="DeploySharedLogic" AfterTargets="Build"
           Condition="Exists('$(SharedLogicSource)requirements.txt')">
-    <!--
-      Sync, not just copy: stale payload is removed first (renamed-deleted
-      python files must not linger). Only the two spots Citadel owns are
-      touched — runtime state never lives under the deployed root.
-    -->
     <Delete Files="$(SharedLogicRuntimeRoot)requirements.txt"
             Condition="Exists('$(SharedLogicRuntimeRoot)requirements.txt')" />
-    <RemoveDir Directories="$(SharedLogicRuntimeRoot)pyhost"
-               Condition="Exists('$(SharedLogicRuntimeRoot)pyhost')" />
     <ItemGroup>
       <SharedLogicPyhost Include="$(SharedLogicSource)pyhost\**\*.py" />
     </ItemGroup>
