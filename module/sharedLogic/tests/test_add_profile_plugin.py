@@ -170,6 +170,16 @@ class AddProfilePluginTest(unittest.IsolatedAsyncioTestCase):
                 enr.expire_task.cancel()
             if getattr(enr, "navigate_task", None) is not None:
                 enr.navigate_task.cancel()
+            if getattr(enr, "close_task", None) is not None:
+                enr.close_task.cancel()
+
+    async def _await_close(self, host, profile="probe"):
+        """Terminal kini cepat: kematian browser jalan di latar —
+        tunggu task latar itu sebelum memeriksa context mati."""
+        enr = self._enrollments(host).get(profile)
+        task = getattr(enr, "close_task", None) if enr else None
+        if task is not None:
+            await task
 
     # ---- satu jendela + arm order ------------------------------------
 
@@ -226,13 +236,14 @@ class AddProfilePluginTest(unittest.IsolatedAsyncioTestCase):
         enrollment_page = enr.page
         await self._cancel(host)
 
-        # Flow END: page enrollment ditutup (listener mati), context
-        # ikut mati, session dijatuhkan — tidak ada page pengganti.
-        self.assertTrue(enrollment_page.closed)
-        self.assertTrue(ctx.dead, "context harus mati bersama page-nya")
+        # Registry dilepas SINKRON (respons cancel tidak menunggu
+        # browser) — kematian browser selesai di task latar.
         self.assertNotIn(
             "s1", host.sessions,
-            "session milik flow harus dijatuhkan saat teardown")
+            "session milik flow harus dilepas saat terminal")
+        await self._await_close(host)
+        self.assertTrue(enrollment_page.closed)
+        self.assertTrue(ctx.dead, "context harus mati bersama page-nya")
 
     async def test_navigation_failure_ends_the_browser(self):
         host, ctx = self._make_host(
@@ -246,8 +257,9 @@ class AddProfilePluginTest(unittest.IsolatedAsyncioTestCase):
         after = await self._status(host)
         self.assertEqual(after["state"], "failed")
         self.assertFalse(after["has_password"])
-        self.assertTrue(ctx.dead)
         self.assertNotIn("s1", host.sessions)
+        await self._await_close(host)
+        self.assertTrue(ctx.dead)
 
     # ---- cancel / navigation races ------------------------------------
 
@@ -410,9 +422,11 @@ class AddProfilePluginTest(unittest.IsolatedAsyncioTestCase):
         finished = await self._finish(host)
         self.assertTrue(finished["ok"])
         self.assertEqual(finished["password"], "secret-not-echoed")
-        self.assertTrue(enrollment_page.closed)
+        # Respons finish tidak menunggu browser — page ditutup di latar.
         self.assertIsNone(enr.page)
         self.assertIsNone(enr.password)
+        await self._await_close(host)
+        self.assertTrue(enrollment_page.closed)
 
         again = await self._finish(host)
         self.assertEqual(again["error"]["code"], "ENROLLMENT_CONSUMED")
@@ -422,9 +436,10 @@ class AddProfilePluginTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(after["state"], "consumed")
         self.assertFalse(after["has_password"])
         self.assertNotIn("secret-not-echoed", json.dumps(after))
-        # Flow END: browser milik flow ikut mati setelah finish.
-        self.assertTrue(ctx.dead)
+        # Flow END: registry sudah lepas; browser mati di latar.
         self.assertNotIn("s1", host.sessions)
+        await self._await_close(host)
+        self.assertTrue(ctx.dead)
 
     async def test_wrong_account_is_terminal_refusal(self):
         host, _ctx = self._make_host()
@@ -473,6 +488,7 @@ class AddProfilePluginTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(first["state"], "cancelled")
         self.assertIsNone(enr.page)
         self.assertIsNone(enr.password)
+        await self._await_close(host)
         self.assertTrue(enrollment_page.closed,
                         "page enrollment ditutup — listener mati")
 
@@ -556,6 +572,7 @@ class AddProfilePluginTest(unittest.IsolatedAsyncioTestCase):
         await plugin_enrollment._expire_later(host, enr)
         self.assertEqual(enr.state, "expired")
         self.assertIsNone(enr.password)
+        await self._await_close(host)
 
     async def test_status_missing_enrollment(self):
         host, _ctx = self._make_host()

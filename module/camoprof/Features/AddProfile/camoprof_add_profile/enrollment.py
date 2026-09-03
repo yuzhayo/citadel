@@ -49,7 +49,7 @@ from camoprof_add_profile.password_capture import arm_listener
 class AddProfileEnrollment:
     __slots__ = ("profile", "sid", "ctx", "page", "expected_email",
                  "deadline", "state", "password", "email", "expire_task",
-                 "navigate_task")
+                 "navigate_task", "close_task")
 
     def __init__(self, profile, sid, ctx, expected_email, deadline):
         self.profile = profile
@@ -63,6 +63,7 @@ class AddProfileEnrollment:
         self.email = None
         self.expire_task = None
         self.navigate_task = None
+        self.close_task = None
 
 
 async def start(host, sess, sid, msg):
@@ -135,7 +136,12 @@ async def status(host, sid):
 
 
 async def finish(host, sid):
-    """Email/password TEPAT SATU kali setelah Complete."""
+    """Email/password TEPAT SATU kali setelah Complete — SEGERA.
+
+    Secret diserahkan dalam milidetik; browser dimatikan di latar
+    (retire_session). Finish TIDAK boleh menunggu shutdown context
+    (detik) — kalau menunggu, dialog C# terpaku di "saving credential…"
+    selama browser mati."""
     enr = _find(host, sid)
     if enr is None:
         raise PyhostError("ENROLLMENT_NOT_FOUND", "enrollment: %r" % (sid,))
@@ -150,18 +156,19 @@ async def finish(host, sid):
                           "finish ditolak pada state %r" % (enr.state,))
     email = enr.email
     password = enr.password
-    await _teardown(host, enr, STATE_CONSUMED)
+    await _finish_flow(host, enr, STATE_CONSUMED)
     return {"session": sid, "email": email, "password": password}
 
 
 async def cancel(host, sid):
-    """Teardown idempotent: listener mati bersama page E (ditukar ke
-    page bersih), secret dibuang, task dihentikan."""
+    """Pembatalan instan: state terminal + secret dibuang + registry
+    dilepas; browser dimatikan di latar. Command ini tidak pernah
+    menunggu shutdown browser."""
     enr = _find(host, sid)
     if enr is None:
         return {"session": sid, "state": "none"}
     if enr.state not in TERMINAL_STATES:
-        await _teardown(host, enr, STATE_CANCELLED)
+        await _finish_flow(host, enr, STATE_CANCELLED)
     return {"session": sid, "state": enr.state}
 
 
@@ -207,12 +214,11 @@ async def _advance(host, enr):
     if page is None or _page_is_closed(page):
         # Page enrollment (satu-satunya page = jendela) ditutup manual:
         # session terbukti mati — buang secret, terminal browser_gone,
-        # dan hapus session agar open berikutnya tidak kena PROFILE_BUSY
-        # palsu.
-        await host._drop_session(enr.sid, forget_on_failure=True)
+        # registry dilepas; sisa pemusnahan di latar.
+        await _finish_flow(host, enr, STATE_BROWSER_GONE)
         return
     if asyncio.get_running_loop().time() >= enr.deadline:
-        await _teardown(host, enr, STATE_EXPIRED)
+        await _finish_flow(host, enr, STATE_EXPIRED)
         return
 
     url = page.url or ""
@@ -222,7 +228,7 @@ async def _advance(host, enr):
         if email:
             if enr.expected_email and email != enr.expected_email:
                 enr.email = email
-                await _teardown(host, enr, STATE_WRONG_ACCOUNT)
+                await _finish_flow(host, enr, STATE_WRONG_ACCOUNT)
             else:
                 enr.email = email
                 enr.state = STATE_COMPLETE
@@ -273,25 +279,18 @@ async def _stop_navigation(enr):
         log("pembatalan navigasi enrollment error: %s" % type(e).__name__)
 
 
-async def _teardown(host, enr, state):
-    """Terminal + buang secret + hentikan task + AKHIRI browser.
+async def _finish_flow(host, enr, state):
+    """Terminal CEPAT: buang secret, hentikan task navigasi, lepas
+    registry, jadwalkan kematian browser di latar. Respons command
+    tidak pernah menunggu shutdown browser.
 
-    Flow berakhir di sini: page enrollment ditutup (listener mati
-    bersamanya), dan karena session ini milik flow, session dijatuhkan
-    sehingga context ikut mati — tidak ada page pengganti, tidak ada
-    jendela menganggur. Pemanggil C# cukup membersihkan registry
-    lokalnya (session.close akan terima SESSION_NOT_FOUND = bukti
-    absen)."""
+    (Jalur kegagalan navigasi TIDAK memakai ini — dia berjalan DI
+    DALAM task navigasi; _stop_navigation akan menunggu dirinya
+    sendiri. Jalur itu mengakhiri secara inline.)"""
     _end(enr, state)
     await _stop_navigation(enr)
     page, enr.page = enr.page, None
-    if page is not None:
-        try:
-            if not _page_is_closed(page):
-                await page.close()
-        except Exception as e:  # noqa: BLE001 - best effort
-            log("tutup page enrollment gagal: %s" % type(e).__name__)
-    await host._drop_session(enr.sid, forget_on_failure=True)
+    enr.close_task = host.retire_session(enr.sid, page)
 
 
 async def _close_quietly(enr):
@@ -318,8 +317,12 @@ async def _navigate_later(host, enr):
             await host._drop_session(enr.sid, forget_on_failure=True)
             return
         log("navigasi enrollment gagal: %s: %s" % (type(e).__name__, e))
+        # Inline (kita DI DALAM task navigasi — _stop_navigation akan
+        # menunggu diri sendiri): terminal + secret dibuang + registry
+        # lepas; browser dimatikan di latar.
         _end(enr, STATE_FAILED)
-        await _teardown(host, enr, STATE_FAILED)
+        page, enr.page = enr.page, None
+        enr.close_task = host.retire_session(enr.sid, page)
 
 
 async def _expire_later(host, enr):
@@ -331,7 +334,7 @@ async def _expire_later(host, enr):
             0.0, enr.deadline - asyncio.get_running_loop().time())
         await asyncio.sleep(delay)
         if enr.state not in TERMINAL_STATES:
-            await _teardown(host, enr, STATE_EXPIRED)
+            await _finish_flow(host, enr, STATE_EXPIRED)
     except asyncio.CancelledError:
         pass
     except Exception as e:  # noqa: BLE001 - task latar tak boleh mati diam

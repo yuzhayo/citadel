@@ -173,9 +173,13 @@ class OneWindowInvariantTest(unittest.IsolatedAsyncioTestCase):
         await _handle(
             self.host, "camoprof.add_profile.cancel", session="s1")
 
+        # Registry dilepas SINKRON; browser mati di task latar.
         self.assertNotIn(
             "s1", self.host.sessions,
-            "session milik flow harus dijatuhkan saat teardown")
+            "session milik flow harus dilepas saat terminal")
+        enr = self.host.add_profile_enrollments["probe"]
+        if getattr(enr, "close_task", None) is not None:
+            await enr.close_task
         self.assertTrue(self.ctx.dead,
                         "context harus mati — flow berakhir, browser tutup")
 

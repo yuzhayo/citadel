@@ -257,6 +257,11 @@ Refused before `complete` (`ENROLLMENT_NOT_COMPLETE`), after consumption
 is `null` for passkey logins. This is the only command that ever carries
 plaintext, exactly once.
 
+**Fast handover:** `finish` (and `cancel`) return in milliseconds — the
+secret is dropped and the session registry entry released synchronously,
+while the actual browser shutdown runs as a background task. A command
+response never waits on a browser dying.
+
 #### `camoprof.add_profile.cancel`
 ```json
 > {"id": 11, "cmd": "camoprof.add_profile.cancel", "session": "s1"}

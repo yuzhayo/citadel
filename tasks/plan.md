@@ -69,7 +69,11 @@ PARAMETER fungsi — tidak menyimpan backlink.
 ## Flow END (keputusan operator 2026-09-03)
 
 Setelah login sukses (atau cancel/gagal/expiry), flow TAMAT: browser
-yang dibuka flow ditutup. Tidak ada page baru, tidak ada jendela
+yang dibuka flow ditutup. Finish/cancel MENYERAHKAN hasil dalam
+milidetik (secret dibuang + registry dilepas sinkron) — kematian
+browser berjalan sebagai task latar; respons command tidak pernah
+menunggu shutdown browser (yang membuat dialog terpaku di "saving
+credential…" berdetik-detik). Tidak ada page baru, tidak ada jendela
 menganggur, tidak ada blank page. Listener mati bersama browser.
 Profile persist menyimpan login — Launch/Check berikutnya terbuka
 dalam keadaan sudah login. C# membersihkan registry lokalnya di

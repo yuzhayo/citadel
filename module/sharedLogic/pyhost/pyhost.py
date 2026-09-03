@@ -106,6 +106,36 @@ class _Host:
             raise _PyhostError("SESSION_NOT_FOUND", "session: %r" % (sid,))
         sess["page"] = page
 
+    def retire_session(self, sid, page=None):
+        """Flow berakhir: lepas session dari registry SEKARANG (sinkron,
+        cepat) dan matikan page + context di LATAR — respons command
+        tidak menunggu shutdown browser (detik). Hook lifecycle tetap
+        dipanggil sinkron: secret fitur dibuang sebelum respons balik.
+        Mengembalikan task latar (bisa di-await test / diabaikan)."""
+        sess = self.sessions.pop(sid, None)
+        if sess is None:
+            return None
+        for hook in list(self._lifecycle_hooks):
+            try:
+                hook(self, sid, sess["profile"])
+            except Exception as e:  # noqa: BLE001 - hook tak boleh melempar
+                _log("lifecycle hook gagal: %s: %s" % (type(e).__name__, e))
+        cm = sess.get("cm")
+
+        async def _close_background():
+            try:
+                if page is not None:
+                    await page.close()
+            except Exception as e:  # noqa: BLE001 - best effort
+                _log("tutup page session %s: %s" % (sid, e))
+            try:
+                if cm is not None:
+                    await cm.__aexit__(None, None, None)
+            except Exception as e:  # noqa: BLE001 - best effort
+                _log("close context %s: %s" % (sid, e))
+
+        return asyncio.ensure_future(_close_background())
+
     def _load_feature_plugins(self):
         """Muat plugin fitur (command + lifecycle hook).
 
