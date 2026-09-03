@@ -23,7 +23,7 @@ import unittest
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
-CORE_DIR = os.path.join(ROOT, "pyhost", "core")
+PYHOST_CORE = os.path.join(ROOT, "pyhost", "pyhost.py")
 PLUGIN_DIR = os.path.join(
     ROOT, "..", "camoprof", "Features", "AddProfile", "camoprof_add_profile")
 PYHOST_CS = os.path.join(ROOT, "cs", "PyHost.cs")
@@ -64,37 +64,27 @@ def _stripped_of_whitelist(text):
 
 
 class CorePurityTest(unittest.TestCase):
-    def test_shared_core_has_no_feature_semantics(self):
-        """ARCH-1: pyhost/core hanya infrastruktur generik."""
-        offenders = []
-        for name, source in _sources(CORE_DIR):
-            code = _stripped_of_whitelist(source)
-            match = _FEATURE_SEMANTICS.search(code)
-            if match:
-                offenders.append("%s: %r" % (name, match.group(0)))
-        self.assertEqual(
-            offenders, [],
-            "core bersama mengandung semantik fitur: " + "; ".join(offenders))
-
-    def test_pyhost_core_file_has_no_feature_semantics(self):
-        """ARCH-1 juga untuk pyhost.py sendiri (protokol + registry)."""
-        path = os.path.join(ROOT, "pyhost", "pyhost.py")
-        with open(path, encoding="utf-8") as handle:
+    def test_pyhost_core_has_no_feature_semantics(self):
+        """ARCH-1: pyhost.py (protokol + registry + helper generik)
+        hanya infrastruktur — tanpa semantik fitur."""
+        with open(PYHOST_CORE, encoding="utf-8") as handle:
             code = _stripped_of_whitelist(handle.read())
         match = _FEATURE_SEMANTICS.search(code)
         self.assertIsNone(
             match,
-            "pyhost.py mengandung semantik fitur: %r" % (match and match.group(0),))
+            "pyhost.py mengandung semantik fitur: %r"
+            % (match and match.group(0),))
 
 
 class PluginBoundaryTest(unittest.TestCase):
     def test_plugin_never_touches_session_registry(self):
-        """ARCH-2: akses page hanya lewat lease — tidak ada host.sessions,
-        sess[...], atau backlink host di kode plugin."""
+        """ARCH-2: plugin tidak memegang registry mentah (host.sessions)
+        dan tidak menyimpan backlink host. Membaca dict sess PARAMETER
+        (idiom google.inspect) tetap boleh."""
         offenders = []
         for name, source in _sources(PLUGIN_DIR):
-            for pattern in (r"host\.sessions", r"sess\[",
-                            r"self\.host", r"enr\.host"):
+            for pattern in (r"host\.sessions", r"self\.host",
+                            r"enr\.host", r"host\.registry"):
                 if re.search(pattern, source):
                     offenders.append("%s: %s" % (name, pattern))
         self.assertEqual(

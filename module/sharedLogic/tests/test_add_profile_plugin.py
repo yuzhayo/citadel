@@ -1,12 +1,12 @@
 r"""Behavior tests for the camoprof_add_profile pyhost plugin.
 
-Ported from the retired google.enrollment suite; security and state
-outcomes unchanged. Differences are ownership-shaped, per tasks/plan.md:
-- start CLAIMS the resident primary page (no ctx.new_page; the window
-  stays open and keeps its identity);
-- teardown rotates the claimed page to a clean replacement through the
-  SessionLease (new page created BEFORE the old one closes);
-- enrollment state lives in host.add_profile_enrollments.
+Behavior suite for the thin puzzle-block contract (tasks/plan.md):
+- start creates a fresh enrollment page (proven pattern), arms the
+  listener on it BEFORE navigation, swaps sess["page"] via the generic
+  host helper, then closes the resident page — one visible window;
+- teardown creates the clean replacement page FIRST, swaps the
+  reference, then closes the enrollment page (listener dies with it);
+- no lease/claim machinery anywhere; host/sess are function params.
 
 Run:
   <venv python> -m unittest module.sharedLogic.tests.test_add_profile_plugin -v
@@ -161,7 +161,7 @@ class AddProfilePluginTest(unittest.IsolatedAsyncioTestCase):
 
     async def _type_password(self, host, value):
         enr = self._enrollments(host)["probe"]
-        callback = next(iter(enr.lease.page.exposed.values()))
+        callback = next(iter(enr.page.exposed.values()))
         await callback(value)
 
     def _cancel_pending_tasks(self, host):
@@ -173,7 +173,7 @@ class AddProfilePluginTest(unittest.IsolatedAsyncioTestCase):
 
     # ---- satu jendela + arm order ------------------------------------
 
-    async def test_start_claims_resident_page_without_closing_it(self):
+    async def test_start_swaps_to_fresh_enrollment_page(self):
         host, ctx = self._make_host()
         resident = host.sessions["s1"]["page"]
 
@@ -182,9 +182,13 @@ class AddProfilePluginTest(unittest.IsolatedAsyncioTestCase):
 
         self.assertTrue(response["ok"], str(response))
         self.assertEqual(response["state"], "armed")
-        self.assertFalse(resident.closed,
-                         "jendela resident tidak boleh ditutup oleh start")
-        self.assertIs(self._enrollments(host)["probe"].lease.page, resident)
+        # Satu jendela: resident ditutup SETELAH page enrollment hidup,
+        # referensi session langsung menunjuk page hidup baru.
+        self.assertTrue(resident.closed)
+        enr = self._enrollments(host)["probe"]
+        self.assertIsNot(enr.page, resident)
+        self.assertFalse(enr.page.closed)
+        self.assertIs(host.sessions["s1"]["page"], enr.page)
         self._cancel_pending_tasks(host)
 
     async def test_start_arms_listener_before_navigation(self):
@@ -192,7 +196,7 @@ class AddProfilePluginTest(unittest.IsolatedAsyncioTestCase):
         response = await self._start(host)
         self.assertTrue(response["ok"])
         self.assertEqual(response["state"], "armed")
-        page = self._enrollments(host)["probe"].lease.page
+        page = self._enrollments(host)["probe"].page
         await asyncio.sleep(0)
         # Kontrak urutan: listener hidup SEBELUM navigasi jalan.
         self.assertEqual(page.events, ["expose", "init", "goto"])
@@ -210,7 +214,7 @@ class AddProfilePluginTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(response["state"], "armed")
         await asyncio.sleep(0)
         enr = self._enrollments(host)["probe"]
-        self.assertIn("goto", enr.lease.page.events)
+        self.assertIn("goto", enr.page.events)
         gate.set()
         self._cancel_pending_tasks(host)
 
@@ -259,7 +263,7 @@ class AddProfilePluginTest(unittest.IsolatedAsyncioTestCase):
         host, _ctx = self._make_host(goto_gate=gate)
         await self._start(host)
         enr = self._enrollments(host)["probe"]
-        enr.lease.page.url = self.SIGNIN
+        enr.page.url = self.SIGNIN
         await self._type_password(host, "secret-not-echoed")
 
         cancelled = await self._cancel(host)
@@ -283,7 +287,7 @@ class AddProfilePluginTest(unittest.IsolatedAsyncioTestCase):
         enr = self._enrollments(host)["probe"]
         task = enr.navigate_task
         self.assertIsNotNone(task)
-        await task                      # deterministik: tunggu jalur mati selesai
+        await task  # deterministik: tunggu jalur mati selesai
         self.assertFalse(task.cancelled())
 
         self.assertEqual(enr.state, "browser_gone")
@@ -299,7 +303,7 @@ class AddProfilePluginTest(unittest.IsolatedAsyncioTestCase):
         for url in ("https://accounts.google.com.evil.example/signin",
                     "https://example.com/signin",
                     "https://myaccount.google.com/"):
-            enr.lease.page.url = url
+            enr.page.url = url
             await self._type_password(host, "secret-not-echoed")
         response = await self._status(host)
         self.assertTrue(response["ok"])
@@ -311,11 +315,11 @@ class AddProfilePluginTest(unittest.IsolatedAsyncioTestCase):
         host, _ctx = self._make_host()
         await self._start(host)
         enr = self._enrollments(host)["probe"]
-        enr.lease.page.url = self.SIGNIN
+        enr.page.url = self.SIGNIN
         await self._type_password(host, "first-typed")
         await self._type_password(host, "second-typed")
-        enr.lease.page.url = self.MYACCOUNT
-        enr.lease.page.evaluate_result = \
+        enr.page.url = self.MYACCOUNT
+        enr.page.evaluate_result = \
             ["Account: User (user@gmail.com)"]
         response = await self._status(host)
         self.assertEqual(response["state"], "complete")
@@ -329,14 +333,14 @@ class AddProfilePluginTest(unittest.IsolatedAsyncioTestCase):
         await self._start(host)
         enr = self._enrollments(host)["probe"]
         await asyncio.sleep(0)
-        enr.lease.page.url = self.SIGNIN
+        enr.page.url = self.SIGNIN
         await self._type_password(host, "typed-then-cleared")
         self.assertTrue((await self._status(host))["has_password"])
         await self._type_password(host, "")
         self.assertFalse((await self._status(host))["has_password"])
 
-        enr.lease.page.url = self.MYACCOUNT
-        enr.lease.page.evaluate_result = \
+        enr.page.url = self.MYACCOUNT
+        enr.page.evaluate_result = \
             ["Account: User (user@gmail.com)"]
         response = await self._status(host)
         self.assertEqual(response["state"], "complete")
@@ -350,9 +354,9 @@ class AddProfilePluginTest(unittest.IsolatedAsyncioTestCase):
         host, _ctx = self._make_host()
         await self._start(host)
         enr = self._enrollments(host)["probe"]
-        enr.lease.page.url = self.SIGNIN
+        enr.page.url = self.SIGNIN
         await self._type_password(host, "secret-not-echoed")
-        enr.lease.page.url = \
+        enr.page.url = \
             "https://accounts.google.com/signin/challenge/totp"
         response = await self._status(host)
         self.assertEqual(response["state"], "challenge")
@@ -381,13 +385,19 @@ class AddProfilePluginTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(response["error"]["code"], "BAD_CREDENTIAL_INPUT")
         self.assertEqual(self._enrollments(host), {})
 
-    async def test_foreign_command_is_busy_while_enrollment_active(self):
+    async def test_navigate_during_enrollment_hits_live_page(self):
+        # Kontrak tipis (bukan menara): navigate saat enrollment aktif
+        # beroperasi pada page enrollment yang HIDUP — tidak crash, tidak
+        # page mati. Dialog modal memblokir UI lain, jadi tidak ada guard
+        # owner; perilaku jujur.
         host, _ctx = self._make_host()
         await self._start(host)
         response = await self._handle(
             host, "session.navigate", session="s1",
             url="https://example.com/")
-        self.assertEqual(response["error"]["code"], "SESSION_BUSY")
+        self.assertTrue(response["ok"], str(response))
+        self.assertEqual(host.sessions["s1"]["page"].url,
+                         "https://example.com/")
         self._cancel_pending_tasks(host)
 
     # ---- finish / outcomes ---------------------------------------------
@@ -396,11 +406,11 @@ class AddProfilePluginTest(unittest.IsolatedAsyncioTestCase):
         host, ctx = self._make_host()
         await self._start(host)
         enr = self._enrollments(host)["probe"]
-        enrollment_page = enr.lease.page
-        enr.lease.page.url = self.SIGNIN
+        enrollment_page = enr.page
+        enr.page.url = self.SIGNIN
         await self._type_password(host, "secret-not-echoed")
-        enr.lease.page.url = self.MYACCOUNT
-        enr.lease.page.evaluate_result = \
+        enr.page.url = self.MYACCOUNT
+        enr.page.evaluate_result = \
             ["Account: User (user@gmail.com)"]
         await self._status(host)
 
@@ -408,7 +418,7 @@ class AddProfilePluginTest(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(finished["ok"])
         self.assertEqual(finished["password"], "secret-not-echoed")
         self.assertTrue(enrollment_page.closed)
-        self.assertIsNone(enr.lease)
+        self.assertIsNone(enr.page)
         self.assertIsNone(enr.password)
 
         again = await self._finish(host)
@@ -426,10 +436,10 @@ class AddProfilePluginTest(unittest.IsolatedAsyncioTestCase):
         host, _ctx = self._make_host()
         await self._start(host, expected_email="expected@gmail.com")
         enr = self._enrollments(host)["probe"]
-        enr.lease.page.url = self.SIGNIN
+        enr.page.url = self.SIGNIN
         await self._type_password(host, "secret-not-echoed")
-        enr.lease.page.url = self.MYACCOUNT
-        enr.lease.page.evaluate_result = \
+        enr.page.url = self.MYACCOUNT
+        enr.page.evaluate_result = \
             ["Account: User (actual@gmail.com)"]
         response = await self._status(host)
         self.assertEqual(response["state"], "wrong_account")
@@ -444,8 +454,8 @@ class AddProfilePluginTest(unittest.IsolatedAsyncioTestCase):
         host, _ctx = self._make_host()
         await self._start(host)
         enr = self._enrollments(host)["probe"]
-        enr.lease.page.url = self.MYACCOUNT
-        enr.lease.page.evaluate_result = \
+        enr.page.url = self.MYACCOUNT
+        enr.page.evaluate_result = \
             ["Account: User (user@gmail.com)"]
         response = await self._status(host)
         self.assertEqual(response["state"], "complete")
@@ -460,14 +470,14 @@ class AddProfilePluginTest(unittest.IsolatedAsyncioTestCase):
         host, _ctx = self._make_host()
         await self._start(host)
         enr = self._enrollments(host)["probe"]
-        enrollment_page = enr.lease.page
-        enr.lease.page.url = self.SIGNIN
+        enrollment_page = enr.page
+        enr.page.url = self.SIGNIN
         await self._type_password(host, "secret-not-echoed")
 
         first = await self._cancel(host)
         self.assertTrue(first["ok"])
         self.assertEqual(first["state"], "cancelled")
-        self.assertIsNone(enr.lease)
+        self.assertIsNone(enr.page)
         self.assertIsNone(enr.password)
 
         second = await self._cancel(host)
@@ -489,7 +499,7 @@ class AddProfilePluginTest(unittest.IsolatedAsyncioTestCase):
         host, _ctx = self._make_host()
         await self._start(host)
         enr = self._enrollments(host)["probe"]
-        enr.lease.page.url = self.SIGNIN
+        enr.page.url = self.SIGNIN
         await self._type_password(host, "secret-not-echoed")
 
         closed = await self._handle(
@@ -506,7 +516,7 @@ class AddProfilePluginTest(unittest.IsolatedAsyncioTestCase):
         host, _ctx = self._make_host()
         await self._start(host)
         enr = self._enrollments(host)["probe"]
-        enr.lease.page.url = self.SIGNIN
+        enr.page.url = self.SIGNIN
         await self._type_password(host, "secret-not-echoed")
 
         await host._drop_session("s1")
@@ -517,10 +527,10 @@ class AddProfilePluginTest(unittest.IsolatedAsyncioTestCase):
         host, _ctx = self._make_host()
         await self._start(host)
         enr = self._enrollments(host)["probe"]
-        enr.lease.page.url = self.SIGNIN
+        enr.page.url = self.SIGNIN
         await self._type_password(host, "secret-not-echoed")
 
-        await enr.lease.page.close()  # user menutup jendela
+        await enr.page.close()  # user menutup jendela
 
         after = await self._status(host)
         self.assertEqual(after["state"], "browser_gone")
@@ -531,13 +541,13 @@ class AddProfilePluginTest(unittest.IsolatedAsyncioTestCase):
         host, _ctx = self._make_host()
         await self._start(host)
         enr = self._enrollments(host)["probe"]
-        enr.lease.page.url = self.SIGNIN
+        enr.page.url = self.SIGNIN
         await self._type_password(host, "secret-not-echoed")
         enr.deadline = asyncio.get_running_loop().time() - 1
 
         response = await self._status(host)
         self.assertEqual(response["state"], "expired")
-        self.assertIsNone(enr.lease)
+        self.assertIsNone(enr.page)
         self.assertIsNone(enr.password)
         self.assertNotIn("secret-not-echoed", json.dumps(response))
 
@@ -547,7 +557,7 @@ class AddProfilePluginTest(unittest.IsolatedAsyncioTestCase):
         enr = self._enrollments(host)["probe"]
         enr.deadline = asyncio.get_running_loop().time() - 1
         from camoprof_add_profile import enrollment as plugin_enrollment
-        await plugin_enrollment._expire_later(enr)
+        await plugin_enrollment._expire_later(host, enr)
         self.assertEqual(enr.state, "expired")
         self.assertIsNone(enr.password)
 

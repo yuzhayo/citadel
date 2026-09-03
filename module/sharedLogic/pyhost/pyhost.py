@@ -6,12 +6,11 @@ stdout. stdout murni protokol; SEMUA log ke stderr.
 
 v1 commands: ping, session.open, session.navigate, session.verify,
 google.inspect, google.relogin, session.close, shutdown — plus
-namespace plugin yang dipasang lewat CITADEL_PYHOST_PLUGINS (fitur
-Add Profile camoprof mendaftarkan camoprof.add_profile.*).
+namespace plugin yang dipasang lewat CITADEL_PYHOST_PLUGINS.
 
 Perilaku Google umum (inspect/relogin) hidup di providers/google/;
-perilaku fitur Add Profile hidup di plugin milik camoprof. File ini
-hanya protokol, registry session, lifecycle, dan core infrastruktur.
+perilaku fitur hidup di plugin milik citizen-nya. File
+ini hanya protokol, registry session, dan lifecycle.
 Resep browser dipindahkan (ported) dari reference/human_login.py —
 AsyncCamoufox langsung, persistent context, headed. BUKAN lewat stealthB.
 """
@@ -28,7 +27,6 @@ from urllib.parse import urlparse
 from providers import PyhostError as _PyhostError, log as _log
 from providers.google import is_browser_closed_error as _is_browser_closed_error
 from providers.google import inspection, relogin
-from core import CommandRegistry, SessionHost
 
 PROTOCOL_VERSION = 1
 DEFAULT_TIMEOUT_SEC = 120.0
@@ -59,30 +57,57 @@ def _pkg_version(name):
 
 
 class _Host:
-    """Menyimpan state runtime: credenz, registry session, flag shutdown."""
+    """Menyimpan state runtime: credenz, registry session, flag shutdown.
+
+    Tiga method generik kecil melayani plugin fitur (idiom proyek —
+    handler menerima dict session seperti google.inspect/relogin):
+    register_commands, add_lifecycle_hook, set_primary_page.
+    """
 
     def __init__(self):
         self.credenz = self._read_credenz()
         self.sessions = {}          # sid -> dict(profile, cm, ctx, page, dir)
         self.next_sid = 0
         self.stopping = False
-        # Core infrastruktur: registry command + pemilik tunggal akses
-        # session. Fitur mendaftarkan namespace-nya sendiri; command
-        # inti menjaga primary page lewat guard owner (SESSION_BUSY).
-        self.registry = CommandRegistry()
-        self.session_host = SessionHost(self.sessions)
-        self._lifecycle_hooks = []   # (host, sid, profile) -> None
-        self._register_core_commands()
-        self._register_provider_commands()
+        self.commands = dict(HANDLERS)   # core + command plugin
+        self._lifecycle_hooks = []       # (host, sid, profile) -> None
         self._load_feature_plugins()
+
+    def register_commands(self, owner, commands):
+        """Daftarkan command plugin. Kolisi nama = error keras, bukan
+        override diam-diam. Generik — core tidak tahu arti command."""
+        for name, handler in commands.items():
+            if name in self.commands:
+                raise _PyhostError(
+                    "COMMAND_COLLISION", "command sudah terdaftar: %r"
+                    % (name,))
+            self.commands[name] = handler
+            _log("command terdaftar: %s (%s)" % (name, owner))
 
     def add_lifecycle_hook(self, hook):
         """Hook mati-session generik — core tidak tahu isi hook; plugin
-        fitur yang memasangnya (disarm secret, dsb)."""
+        fitur yang memasangnya (mis. membuang secret)."""
         self._lifecycle_hooks.append(hook)
 
+    def get_session(self, sid):
+        """Baca session by id (idiom semua handler; plugin tidak
+        memegang dict registry mentah)."""
+        sess = self.sessions.get(sid)
+        if sess is None:
+            raise _PyhostError("SESSION_NOT_FOUND", "session: %r" % (sid,))
+        return sess
+
+    def set_primary_page(self, sid, page):
+        """Tukar referensi primary page session (dipakai plugin yang
+        menukar page saat start/teardown). Generik — tanpa pengetahuan
+        fitur; menjaga invariant: session terdaftar ⇔ page hidup."""
+        sess = self.sessions.get(sid)
+        if sess is None:
+            raise _PyhostError("SESSION_NOT_FOUND", "session: %r" % (sid,))
+        sess["page"] = page
+
     def _load_feature_plugins(self):
-        """Muat plugin fitur (namespace command + lifecycle hook).
+        """Muat plugin fitur (command + lifecycle hook).
 
         Plugin ditemukan lewat env ``CITADEL_PYHOST_PLUGINS`` — daftar
         nama package dipisah koma, di-import dan ``install(host)``
@@ -169,27 +194,6 @@ class _Host:
 
     # ---- commands -----------------------------------------------------
 
-    def _register_core_commands(self):
-        self.registry.register_namespace("core", "session", {
-            "session.open": _Host.cmd_session_open,
-            "session.navigate": _Host.cmd_session_navigate,
-            "session.verify": _Host.cmd_session_verify,
-            "session.close": _Host.cmd_session_close,
-        })
-        self.registry.register_namespace("core", "shutdown", {
-            "shutdown": _Host.cmd_shutdown,
-        })
-        # ping tidak namespaced (kompatibilitas protokol v1).
-        self.registry.register_namespace("core", "ping", {
-            "ping": _Host.cmd_ping,
-        })
-
-    def _register_provider_commands(self):
-        self.registry.register_namespace("providers", "google", {
-            "google.inspect": _Host.cmd_google_inspect,
-            "google.relogin": _Host.cmd_google_relogin,
-        })
-
     async def cmd_ping(self, _msg):
         return {
             "protocol": PROTOCOL_VERSION,
@@ -269,10 +273,6 @@ class _Host:
     async def cmd_session_navigate(self, msg):
         sess = self._get_session(msg)
         sid = msg.get("session")
-        # Guard owner: fitur yang memegang lease primary page menolak
-        # command lain (SESSION_BUSY) — navigate tidak boleh beroperasi
-        # di page yang dimiliki fitur atau sudah mati.
-        self.session_host.guard_page_user(sid, "core")
         url = msg.get("url")
         parsed = urlparse(url) if isinstance(url, str) else None
         if (parsed is None or parsed.scheme not in ("http", "https")
@@ -342,7 +342,7 @@ HANDLERS = {
 async def _handle(host, msg):
     rid = msg.get("id")
     cmd = msg.get("cmd")
-    handler = HANDLERS.get(cmd) or host.registry.get(cmd)
+    handler = host.commands.get(cmd)
     if handler is None:
         return _err(rid, "UNKNOWN_COMMAND", "cmd: %r" % (cmd,))
     try:

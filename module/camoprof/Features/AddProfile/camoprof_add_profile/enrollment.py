@@ -1,17 +1,20 @@
 """State machine enrollment milik fitur Add Profile (camoprof).
 
-Perbedaan struktural dari implementasi providers/google lama:
+Adapter tipis di atas blok generik yang sudah ada (kontrak tasks/plan.md):
 
-- TIDAK ada backlink ke host/registry (INV-3). Semua akses page lewat
-  ``lease`` (SessionLease milik core) — fitur tidak tahu bentuk
-  registry session.
-- start MENG-CLAIM resident primary page: listener dipasang pada page
-  yang sudah ada, TIDAK ada ctx.new_page() (INV-2) — satu jendela
-  sejak awal, tidak ada jendela yang dibuat lalu dibuang.
-- Semua jalur terminal melepas lease; rotasi page pengganti (saat
-  page enrollment kotor) lewat ``lease.rotate_primary()`` yang membuat
-  page baru DULU sebelum menutup — context tidak pernah kehabisan
-  page (kebenaran Playwright: page terakhir tertutup = context mati).
+- TIDAK ada lease/claim/rotasi. Page enrollment E dibuat biasa
+  (ctx.new_page — pola yang terbukti), listener dipasang di E SEBELUM
+  E dinavigasi, page resident R ditutup setelah E hidup (satu jendela;
+  context tak pernah kehabisan page), dan referensi session
+  ``sess["page"]`` ditukar lewat helper generik ``host.set_primary_page``
+  sehingga selalu menunjuk page hidup.
+- host/sess adalah PARAMETER fungsi — tidak ada backlink tersimpan.
+- teardown (finish/cancel/expiry/gagal navigasi) membuat page bersih F
+  DULU, menukar referensi, baru menutup E: listener mati bersama E,
+  satu jendela tetap hidup.
+- state machine, validasi origin/field, one-shot finish, empty-clear,
+  dan mati-secret-bersama-session memakai helper Google lama
+  (providers/google) — kebijakan lama, tidak diubah.
 """
 
 import asyncio
@@ -26,7 +29,6 @@ from providers.google import (
 )
 
 from camoprof_add_profile.add_profile_state import (
-    CAPTURING_STATES,
     ENROLLMENT_TIMEOUT_SEC,
     TERMINAL_STATES,
     STATE_ARMED,
@@ -45,14 +47,15 @@ from camoprof_add_profile.password_capture import arm_listener
 
 
 class AddProfileEnrollment:
-    __slots__ = ("profile", "sid", "lease", "expected_email", "deadline",
-                 "state", "password", "email", "expire_task",
+    __slots__ = ("profile", "sid", "ctx", "page", "expected_email",
+                 "deadline", "state", "password", "email", "expire_task",
                  "navigate_task")
 
-    def __init__(self, profile, sid, lease, expected_email, deadline):
+    def __init__(self, profile, sid, ctx, expected_email, deadline):
         self.profile = profile
         self.sid = sid
-        self.lease = lease          # SessionLease (core) — bukan registry
+        self.ctx = ctx
+        self.page = None
         self.expected_email = expected_email
         self.deadline = deadline
         self.state = STATE_ARMED
@@ -61,29 +64,21 @@ class AddProfileEnrollment:
         self.expire_task = None
         self.navigate_task = None
 
-    @property
-    def page(self):
-        """Primary page via lease — hidup atau raise, tidak pernah
-        mengekspos page mati (INV-1)."""
-        return self.lease.page
 
+async def start(host, sess, sid, msg):
+    """Buat page enrollment, arm listener, BARU navigasi.
 
-async def start(host, session_info, sid, msg):
-    """Claim resident primary page, arm listener, BARU navigasi.
-
-    Urutan: lease di-claim -> listener dipasang pada page RESIDENT ->
-    state armed didaftarkan -> navigasi berjalan sebagai task milik
-    enrollment (start kembali segera; protokol v1 berurutan, goto yang
-    ditunggu akan mengantri cancel di belakangnya).
-
-    ``session_info`` adalah view baca-only dari SessionHost
-    (profile/headless) — bukan dict registry mentah.
+    Urutan: page E dibuat -> listener dipasang di E -> referensi
+    session ditukar ke E (helper generik) -> R ditutup (E sudah hidup,
+    context aman) -> navigasi E ke login Google sebagai task latar
+    (start kembali segera; protokol v1 berurutan, goto yang ditunggu
+    akan mengantri cancel di belakangnya).
     """
-    if session_info.get("headless"):
+    if sess.get("headless"):
         raise PyhostError("HEADLESS_ENROLLMENT",
                           "enrollment harus memakai browser headed")
 
-    profile = session_info["profile"]
+    profile = sess["profile"]
     existing = host.add_profile_enrollments.get(profile)
     if existing is not None and existing.state not in TERMINAL_STATES:
         raise PyhostError("ENROLLMENT_ACTIVE",
@@ -97,21 +92,35 @@ async def start(host, session_info, sid, msg):
                               "expected_email tidak sah")
         expected_email = expected_email.strip().lower()
 
-    # Claim primary page: owner "camoprof.add_profile" eksklusif.
-    # navigate/inspect lain akan kena SESSION_BUSY selama lease hidup.
-    lease = host.session_host.claim_primary(sid, "camoprof.add_profile")
-    page = lease.page  # resident page hidup — INV-1 & INV-2
-
     loop = asyncio.get_running_loop()
     enr = AddProfileEnrollment(
-        profile, sid, lease, expected_email,
+        profile, sid, sess["ctx"], expected_email,
         loop.time() + ENROLLMENT_TIMEOUT_SEC)
 
-    # Listener dipasang pada page resident SEBELUM navigasi apapun.
-    await arm_listener(page, enr)
+    resident = sess.get("page")
+    try:
+        page = await sess["ctx"].new_page()
+        enr.page = page
+        await arm_listener(page, enr)
+    except Exception as e:  # noqa: BLE001 - gagal memasang listener
+        log("siapkan page enrollment gagal: %s: %s"
+            % (type(e).__name__, e))
+        await _close_quietly(enr)
+        raise PyhostError("ENROLLMENT_START_FAILED",
+                          "page enrollment tidak siap")
+
+    # Referensi session menunjuk page hidup E sebelum R ditutup —
+    # invariant: session terdaftar ⇔ primary page hidup.
+    host.set_primary_page(sid, page)
+    if resident is not None and resident is not page:
+        try:
+            if not _page_is_closed(resident):
+                await resident.close()
+        except Exception as e:  # noqa: BLE001 - best effort
+            log("tutup page resident gagal: %s" % type(e).__name__)
 
     host.add_profile_enrollments[profile] = enr
-    enr.expire_task = asyncio.ensure_future(_expire_later(enr))
+    enr.expire_task = asyncio.ensure_future(_expire_later(host, enr))
     enr.navigate_task = asyncio.ensure_future(_navigate_later(host, enr))
     return {"session": sid, "state": STATE_ARMED}
 
@@ -121,7 +130,7 @@ async def status(host, sid):
     if enr is None:
         raise PyhostError("ENROLLMENT_NOT_FOUND", "enrollment: %r" % (sid,))
     if enr.state not in TERMINAL_STATES and enr.state != STATE_COMPLETE:
-        await _advance(enr)
+        await _advance(host, enr)
     return _snapshot(enr)
 
 
@@ -141,29 +150,29 @@ async def finish(host, sid):
                           "finish ditolak pada state %r" % (enr.state,))
     email = enr.email
     password = enr.password
-    await _teardown(enr, STATE_CONSUMED)
+    await _teardown(host, enr, STATE_CONSUMED)
     return {"session": sid, "email": email, "password": password}
 
 
 async def cancel(host, sid):
-    """Teardown idempotent: listener ikut mati bersama rotasi page,
-    secret dibuang, lease dilepas."""
+    """Teardown idempotent: listener mati bersama page E (ditukar ke
+    page bersih), secret dibuang, task dihentikan."""
     enr = _find(host, sid)
     if enr is None:
         return {"session": sid, "state": "none"}
     if enr.state not in TERMINAL_STATES:
-        await _teardown(enr, STATE_CANCELLED)
+        await _teardown(host, enr, STATE_CANCELLED)
     return {"session": sid, "state": enr.state}
 
 
 def disarm_for_session(host, sid, profile):
-    """Sinkron; dipanggil _drop_session (core lifecycle) saat session
-    mati. Secret dibuang; page tidak disentuh (context sedang mati).
+    """Sinkron; dipanggil hook lifecycle saat session mati. Secret
+    dibuang; page tidak disentuh (context sedang mati).
 
     Self-cancel guard: kalau browser mati DARI DALAM _navigate_later,
-    task itu sendiri yang menjalankan _drop_session — jangan cancel
-    diri sendiri (CancelledError di tengah __aexit__ context close
-    akan meninggalkan session mati tetap terdaftar).
+    task itu sendiri yang memicu _drop_session — jangan cancel diri
+    sendiri (CancelledError di tengah __aexit__ context close akan
+    meninggalkan session mati tetap terdaftar).
     """
     enr = host.add_profile_enrollments.get(profile)
     if enr is None or enr.sid != sid:
@@ -172,7 +181,8 @@ def disarm_for_session(host, sid, profile):
     task = enr.navigate_task
     if task is not None and task is not asyncio.current_task():
         task.cancel()
-    enr.lease = None
+    enr.page = None
+    enr.ctx = None
 
 
 # ---- internals ---------------------------------------------------------
@@ -185,22 +195,24 @@ def _find(host, sid):
     return None
 
 
-async def _advance(enr):
+def _page_is_closed(page):
     try:
-        page = enr.lease.page
-    except Exception:  # noqa: BLE001 - page mati = gone
-        # Page enrollment ditutup manual (satu-satunya page = jendela):
-        # session terbukti mati — hapus dari registry lewat lease (bukan
-        # registry mentah) supaya open berikutnya tidak kena PROFILE_BUSY
-        # palsu, lalu terminal browser_gone.
-        lease = enr.lease
-        enr.lease = None
-        if lease is not None:
-            lease.drop_session()
-        _end(enr, STATE_BROWSER_GONE)
+        return bool(page.is_closed())
+    except Exception:  # noqa: BLE001 - page mati dianggap tertutup
+        return True
+
+
+async def _advance(host, enr):
+    page = enr.page
+    if page is None or _page_is_closed(page):
+        # Page enrollment (satu-satunya page = jendela) ditutup manual:
+        # session terbukti mati — buang secret, terminal browser_gone,
+        # dan hapus session agar open berikutnya tidak kena PROFILE_BUSY
+        # palsu.
+        await host._drop_session(enr.sid, forget_on_failure=True)
         return
     if asyncio.get_running_loop().time() >= enr.deadline:
-        await _teardown(enr, STATE_EXPIRED)
+        await _teardown(host, enr, STATE_EXPIRED)
         return
 
     url = page.url or ""
@@ -210,7 +222,7 @@ async def _advance(enr):
         if email:
             if enr.expected_email and email != enr.expected_email:
                 enr.email = email
-                await _teardown(enr, STATE_WRONG_ACCOUNT)
+                await _teardown(host, enr, STATE_WRONG_ACCOUNT)
             else:
                 enr.email = email
                 enr.state = STATE_COMPLETE
@@ -227,19 +239,13 @@ async def _advance(enr):
 
 
 def _snapshot(enr):
-    url = ""
-    if enr.lease is not None:
-        try:
-            url = enr.lease.page.url or ""
-        except Exception:  # noqa: BLE001 - page mati: url kosong
-            pass
     return {
         "session": enr.sid,
         "state": enr.state,
         "email": enr.email,
         "has_password": enr.password is not None,
         "challenge": enr.state == STATE_CHALLENGE,
-        "url": url,
+        "url": (enr.page.url or "") if enr.page is not None else "",
     }
 
 
@@ -267,28 +273,46 @@ async def _stop_navigation(enr):
         log("pembatalan navigasi enrollment error: %s" % type(e).__name__)
 
 
-async def _teardown(enr, state):
-    """Terminal + rotasi page bersih + lepas lease. Page enrollment
-    (resident yang di-claim) kotor oleh listener — diputar ke page
-    bersih; rotate_primary membuat page baru DULU sebelum menutup."""
+async def _teardown(host, enr, state):
+    """Terminal + tukar ke page bersih + tutup page enrollment.
+
+    Page F dibuat DULU (context tidak pernah kehabisan page), referensi
+    session ditukar ke F, baru E ditutup — listener ikut mati bersama
+    E. Satu jendela tetap hidup."""
     _end(enr, state)
     await _stop_navigation(enr)
-    lease = enr.lease
-    enr.lease = None
-    if lease is not None:
+    page, enr.page = enr.page, None
+    ctx = enr.ctx
+    if page is not None and not _page_is_closed(page) and ctx is not None:
         try:
-            await lease.rotate_primary()
+            fresh = await ctx.new_page()
+            host.set_primary_page(enr.sid, fresh)
         except Exception as e:  # noqa: BLE001 - best effort
-            log("rotasi page enrollment gagal: %s" % type(e).__name__)
-        lease.release()
+            log("page pengganti gagal dibuat: %s" % type(e).__name__)
+    if page is not None:
+        try:
+            if not _page_is_closed(page):
+                await page.close()
+        except Exception as e:  # noqa: BLE001 - best effort
+            log("tutup page enrollment gagal: %s" % type(e).__name__)
+
+
+async def _close_quietly(enr):
+    page, enr.page = enr.page, None
+    if page is None:
+        return
+    try:
+        await page.close()
+    except Exception:  # noqa: BLE001 - best effort
+        pass
 
 
 async def _navigate_later(host, enr):
-    """Task latar: navigasikan primary page yang di-claim ke login
-    Google. Kegagalan non-browser -> state failed (jujur lewat
-    status); browser mati -> _drop_session (hook lifecycle core)."""
+    """Task latar: navigasikan page enrollment ke login Google.
+    Kegagalan non-browser -> state failed (jujur lewat status); browser
+    mati -> _drop_session (hook lifecycle membuang secret)."""
     try:
-        await enr.lease.page.goto(
+        await enr.page.goto(
             SIGNIN_URL, wait_until="domcontentloaded", timeout=45000)
     except asyncio.CancelledError:
         raise
@@ -298,17 +322,10 @@ async def _navigate_later(host, enr):
             return
         log("navigasi enrollment gagal: %s: %s" % (type(e).__name__, e))
         _end(enr, STATE_FAILED)
-        lease = enr.lease
-        enr.lease = None
-        if lease is not None:
-            try:
-                await lease.rotate_primary()
-            except Exception:  # noqa: BLE001 - best effort
-                pass
-            lease.release()
+        await _teardown(host, enr, STATE_FAILED)
 
 
-async def _expire_later(enr):
+async def _expire_later(host, enr):
     """Task latar: jatuhkan enrollment yang tidak selesai dalam
     10 menit — termasuk dari complete: secret tidak menunggu selamanya
     sebuah finish yang tidak datang."""
@@ -317,7 +334,7 @@ async def _expire_later(enr):
             0.0, enr.deadline - asyncio.get_running_loop().time())
         await asyncio.sleep(delay)
         if enr.state not in TERMINAL_STATES:
-            await _teardown(enr, STATE_EXPIRED)
+            await _teardown(host, enr, STATE_EXPIRED)
     except asyncio.CancelledError:
         pass
     except Exception as e:  # noqa: BLE001 - task latar tak boleh mati diam

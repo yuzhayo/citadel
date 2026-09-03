@@ -1,8 +1,8 @@
 """Batasan command fitur Add Profile: validasi + delegasi ke enrollment.
 
-Lapisan ini memastikan handler menerima bentuk pesan yang benar sebelum
-menyentuh state machine. Akses metadata session lewat SessionHost
-(baca-only) — plugin tidak memegang registry mentah.
+Idiom proyek (pola google.inspect/relogin): handler pyhost menerima
+dict session dan menyerahkannya ke fitur — tidak ada akses registry
+lain, tidak ada layer tambahan.
 """
 
 from providers import PyhostError
@@ -12,10 +12,8 @@ from camoprof_add_profile import enrollment
 
 async def cmd_start(host, msg):
     sid = _session_of(msg)
-    info = host.session_host.get(sid)
-    if info is None:
-        raise PyhostError("SESSION_NOT_FOUND", "session: %r" % (sid,))
-    return await enrollment.start(host, info, sid, msg)
+    sess = host.get_session(sid)
+    return await enrollment.start(host, sess, sid, msg)
 
 
 async def cmd_status(host, msg):

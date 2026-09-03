@@ -1,19 +1,14 @@
 """Entry pendaftaran plugin Add Profile (camoprof) untuk pyhost.
 
-Pyhost core memuat package ini sebagai plugin dan namespace
-``camoprof.add_profile.*`` terdaftar lewat CommandRegistry — core tidak
-mendapat branch fitur dan tidak tahu arti command ini.
-
-Hook lifecycle: core memanggil ``disarm_for_session`` lewat dict
-``LIFECYCLE_HOOKS`` saat session mati — koneksi satu arah (plugin ->
-core); core hanya melihat callable generik.
+Pyhost memuat package ini sebagai plugin (CITADEL_PYHOST_PLUGINS) dan
+command ``camoprof.add_profile.*`` terdaftar lewat helper generik
+``host.register_commands`` — pyhost tidak mendapat branch fitur dan
+tidak tahu arti command ini. Hook lifecycle generik dipasang lewat
+``host.add_lifecycle_hook``; koneksi satu arah (plugin -> host).
 """
-
-from providers import PyhostError
 
 from camoprof_add_profile import commands, enrollment
 
-NAMESPACE = "camoprof"
 OWNER = "camoprof.add_profile"
 
 COMMANDS = {
@@ -23,7 +18,7 @@ COMMANDS = {
     "camoprof.add_profile.cancel": commands.cmd_cancel,
 }
 
-# Hook lifecycle generik: dipasang core ke jalur _drop_session.
+# Hook lifecycle generik: dipanggil host dari jalur _drop_session.
 # Signature: (host, sid, profile) -> None, sinkron.
 LIFECYCLE_HOOKS = [
     enrollment.disarm_for_session,
@@ -32,7 +27,7 @@ LIFECYCLE_HOOKS = [
 
 def install(host):
     """Daftarkan command + hook pada host yang sedang hidup."""
-    host.registry.register_namespace(OWNER, NAMESPACE, COMMANDS)
+    host.register_commands(OWNER, COMMANDS)
     host.add_profile_enrollments = getattr(
         host, "add_profile_enrollments", {})
     for hook in LIFECYCLE_HOOKS:

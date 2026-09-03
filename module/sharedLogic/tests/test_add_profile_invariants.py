@@ -1,29 +1,22 @@
-r"""Phase 0 RED tests — bukti cacat struktural Add Profile (tasks/plan.md).
+r"""Invariant tests untuk kontrak Add Profile puzzle-block (tasks/plan.md).
 
-Kontrak final (tasks/plan.md) menuntut:
-  INV-1  Setiap session terdaftar mengekspos TEPAT SATU primary page
-         hidup dengan tepat satu owner — kapan pun dilihat.
-  INV-2  Enrollment start TIDAK memanggil ctx.new_page(); ia meng-claim
-         resident primary page (satu jendela sejak awal).
-  INV-3  Fitur tidak memegang akses mutable ke registry session
-         (tidak ada backlink host, tidak ada dict sess mentah).
-  INV-4  Command lain (navigate/inspect) pada session dengan owner
-         aktif ditolak SESSION_BUSY — bukan beroperasi pada page mati.
+Kontrak final (tasks/plan.md — puzzle-block):
+  INV-1  Setiap session terdaftar selalu mengekspos primary page HIDUP
+         (referensi ditukar lewat host.set_primary_page saat swap).
+  INV-2  SATU jendela terlihat: setelah start, tepat satu page hidup di
+         context; listener armed SEBELUM navigasi page itu.
+  INV-3  Fitur tidak menyimpan backlink host (host/sess hanya parameter
+         fungsi) dan tidak menyentuh registry di luar helper generik.
+  INV-4  Secret mati bersama session: manual close jendela enrollment →
+         session hilang dari registry (tidak ada PROFILE_BUSY palsu).
   INV-5  Launcher memanggil Add Profile lewat SATU kontrak feature;
          tidak membuka session sendiri untuk alur itu.
 
-File ini membuktikan pelanggaran INV-1..INV-4 pada kode SEKARANG
-(red), supaya refactor Phase 1+ punya target yang teruji. INV-5
-(bentuk C#) dibuktikan lewat pencarian source di
-test_add_profile_launcher_boundary (juga red sekarang).
-
-Setelah refactor selesai, file ini dipertahankan sebagai GUARD: semua
-test harus hijau. Menjalankan file ini berdiri sendiri:
+File ini GUARD permanen: semua harus hijau. Menjalankan sendiri:
   <venv python> -m unittest module.sharedLogic.tests.test_add_profile_invariants -v
 """
 
 import asyncio
-import json
 import os
 import sys
 import unittest
@@ -31,10 +24,6 @@ import unittest
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 PYHOST = os.path.join(ROOT, "pyhost", "pyhost.py")
 sys.path.insert(0, os.path.join(ROOT, "pyhost"))
-# Plugin fitur hidup sebagai package camoprof_add_profile di
-# module/camoprof/Features/AddProfile/ — deploy menempatkannya di
-# samping pyhost.py; untuk test sumber, parent folder-nya didaftarkan
-# (dan pyhost dir sudah terdaftar untuk dependency `providers`).
 sys.path.insert(0, os.path.join(
     ROOT, "..", "camoprof", "Features", "AddProfile"))
 
@@ -42,20 +31,20 @@ import importlib.util  # noqa: E402
 
 os.environ.setdefault("CITADEL_PYHOST_PLUGINS", "camoprof_add_profile")
 
-SPEC = importlib.util.spec_from_file_location("citadel_pyhost_red", PYHOST)
+SPEC = importlib.util.spec_from_file_location("citadel_pyhost_inv", PYHOST)
 PYHOST_MODULE = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(PYHOST_MODULE)
 
 CAMOPROF_LAUNCHER = os.path.join(
     ROOT, "..", "camoprof", "Launcher", "LauncherView.xaml.cs")
+PLUGIN_ENROLLMENT = os.path.join(
+    ROOT, "..", "camoprof", "Features", "AddProfile",
+    "camoprof_add_profile", "enrollment.py")
 
 
 def _load(path):
     with open(path, encoding="utf-8") as handle:
         return handle.read()
-
-
-# ---- fakes: platform-true (context mati saat page terakhir ditutup) --
 
 
 class _Page:
@@ -64,7 +53,6 @@ class _Page:
         self.url = "about:blank"
         self.closed = False
         self.exposed = {}
-        self.events = []
 
     async def expose_function(self, name, callback):
         self.exposed[name] = callback
@@ -73,9 +61,6 @@ class _Page:
         pass
 
     async def goto(self, url, **_kwargs):
-        # Konteks mati = setiap operasi page melempar, seperti Playwright
-        # nyata. Tanpa ini navigate pada context mati "berhasil" palsu
-        # dan pelanggaran registry tersembunyi.
         if self._ctx.dead:
             raise RuntimeError(
                 "Target page, context or browser has been closed")
@@ -133,48 +118,39 @@ async def _handle(host, cmd, **params):
         host, {"id": 1, "cmd": cmd, **params})
 
 
-# ---- INV-1 / INV-2: satu primary page hidup, tanpa page kedua --------
-
-
-class PrimaryPageInvariantTest(unittest.IsolatedAsyncioTestCase):
+class OneWindowInvariantTest(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
         self.host, self.ctx, self.resident = _host_with_session()
 
     def tearDown(self):
-        enrollments = getattr(
-            self.host, "add_profile_enrollments", {})
-        for enr in list(enrollments.values()):
+        for enr in list(getattr(
+                self.host, "add_profile_enrollments", {}).values()):
             if getattr(enr, "expire_task", None) is not None:
                 enr.expire_task.cancel()
             if getattr(enr, "navigate_task", None) is not None:
                 enr.navigate_task.cancel()
 
-    async def test_enrollment_start_does_not_create_a_second_page(self):
-        """INV-2: start meng-claim resident page — ctx.new_page() dilarang.
-        Kode sekarang membuat page kedua lalu menutup resident — jumlah
-        akhirnya 1, tapi identitasnya BUKAN resident: satu jendela
-        dibuat dan dibuang untuk apa-apa. Identitas page yang hidup
-        setelah start harus = resident sebelumnya → red sekarang."""
-        resident_before = self.resident
+    async def test_exactly_one_live_window_during_enrollment(self):
+        """INV-2: setelah start, tepat SATU page hidup — resident
+        ditutup setelah page enrollment hidup; tidak ada jendela
+        ganda, tidak ada page dibuat-lalu-dibuang."""
         response = await _handle(
             self.host, "camoprof.add_profile.start", session="s1")
         await asyncio.sleep(0)
 
         self.assertTrue(response.get("ok"), str(response))
-        enrollment_page = self.host.add_profile_enrollments["probe"].page
-        self.assertIs(
-            enrollment_page, resident_before,
-            "enrollment page bukan resident page yang di-claim — start "
-            "masih membuat page kedua via ctx.new_page() (melanggar "
-            "INV-2): satu jendela dibuat lalu resident dibuang")
-        self.assertFalse(
-            resident_before.closed,
-            "resident page tidak boleh ditutup oleh start — INV-2: "
-            "claim, bukan ganti jendela")
+        self.assertTrue(self.resident.closed,
+                        "resident harus ditutup demi satu jendela")
+        alive = [page for page in self.ctx.pages if not page.closed]
+        self.assertEqual(
+            len(alive), 1,
+            "setelah start harus tepat satu page hidup, ada %d"
+            % len(alive))
+        enr = self.host.add_profile_enrollments["probe"]
+        self.assertIs(enr.page, alive[0])
 
     async def test_registered_session_exposes_live_primary_page(self):
-        """INV-1: selama enrollment AKTIF, sess['page'] harus hidup.
-        Kode sekarang menutup resident saat start → red."""
+        """INV-1: selama enrollment AKTIF, sess['page'] harus hidup."""
         response = await _handle(
             self.host, "camoprof.add_profile.start", session="s1")
         await asyncio.sleep(0)
@@ -184,81 +160,70 @@ class PrimaryPageInvariantTest(unittest.IsolatedAsyncioTestCase):
         live = not getattr(session_page, "closed", True)
         self.assertTrue(
             live,
-            "sess['page'] menunjuk page yang sudah ditutup saat "
-            "enrollment masih aktif — melanggar INV-1")
+            "sess['page'] menunjuk page mati saat enrollment aktif — "
+            "melanggar INV-1")
 
-    async def test_navigate_during_active_enrollment_is_rejected_busy(self):
-        """INV-4: command lain saat enrollment aktif → SESSION_BUSY,
-        bukan beroperasi pada page mati. Kode sekarang: page resident
-        sudah ditutup → navigate kena page mati → red."""
-        await _handle(self.host, "camoprof.add_profile.start", session="s1")
+    async def test_teardown_keeps_session_page_live(self):
+        """INV-1 setelah terminal: teardown menukar ke page bersih dan
+        sess['page'] menunjuk page hidup."""
+        await _handle(
+            self.host, "camoprof.add_profile.start", session="s1")
         await asyncio.sleep(0)
+        await _handle(
+            self.host, "camoprof.add_profile.cancel", session="s1")
 
-        response = await _handle(
-            self.host, "session.navigate",
-            session="s1", url="https://example.com/")
+        session_page = self.host.sessions["s1"]["page"]
+        self.assertFalse(session_page.closed)
+        alive = [page for page in self.ctx.pages if not page.closed]
+        self.assertEqual(len(alive), 1)
 
-        if response.get("ok"):
-            self.fail(
-                "navigate diterima selama enrollment aktif tanpa "
-                "SESSION_BUSY — INV-4 dilanggar; pemilik page tidak "
-                "eksklusif. respons: " + str(response))
-        self.assertEqual(
-            response["error"]["code"], "SESSION_BUSY",
-            "harusnya SESSION_BUSY, dapat: " + str(response))
-
-    async def test_manual_window_close_releases_profile_ownership(self):
-        """INV-1 + lifecycle: user menutup jendela enrollment dengan
-        tangan → session HILANG dari registry (open berikutnya tidak
-        kena PROFILE_BUSY palsu). Kode sekarang: status melaporkan
-        browser_gone tapi session tetap terdaftar dan navigate pada
-        context mati baru melempar belakangan → red."""
-        await _handle(self.host, "camoprof.add_profile.start", session="s1")
+    async def test_manual_window_close_drops_session(self):
+        """INV-4: user menutup jendela enrollment manual → session
+        HILANG dari registry (tidak ada PROFILE_BUSY palsu) dan secret
+        dibuang."""
+        await _handle(
+            self.host, "camoprof.add_profile.start", session="s1")
         await asyncio.sleep(0)
-        enr = self.host.add_profile_enrollments.get("probe")
-        self.assertIsNotNone(enr)
+        enr = self.host.add_profile_enrollments["probe"]
 
-        # User menutup jendela enrollment (bukan pyhost yang menutup).
-        enrollment_page = enr.page
-        await enrollment_page.close()
+        await enr.page.close()  # user menutup jendela
 
         status = await _handle(
             self.host, "camoprof.add_profile.status", session="s1")
         self.assertEqual(
             status.get("state"), "browser_gone",
-            "manual close jendela enrollment harus terdeteksi sebagai "
-            "browser_gone, dapat: " + str(status))
+            "manual close harus terdeteksi browser_gone, dapat: "
+            + str(status))
         self.assertIsNone(enr.password)
         self.assertNotIn(
             "s1", self.host.sessions,
-            "session tetap terdaftar setelah jendela enrollment ditutup "
-            "manual — PROFILE_BUSY palsu pada open berikutnya; "
-            "melanggar INV-1")
-
-
-# ---- INV-3: fitur tidak memegang registry mutable --------------------
+            "session tetap terdaftar setelah jendela ditutup manual — "
+            "PROFILE_BUSY palsu; melanggar INV-4")
 
 
 class FeatureBoundaryTest(unittest.TestCase):
-    def test_enrollment_module_holds_no_registry_backlink(self):
-        """INV-3: kode fitur (plugin enrollment.py) tidak boleh menyimpan
-        referensi mutable ke _Host/registry (enr.host, host.sessions).
-        Akses page hanya boleh lewat lease."""
-        source = _load(os.path.join(
-            ROOT, "..", "camoprof", "Features", "AddProfile",
-            "camoprof_add_profile", "enrollment.py"))
-        self.assertNotIn(
-            "self.host", source,
-            "enrollment menyimpan backlink ke registry host — melanggar "
-            "INV-3; akses registry harus lewat lease, bukan referensi "
-            "mutable")
+    def test_enrollment_module_holds_no_host_backlink(self):
+        """INV-3: kode fitur tidak menyimpan backlink host
+        (self.host/enr.host) — host hanya parameter fungsi."""
+        source = _load(PLUGIN_ENROLLMENT)
+        self.assertNotIn("self.host", source)
+        self.assertNotIn("enr.host", source)
+
+    def test_plugin_does_not_touch_session_registry(self):
+        """INV-3: plugin tidak menulis registry session di luar helper
+        generik (tidak ada host.sessions di commands/plugin)."""
+        base = os.path.dirname(PLUGIN_ENROLLMENT)
+        for name in ("commands.py", "plugin.py"):
+            source = _load(os.path.join(base, name))
+            self.assertNotIn(
+                "host.sessions", source,
+                "%s menyentuh registry session langsung" % name)
 
 
 class LauncherBoundaryTest(unittest.TestCase):
     def test_launcher_add_profile_opens_no_session_directly(self):
-        """INV-5 (bentuk C#): Add Profile tidak boleh membuka session
-        sendiri — hanya memanggil kontrak feature. Launcher sekarang
-        memanggil _sessions.OpenAsync di AddProfileButton_Click → red."""
+        """INV-5: Add Profile di Launcher hanya memanggil kontrak
+        feature — tidak membuka session sendiri."""
         source = _load(CAMOPROF_LAUNCHER)
         start = source.index("AddProfileButton_Click")
         end = source.index("private async void RefreshButton_Click")
