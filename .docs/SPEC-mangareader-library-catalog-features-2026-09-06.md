@@ -94,6 +94,65 @@ Remote Catalog supplies provider metadata and remote actions. Library supplies
 local folder/chapter data and local actions. Sharing this view must not create a
 Library-to-Downloader dependency.
 
+## 4.1 Catalog action bar and provider filters
+
+The Catalog action bar uses its available width. Remove the separate
+`Idle - no request` text; the request button communicates activity:
+
+- `Start` when no Browse request is active;
+- `Stop` while Browse is active;
+- disabled `Stopping...` after Stop until the current bounded inline PyHost
+  command settles;
+- return to `Start` for every terminal result.
+
+Provider errors and validation remain local messages below the bar. They are
+not hidden merely because the button returned to Start.
+
+The fluid action bar contains provider, search, direct compact dropdowns for
+Sort, Type, Release Status, Content Rating and Genre/Format, an `Advanced
+Filters` dropdown, Start/Stop, and Download List. `Advanced Filters` is a
+dropdown/popover, not an inline toggle panel that pushes the catalog grid. It
+contains Demographic, Minimum Chapter, Release Year, Author, Artist, genre
+AND/OR mode, and Reset.
+
+Multi-value dropdowns use one checkbox per option. Sort is single-select;
+Minimum Chapter and Release Year are numeric; Author and Artist are explicit
+lookups. Filter edits change draft state only and do not issue Browse requests.
+Start snapshots and executes the draft. Reset restores Latest Update plus Safe
+and Suggestive without fetching.
+
+The 2026-09-06 live provider capture locks these Comix browse parameters:
+
+```text
+keyword
+types[]
+content_rating[]
+statuses[]
+demographics[]
+genres_in[]
+genres_mode=and|or
+min_chap
+year_from / year_to
+authors[] / artists[]
+page / limit
+order[<captured field>]=asc|desc
+```
+
+Author and Artist lookup use `tags/search` with `type=author|artist`, then
+`tags/by-ids`, before the resolved provider ID enters the Browse request. The
+13 captured sorts and their exact order fields remain canonical in
+`.docs/PLAN-mangareader-downloader.md`.
+
+Types are Manga, Manhwa, Manhua and Other. Content ratings are Safe,
+Suggestive, Erotica and Pornographic. Release status uses Releasing, Finished,
+On hiatus, Discontinued and Not yet released. Demographics are Josei, Seinen,
+Shoujo and Shounen. The Genres dropdown contains the 31 captured genres plus
+the 9 captured formats and supports AND/OR matching.
+
+`Uncensored` is not a provider filter and must not be invented. Manga/Manhwa
+are types, Pornographic is a content rating, and Adult/Hentai/Mature/Smut are
+genre/tag choices.
+
 ## 5. Downloader Catalog Detail
 
 ### 5.1 Cover and detail

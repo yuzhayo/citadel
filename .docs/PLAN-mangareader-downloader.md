@@ -130,6 +130,45 @@ The observed result count is remote and volatile. It must never be hard-coded.
 The initial Comix filter state uses the provider-observed defaults: latest
 update and Safe + Suggestive (`Safe + 1`).
 
+The 2026-09-06 live Camoufox pass captured the current page-client requests,
+not merely the labels rendered by the site. The following browse serialization
+is therefore locked as provider evidence:
+
+| Filter | Captured Comix request contract |
+|---|---|
+| search | `keyword=<text>` |
+| type | repeated `types[]=manga|manhwa|manhua|other` |
+| content rating | repeated `content_rating[]=safe|suggestive|erotica|pornographic` |
+| release status | repeated `statuses[]=releasing|finished|on_hiatus|discontinued|not_yet_released` |
+| demographic | repeated `demographics[]=<provider option id>` |
+| genre and format | repeated `genres_in[]=<provider option id>` plus `genres_mode=and|or` |
+| minimum chapter | `min_chap=<number>` |
+| release year | `year_from=<number>` and/or `year_to=<number>` |
+| author | lookup `tags/search?type=author&q=<text>&limit=20`, resolve through `tags/by-ids?type=author&ids=<id>`, then repeated `authors[]=<id>` |
+| artist | lookup `tags/search?type=artist&q=<text>&limit=20`, resolve through `tags/by-ids?type=artist&ids=<id>`, then repeated `artists[]=<id>` |
+| paging | `page=<number>&limit=28` |
+
+The 13 captured sort choices serialize as follows:
+
+| UI choice | Request |
+|---|---|
+| Best match | `order[relevance]=desc` |
+| Latest update | `order[chapter_updated_at]=desc` |
+| Recently added | `order[created_at]=desc` |
+| Title (A-Z) / Title (Z-A) | `order[title]=asc|desc` |
+| Year (newest) / Year (oldest) | `order[year]=desc|asc` |
+| Highest rated | `order[score]=desc` |
+| Most viewed 7/30/90 days | `order[views_7d|views_30d|views_90d]=desc` |
+| Most viewed all time | `order[views_total]=desc` |
+| Most followed | `order[follows_total]=desc` |
+
+Provider IDs, rather than translated display labels, are serialized for
+demographics, genres, formats, authors and artists. `Manga`, `Manhwa`, and
+`Manhua` are types. `Pornographic` is a content rating. `Adult`, `Hentai`,
+`Mature`, and `Smut` are genre/tag choices. `Uncensored` is not a captured
+standalone filter and must not be invented; it can only be ordinary keyword
+text unless the provider later exposes a real option.
+
 ### 2.1 Current-state reconciliation and locked preflight contracts
 
 Live source inspection at HEAD `54b5a06` established four integration gaps.
@@ -214,20 +253,44 @@ ends them. Additional internal controls are not new routed screens.
 
 ### 3.3 Catalog toolbar and Advanced Filters
 
-The Catalog header contains:
+The Catalog action bar uses its available width instead of reserving space for
+a separate `Idle - no request` label. In logical order it contains:
 
 1. web-target dropdown;
 2. search field;
-3. `Advanced Filters` toggle;
-4. `Start`;
-5. remote/network state; and
+3. compact direct filter dropdowns for Sort, Type, Release Status, Content
+   Rating, and Genre/Format;
+4. an `Advanced Filters` dropdown for Demographic, Minimum Chapter, Release
+   Year, Author, Artist, genre AND/OR mode, and Reset;
+5. one stateful `Start`/`Stop` button; and
 6. `Download List (n)` with an active/paused/failed job count badge.
 
-Advanced Filters are provider-owned composition built from shared fields. The
-Comix filter feature owns input state and validation and produces one immutable
-`ComixBrowseQuery`; its panel binds that state and translates input events.
-Neither panel nor Catalog builds provider URLs. Remote/network state reflects
-explicit requests/jobs, not a background connectivity monitor.
+The action bar is fluid and may wrap its controls when the reader window is
+narrow. It must not introduce horizontal clipping or a fixed-width desktop-only
+layout.
+
+`Advanced Filters` is a dropdown/popover composition, not a toggle that expands
+a large inline panel and pushes the result grid. Multi-value dropdowns use a
+checkbox per option and retain their draft selection until Reset or an explicit
+change. Sort remains single-select. Minimum Chapter and Release Year remain
+numeric inputs. Author and Artist remain explicit lookup fields.
+
+The provider-owned Comix filter feature owns this input state and validation
+and produces one immutable `ComixBrowseQuery`; its controls translate input
+events. Neither the filter composition nor Catalog builds provider URLs.
+Choosing a dropdown value edits draft state only and performs no Browse request.
+
+The request button is also the visible catalog activity state:
+
+- idle, ready, empty, successful, or failed terminal state: `Start`;
+- active Browse request: `Stop`;
+- after Stop is invoked while the existing inline PyHost command is reaching
+  its bounded terminal response: disabled `Stopping...`;
+- when that response settles: return to `Start`.
+
+There is no separate idle/loading status text in the action bar. Provider
+errors and validation messages remain local, non-destructive messages below the
+bar; they are not encoded only in button text.
 
 Rules:
 
@@ -236,10 +299,13 @@ Rules:
   but cannot replace the current query, results, count, error, or pagination.
 - `Load more` explicitly appends the next page for the current query snapshot.
 - `Reset` restores provider defaults and does not fetch.
-- Author and Artist fields fetch only on Enter or an explicit Search action;
-  they never query on every keystroke.
-- Genre/format free typing filters or resolves provider-supported tags. Unknown
-  display text is not sent as a provider value without a resolved provider key.
+- Author and Artist fields fetch `tags/search` only on Enter or an explicit
+  Search action; they never query on every keystroke. A selected result is
+  resolved by provider ID before it enters the Browse query.
+- Genre/format options use the 31 genres and 9 formats captured from the live
+  provider UI. Multi-selection serializes provider IDs through `genres_in[]`;
+  AND/OR serializes through `genres_mode`. Unknown display text is never sent
+  as a provider value.
 - Minimum chapter and year ranges validate locally. Empty means unset; invalid
   ranges prevent `Start` and show field-local errors.
 - `Adjust listing` is omitted while the Downloader remains logged-out.
@@ -827,20 +893,28 @@ style or template and makes no change under `setting/Components`.
 
 | Downloader field | Locked presentation |
 |---|---|
-| provider, sort, group | standard `ComboBox` with `SettingComboBoxStyle` |
-| rating, type, demographic, status | multi-select `ListBox` with `SettingListStyle` |
-| genre/format | `SettingField` search, AND/OR `SettingButton`, multi-select `ListBox` |
-| minimum chapter, year from/to | numeric-validated `SettingField` |
-| author/artist | `SettingField`, explicit `SettingButton`, resolved-result `ListBox` |
-| Start, Reset, Load more, navigation/actions | `SettingButton` |
+| provider, group | standard `ComboBox` with `SettingComboBoxStyle` |
+| sort | compact single-select dropdown |
+| rating, type, demographic, status | compact multi-select dropdown with one checkbox per option |
+| genre/format | compact searchable multi-select dropdown with one checkbox per resolved provider option and AND/OR control |
+| minimum chapter, year from/to | numeric-validated `SettingField` inside `Advanced Filters` dropdown |
+| author/artist | `SettingField`, explicit lookup action, and selectable resolved results inside `Advanced Filters` dropdown |
+| Start/Stop, Reset, Load more, navigation/actions | `SettingButton` |
 | queue rows/actions | `SettingTable` plus `SettingTableActions` |
 
+The compact filter UI is a combo composition of existing shared primitives.
+Implementation must first audit the current shared inventory for a checkbox
+dropdown composition. If no such composition exists, a feature-owned combo may
+compose the existing popup/dropdown, checkbox/list, field, scroll, and button
+primitives; it may not introduce a new low-level control or clone shared visual
+behavior.
+
 Every provider option record exposes a non-empty `DisplayName`. Every
-object-backed filter/lookup `ListBox` uses a feature-local item-container style
-`BasedOn="{StaticResource SettingListItemStyle}"` whose only additional setter
-binds `AutomationProperties.Name` to `DisplayName`. Do not copy or override the
-shared template, and do not rely on record `ToString()` for accessibility. This
-is feature-owned semantic metadata, not a new shared visual/input behavior.
+object-backed filter/lookup item binds an accessible name to `DisplayName` while
+retaining the shared item template and its keyboard/focus/selection behavior.
+Do not copy or override the shared template, and do not rely on record
+`ToString()` for accessibility. This is feature-owned semantic metadata, not a
+new shared visual/input behavior.
 
 Shared controls/combos know nothing about Comix, genres, ratings, authors,
 artists, providers, or requests. Numeric fields use `SettingField` with
@@ -1009,14 +1083,20 @@ lookups, detail/group/chapter/manifest discovery and Back restoration. Keep
 provider payloads local and preserve one active group. Add only contracts with
 actual consumers. Introduce the single Library-owned `LibraryRootContext` and
 establish confirmed folder mapping from its snapshot, never from the View or
-preference file directly. Complete the provider filter composites from section
-10 using existing shared controls only, and persist confirmed mappings through
-`DownloadSourceIndex` before queueing is enabled.
+preference file directly. Replace the large inline Advanced Filters panel with
+the compact direct/advanced dropdown action bar from section 3.3. Implement the
+captured 2026-09-06 query keys and sort map exactly; do not retain the current
+`UncapturedFilters` refusal for a contract now proven live. Complete provider
+filter combos from section 10 using existing shared controls only, and persist
+confirmed mappings through `DownloadSourceIndex` before queueing is enabled.
 
 Gate: public logged-out filter/selection path works, stale responses cannot
 commit, remote models never masquerade as local title/card models, and the real
-Catalog proves meaningful accessible names, keyboard/focus/selection/disabled/
-fluid-layout behavior without changes under `setting/`.
+Catalog proves meaningful accessible names, multi-checkbox state,
+keyboard/focus/selection/disabled/fluid-layout behavior without changes under
+`setting/`. Filter edits and Reset make no Browse call; Start performs exactly
+one query snapshot; Stop visibly transitions through the existing bounded
+inline-command cancellation boundary and returns to Start.
 Dependency: Phase 2.
 
 ### Phase 4 — one queued chapter through atomic publication
@@ -1100,7 +1180,8 @@ Dependency: all required outcomes above, not a prescribed number of files/tests.
 | Gate | Pass condition |
 |---|---|
 | explicit network triggers | open/provider/filter typing cause zero calls; Start/Load more/lookup/title/job cause expected calls only |
-| query contract | all captured Comix defaults/options/IDs serialize exactly; invalid ranges never call provider |
+| query contract | all captured Comix defaults, 13 sorts, repeated type/rating/status/demographic/genre/author/artist IDs, genre mode, minimum chapter and year range serialize exactly; invalid ranges never call provider |
+| Catalog action state | no idle status label; button is Start while terminal, Stop while Browse is active, disabled Stopping while an inline command settles, then Start again |
 | stale request | an older Browse/detail response cannot commit after a newer request |
 | source identity | same chapter number across groups remains distinct |
 | mapping/collision | same title text never auto-claims a folder; different identity never overwrites or becomes `(2)` |
@@ -1127,7 +1208,8 @@ Dependency: all required outcomes above, not a prescribed number of files/tests.
 | State | Required evidence |
 |---|---|
 | first open | Downloader shows no loading/network/browser activity |
-| Advanced Filters | every public field is usable, fluid, keyboard accessible, and Reset performs no fetch |
+| Catalog action bar | available width is used; direct filter dropdowns plus Advanced Filters dropdown remain fluid without pushing the result grid or clipping at normal/maximized sizes |
+| Advanced Filters | multi-value dropdowns expose checkboxes; Sort stays single-select; numeric and lookup fields remain typed; Reset performs no Browse fetch |
 | filter accessibility | UIA exposes each option's `DisplayName` and each action's explicit accessible name in every object-backed list |
 | Start/pagination | explicit request, loading/error/empty/result states, volatile count, and Load more behave correctly |
 | result/detail/back | fluid cards; detail replaces Catalog content; Back restores result and scroll without refetch |
@@ -1233,7 +1315,7 @@ fixture, secret, cache, or queue data is tracked (all test state lives under
 | 0 | this document; live source inspection | Owner/consumer map confirmed against HEAD `b882b64`; the four section 2.1 contracts implemented as locked | Reading of `PyHost.cs`, `pyhost.py`, `ArchivePageReader`, `LibraryPathStore`/`LibraryScanPersistence`, `CoverBuilderService`/`CoverSourceLoader`, `SettingTable`, `Citizen.targets` | Comix query keys, ids, routes and page contract still need live revalidation |
 | 1 | `Module.Mangareader.csproj`; `Sources/MangaSourceContracts.cs`, `MangaSourceRegistry.cs`; `Catalog/CatalogFeature.cs`, `CatalogScreen.xaml(.cs)`, `RemoteTitleCard.xaml(.cs)`; `DownloaderContract.cs`, `DownloaderView.xaml(.cs)`; `MangaReaderView.xaml(.cs)` | One Downloader tab; two routed children; explicit single-source registry; idle Catalog; `CatalogFeature` owns query/result/detail/selection and the latest-request-wins guard | Citizen build 0 error 0 warning; no network call exists on any open/provider/filter/input path by construction | Live first-open and Advanced Filters gates |
 | 2 | `sharedLogic/cs/PyHost.cs`; `sharedLogic/pyhost/pyhost.py` + `README.md`; `sharedLogic/tests/test_pyhost.py`; `DownloaderPyHostClient.cs`; `mangareader_downloader/{plugin,browser}.py` | Citizen wiring applied (shared C# link + `PyhostPluginName=mangareader_downloader`). 4 MiB bound enforced in Python before writing and by a bounded C# reader returning `RESPONSE_TOO_LARGE`; inline FIFO loop untouched; no cancel command, event stream, or v2. Plugin owns Camoufox bootstrap, page-context API, staging-only page fetch, and close | `test_pyhost` 26/26 (24 existing + 2 new bound tests); plugin deploys as `__init__.py` + `browser.py`; CamoProf plugin still deploys beside it | Live Browse smoke; real Camoufox bootstrap behavior unverified |
-| 3 | `Sources/Comix/ComixSource.cs`, `ComixFilterPanel.xaml(.cs)`; `Library/LibraryRootContext.cs`; `LibraryView.xaml.cs`; `DownloadSourceIndex.cs` | Browse/pagination/lookup/detail/group/chapter/manifest; Back restores grid and anchor without fetch; filter composites built only from existing shared controls; `LibraryRootContext` owns the root and Library consumes it before `Loaded`; mapping confirmation with explicit folder choice | Downloader tests: query serialization, local range validation, mapping identity rules | Live filter/selection path; genre-format lookup endpoint unverified |
+| 3 | `Sources/Comix/ComixSource.cs`, `ComixFilterPanel.xaml(.cs)`; `Library/LibraryRootContext.cs`; `LibraryView.xaml.cs`; `DownloadSourceIndex.cs` | Browse/pagination/lookup/detail/group/chapter/manifest; Back restores grid and anchor without fetch; compact direct/advanced filter dropdowns built only from existing shared controls; captured status/demographic/genre/year/minimum/author/artist/sort requests replace the earlier refusal paths; `LibraryRootContext` owns the root and Library consumes it before `Loaded`; mapping confirmation with explicit folder choice | Downloader tests: exact captured query serialization, local range validation, mapping identity rules | Live compact action-bar, multi-checkbox, Start/Stop and filter/selection path |
 | 4 | `Queue/{DownloadQueueModels,PageTransport,ChapterDownloadPipeline,CbzChapterPublisher}.cs` | Queue intent → staged pages → validated CBZ → terminal Completed state. Native streaming first with one fixed browser fallback; `.partial.<guid>.tmp` staging; full pre-commit validation; atomic rename; provenance-based collision policy | Downloader tests: publication, missing-page refusal, different-provenance conflict with no `(2)`, same-provenance replacement with one backup, temporary file invisible to `LibraryScanner` | Live chapter download |
 | 5 | `Queue/DownloadQueueStore.cs`, `DownloadQueueFeature.cs` | Atomic `queue.json` as sole durable authority; `job.json` page journal only; restart parks every unfinished job (including merely queued); `Pausing`→`Paused`; two-page concurrency; 1/2/4 s retry schedule; failed-page-only recovery; manifest-change conflict | Downloader tests: round-trip and order, corrupt-file fail-soft, unknown schema preserved and never overwritten, restart parking, crash-after-rename reconciliation, summary badge counts | Live pause/resume/restart |
 | 6 | `Queue/DownloadListScreen.xaml(.cs)`; `DownloaderView.xaml(.cs)` | Download List reachable only from the Catalog button; Back restores Catalog without fetch; route changes never dispose the queue; `SettingTable` with five sortable columns and an unsortable Action column | Citizen build clean; sorting is presentation-only because the shared table sorts its collection view | Live routing, progress responsiveness, and all queue actions |
