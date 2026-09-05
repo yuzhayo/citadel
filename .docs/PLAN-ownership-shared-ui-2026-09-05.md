@@ -247,7 +247,7 @@ Smoke akhir cukup satu daftar representatif yang menggabungkan fase: CamoProf ad
 - [ ] P2 — Launcher action ownership. IMPLEMENTATION COMPLETE / LIVE VERIFICATION PENDING — lihat Checkpoint P2.
 - [ ] P3 — Ownership MangaReader dan domain-only feature contracts. IMPLEMENTATION COMPLETE / LIVE VERIFICATION PENDING — lihat Checkpoint P3.
 - [ ] P4 — Common Reader contribution ownership. IMPLEMENTATION COMPLETE / LIVE VERIFICATION PENDING — lihat Checkpoint P4.
-- [ ] P5 — Chapter Selector shared template.
+- [ ] P5 — Chapter Selector shared template. IMPLEMENTATION COMPLETE / LIVE VERIFICATION PENDING — lihat Checkpoint P5.
 - [ ] P6 — Sidebar shared scrollbar.
 - [ ] Cleanup caller/compile/deploy references selesai.
 - [ ] Affected builds dan regression checks selesai.
@@ -391,6 +391,50 @@ Bukti privat: grep seluruh repo menunjukkan tidak ada consumer di luar fitur pem
 - LIVE VERIFICATION PENDING — belum ada bukti visual sama sekali. Perlu smoke native: buka/tutup Drawer, Pin, lalu tiap card control (Zoom, Dim, kecepatan Auto-scroll, Fullscreen, Reset, chapter picker) pada window normal; pastikan urutan card, layout, hover/focus, dan accessible name tidak berubah.
 - P5 dan P6 tidak disentuh. P0 masih pending dan tidak menghalangi P4.
 - Perubahan P4 belum di-commit sesuai instruksi.
+
+### Checkpoint P5 — 2026-09-05
+
+**Phase/status:** P5 / IMPLEMENTATION COMPLETE, LIVE VERIFICATION PENDING. Baseline aktual: HEAD `dc1ad52` — P4 sudah ter-commit, worktree bersih sebelum P5.
+
+**File berubah (1):**
+
+- `module/mangareader/Library/ChapterSelectorView.xaml` — `<UserControl.Resources>` beserta implicit `Style TargetType="{x:Type ListBoxItem}"` lokal dihapus: 33 baris dihapus, 0 ditambah. `ChapterSelectorView.xaml.cs`, ItemTemplate chapter, `ItemsSource="{Binding Manga.Chapters}"`, `SelectionChanged`, `MouseDoubleClick`, `PreviewKeyDown` (Escape/Enter), dan `OpenButton` tidak disentuh.
+
+**Bukti style lokal itu superseded, bukan diputuskan dari nama/kemiripan:**
+
+1. `ChapterList` memakai `Style="{DynamicResource SettingListStyle}"`.
+2. `SettingListStyle` men-set `ItemContainerStyle` = `{StaticResource SettingListItemStyle}` (`setting/SettingResources.xaml:181`).
+3. Presedensi resmi: Microsoft Learn menyatakan untuk properti `Style`, *explicit style* berada di presedensi tertinggi ("like a local value") sedangkan *implicit style* lebih rendah. `ItemContainerStyle` diterapkan ke tiap container sebagai nilai eksplisit pada `Style`.
+4. **Diukur, bukan hanya dikutip.** Probe diagnostik sementara di `Citadel.Uia` (dijalankan, lalu DIHAPUS — tidak meninggalkan suite baru) membuktikan dua hal pada `ListBoxItem` nyata: (a) kontrol — tanpa Style eksplisit, implicit style benar-benar aktif (Padding 9), jadi style lokal itu bukan no-op dari sananya; (b) setelah `SetValue(StyleProperty, containerStyle)`, yaitu persis cara `ItemsControl` menerapkan `ItemContainerStyle`, style eksplisit yang menang (Padding 1) dan setter implicit tidak lagi berlaku. Percobaan awal probe yang mencoba merealisasikan container lewat `ItemContainerGenerator` gagal karena setup (container tidak ter-realize tanpa presentation source), jadi yang diukur adalah aturan presedensinya langsung; kegagalan setup itu bukan bukti apa pun dan tidak dipakai sebagai kesimpulan.
+5. Dua style `ListBoxItem` lain di repo — `SidebarListItemStyle` (`core/Citadel.Ui/Theme/ThemeResources.xaml:74`) dan `SettingListItemStyle` (`setting/SettingResources.xaml:146`) — keduanya **keyed**, jadi implicit style ChapterSelector adalah satu-satunya di repo dan tidak ada pesaing lain.
+
+Perbandingan isi mengonfirmasi tidak ada perilaku unik yang hilang: Background/Foreground/HorizontalContentAlignment identik dengan shared; `Padding 12,10`, `Margin 0,0,0,4`, dan `Foreground=Accent` saat selected tidak pernah berlaku karena style-nya sendiri tidak pernah aktif (padding efektif selama ini `SettingControlPadding` = `10,6`).
+
+**Keputusan:**
+
+- Default target cukup shared style existing. Tidak ada style turunan, `BasedOn`, primitive, template, atau resource baru; approval boundary shared UI tidak tersentuh.
+- Tidak ada cleanup tambahan yang diperlukan: grep menunjukkan 0 sisa `ListBoxItem` di file itu dan tidak ada code-behind/reference yang menjadi yatim.
+- Layout, screen lain, shared list, scrollbar, kartu manga, dan Reader controls tidak diubah.
+
+**Gap yang dilaporkan dan SENGAJA tidak dikerjakan (butuh izin shared component):**
+
+- Setter `AutomationProperties.Name="{Binding Title}"` ikut terhapus bersama style yang inert. Karena style itu tidak pernah aktif, nama accessible per-item **memang sudah tidak pernah berlaku sejak sebelum P5** — ini kondisi existing, bukan regresi yang P5 timbulkan. Akibatnya nama UIA item chapter jatuh ke fallback default (kemungkinan `ToString()` record `ChapterInfo`), bukan judul chapter.
+- Pola repo menunjukkan owner yang tepat: `SidebarListItemStyle` men-set `AutomationProperties.AutomationId` lewat setter di shared ItemContainerStyle, dan `GalleryScreen` (consumer `SettingListStyle` lainnya) hanya men-set AutomationId di level list. Jadi pemilik yang benar untuk nama accessible per item adalah `SettingListItemStyle` di `setting/SettingResources.xaml`.
+- Alasan tidak dikerjakan: menambah setter `AutomationProperties.Name="{Binding Title}"` ke `SettingListItemStyle` berlaku untuk SEMUA consumer list, termasuk preset list Gallery yang item-nya tidak punya `Title`. Itu perubahan shared component yang membutuhkan persetujuan eksplisit sesuai aturan Citadel, dan di luar scope P5. Opsi terkecil bila disetujui: setter nama pada `SettingListItemStyle` dengan binding yang aman untuk item tanpa `Title`, atau kemampuan `ItemContainerStyle` turunan per screen. Keduanya menunggu keputusan operator.
+
+**Checks aktual:**
+
+- `dotnet build module/mangareader/Module.Mangareader.csproj -c Release -p:CitizenRuntimeRoot=<temp>` → Build succeeded, 0 Warning, 0 Error. Deploy dialihkan ke temp karena `Citadel.Shell` (PID 14824) masih berjalan; `Module.Mangareader.dll` di output Shell terbukti tetap bertanggal 2026-09-03, jadi citizen yang dipakai aplikasi pengguna tidak tersentuh.
+- `dotnet test tests/Citadel.Uia -c Release --filter SharedComponentBehaviorTests` → 34/34 passed. Ini existing shared UI check yang relevan (memastikan resource `SettingListStyle`, `SettingComboBoxStyle`, dan scrollbar tersedia). Tidak ada suite baru.
+- Library/Archive/Reader tests tidak dijalankan ulang: `ChapterSelectorView.xaml` tidak di-link ke test project mana pun (diperiksa dari semua csproj) dan P5 tidak mengubah file yang mereka compile.
+- `git diff --check` bersih; `git status` akhir hanya memuat satu file yang memang diubah. Probe sementara dan artifact `*_wpftmp.csproj` dibersihkan.
+- Efek samping yang dicatat jujur: build `Citadel.Uia` ikut men-deploy citizen fixture `blank` (folder repo `module/blank`, memang sudah ada di output Shell sebelumnya) dan payload sharedLogic ke output Shell yang sebenarnya. Hanya `Module.Blank.dll`/`.pdb` yang ter-refresh; payload memakai `SkipUnchangedFiles=true`. Citizen `mangareader` dan `camoprof` tidak tersentuh.
+
+**Pending/next:**
+
+- LIVE VERIFICATION PENDING — build/test bukan bukti visual, dan P5 justru perubahan visual. Yang belum diuji di UI native: item normal, selected, hover, keyboard focus, navigasi keyboard (panah/Home/End), membuka chapter target lewat double-click, Enter, dan tombol Open chapter, serta Escape/Back. **Periksa accessible label item chapter** — lihat gap di atas. Tidak ada klaim visual PASS.
+- P6 tidak disentuh. P0 masih pending dan tidak menghalangi P5.
+- Perubahan P5 belum di-commit sesuai instruksi.
 
 Laporan akhir kepada user: ringkas perubahan ownership, kode redundant yang dihapus dan bukti tidak ada caller, hasil build/test aktual, status live yang jujur, serta sisa blocker. Jangan menyatakan goal selesai hanya karena token menipis atau semua file sudah dipindahkan.
 
