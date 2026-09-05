@@ -1,7 +1,8 @@
 using System.IO;
 using System.Text.Json;
+using Module.Mangareader.ShareLogic;
 
-namespace Module.Mangareader.ShareLogic;
+namespace Module.Mangareader.History;
 
 public sealed record ReadingHistoryEntry(
     string Title,

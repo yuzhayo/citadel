@@ -111,7 +111,7 @@ public partial class LibraryView : UserControl, IDisposable
             {
                 _cards.Add(new MangaTitleCardModel(title));
             }
-            NotifyTitlesChanged();
+            NotifyTitlesChanged(titles);
 
             if (titles.Count == 0)
             {
@@ -130,7 +130,7 @@ public partial class LibraryView : UserControl, IDisposable
             await LoadCoversAsync(_cards.ToArray(), cancellation);
             if (!_disposed && ReferenceEquals(_scanCancellation, cancellation))
             {
-                NotifyTitlesChanged();
+                NotifyTitlesChanged(titles);
             }
         }
         catch (OperationCanceledException) when (cancellation.IsCancellationRequested)
@@ -141,7 +141,7 @@ public partial class LibraryView : UserControl, IDisposable
             if (_disposed || !ReferenceEquals(_scanCancellation, cancellation)) return;
 
             _cards.Clear();
-            NotifyTitlesChanged();
+            NotifyTitlesChanged([]);
             var baseException = exception.GetBaseException();
             ShowEmpty("Could not scan the library", baseException.Message);
             StatusText.Text = baseException is DirectoryNotFoundException
@@ -202,7 +202,7 @@ public partial class LibraryView : UserControl, IDisposable
                 {
                     cover = await _coverLoader.LoadAsync(
                         card.Manga,
-                        maximumPixelWidth: 320,
+                        MangaCoverLoader.PreviewPixelWidth,
                         cancellationToken);
                 }
                 catch (Exception exception) when (exception is not OperationCanceledException)
@@ -239,8 +239,8 @@ public partial class LibraryView : UserControl, IDisposable
         OpenChapterRequested?.Invoke(this, e);
     }
 
-    private void NotifyTitlesChanged() =>
-        TitlesChanged?.Invoke(this, new LibraryChangedEventArgs(_cards.ToArray()));
+    private void NotifyTitlesChanged(IReadOnlyList<MangaTitle> titles) =>
+        TitlesChanged?.Invoke(this, new LibraryChangedEventArgs(titles));
 
     private void ShowEmpty(string title, string detail)
     {

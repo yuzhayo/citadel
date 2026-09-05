@@ -6,6 +6,14 @@ namespace Module.Mangareader.ShareLogic;
 
 public sealed class MangaCoverLoader
 {
+    /// <summary>
+    /// Decode width for card covers. Every consumer must pass this same
+    /// value: the render cache key is the chapter's file identity plus the
+    /// width, so a different width decodes and stores a second copy of the
+    /// same cover instead of reusing the cached one.
+    /// </summary>
+    public const int PreviewPixelWidth = 320;
+
     private readonly ChapterRenderCache _cache = new();
     private readonly ArchivePageReader _archives = new();
 

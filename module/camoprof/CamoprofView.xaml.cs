@@ -2,6 +2,7 @@ using System.Windows;
 using System.Windows.Controls;
 using Citadel.Core.Rpl;
 using Module.Camoprof.Features.AddProfile;
+using Module.Camoprof.Features.ProfileActions;
 using Module.Camoprof.Launcher;
 using Module.Camoprof.Network;
 using Module.Camoprof.Providers.Google;
@@ -34,7 +35,17 @@ public partial class CamoprofView : UserControl
         _network = new NetworkMonitor();
         var google = new GoogleAccountService(_network, credentials, _sessions);
         var addProfile = new AddProfileFeature(_sessions, credentials);
-        _launcher = new LauncherView(catalog, _sessions, google, credentials, _network, addProfile);
+        var profileActions = new ProfileActionsFeature(
+            catalog,
+            _sessions,
+            credentials,
+            google);
+        _launcher = new LauncherView(
+            catalog,
+            _sessions,
+            _network,
+            addProfile,
+            profileActions);
         _runtime = new RuntimeView(_sessions);
 
         LauncherHost.Content = _launcher;

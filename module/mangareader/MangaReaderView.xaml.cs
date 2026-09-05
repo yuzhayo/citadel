@@ -4,12 +4,14 @@ using System.Windows.Controls;
 using Citadel.Core.Modules;
 using Citadel.Core.Rpl;
 using Citadel.Setting.Components;
+using Module.Mangareader.History;
 using Module.Mangareader.ShareLogic;
 
 namespace Module.Mangareader;
 
 public partial class MangaReaderView : UserControl, IContentHeaderActionProvider
 {
+    private readonly ReadingHistory _history = new();
     private ReaderWindow? _readerWindow;
     private bool _disposed;
 
@@ -17,6 +19,9 @@ public partial class MangaReaderView : UserControl, IContentHeaderActionProvider
     {
         ArgumentNullException.ThrowIfNull(lifetime);
         InitializeComponent();
+        // Recording is owned here, not by the History screen, so a chapter is
+        // recorded whether or not that tab has ever been opened.
+        HistoryTab.UseHistory(_history);
         lifetime.Add(DisposeView);
     }
 
@@ -76,7 +81,7 @@ public partial class MangaReaderView : UserControl, IContentHeaderActionProvider
         if (_disposed) return;
 
         _readerWindow?.Close();
-        HistoryTab.Record(title, chapter);
+        _history.Record(title, chapter);
 
         var reader = new ReaderWindow(title, chapter);
         var owner = Window.GetWindow(this);
@@ -84,7 +89,7 @@ public partial class MangaReaderView : UserControl, IContentHeaderActionProvider
 
         reader.ActiveChapterChanged += (_, change) =>
         {
-            if (!_disposed) HistoryTab.Record(change.Title, change.Chapter);
+            if (!_disposed) _history.Record(change.Title, change.Chapter);
         };
         reader.Closed += (_, _) =>
         {

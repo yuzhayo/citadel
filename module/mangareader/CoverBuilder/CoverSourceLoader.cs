@@ -4,7 +4,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Windows.Media.Imaging;
 
-namespace Module.Mangareader.ShareLogic;
+namespace Module.Mangareader.CoverBuilder;
 
 public sealed record CoverSourceResult(byte[] PngBytes, string SourceLabel);
 

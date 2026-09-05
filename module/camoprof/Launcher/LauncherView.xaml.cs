@@ -4,6 +4,7 @@ using System.Windows.Controls;
 using Citadel.Setting.Components;
 using CitadelBridge;
 using Module.Camoprof.Features.AddProfile;
+using Module.Camoprof.Features.ProfileActions;
 using Module.Camoprof.Network;
 using Module.Camoprof.Providers.Google;
 using Module.Camoprof.SharedLogic;
@@ -16,10 +17,9 @@ public partial class LauncherView : UserControl, IDisposable
 
     private readonly ProfileCatalog _catalog;
     private readonly BrowserSessionCoordinator _sessions;
-    private readonly GoogleAccountService _google;
-    private readonly GoogleCredentialStore _credentials;
     private readonly NetworkMonitor _network;
     private readonly AddProfileFeature _addProfile;
+    private readonly ProfileActionsFeature _profileActions;
     private readonly ObservableCollection<LauncherProfileRow> _profiles = [];
     private CancellationTokenSource? _addProfileCancellation;
     private bool _busy;
@@ -28,17 +28,15 @@ public partial class LauncherView : UserControl, IDisposable
     internal LauncherView(
         ProfileCatalog catalog,
         BrowserSessionCoordinator sessions,
-        GoogleAccountService google,
-        GoogleCredentialStore credentials,
         NetworkMonitor network,
-        AddProfileFeature addProfile)
+        AddProfileFeature addProfile,
+        ProfileActionsFeature profileActions)
     {
         _catalog = catalog;
         _sessions = sessions;
-        _google = google;
-        _credentials = credentials;
         _network = network;
         _addProfile = addProfile;
+        _profileActions = profileActions;
         InitializeComponent();
         ProfileTable.ItemsSource = _profiles;
         _sessions.SessionChanged += Sessions_SessionChanged;
@@ -153,31 +151,24 @@ public partial class LauncherView : UserControl, IDisposable
 
         await RunActionAsync(async () =>
         {
-            if (!row.Profile.IsLinked)
+            var outcome = await _profileActions.CheckGoogleAsync(
+                row.Profile,
+                showBrowser: CheckModeToggle.IsChecked == true,
+                checkStarting: () => row.Google = new GoogleAccountResult(
+                    GoogleAccountState.Checking,
+                    row.Profile.Email,
+                    "checking network and resident profile",
+                    DateTimeOffset.Now));
+
+            if (outcome.Account is { } account)
             {
-                // Credential repair and initial pairing share the one
-                // feature contract; neither path reaches enrollment
-                // internals.
-                await RunAddProfileAsync(
-                    new AddProfileRequest(row.ProfileId));
-                return;
+                row.Google = account;
+                SetStatus(account.Label + ": " + account.Reason);
             }
 
-            row.Google = new GoogleAccountResult(
-                GoogleAccountState.Checking,
-                row.Profile.Email,
-                "checking network and resident profile",
-                DateTimeOffset.Now);
-            var result = await _google.CheckAsync(
-                row.Profile,
-                showBrowser: CheckModeToggle.IsChecked == true);
-            row.Google = result;
-            SetStatus(result.Label + ": " + result.Reason);
-
-            if (result.State == GoogleAccountState.CredentialRejected)
+            if (outcome.Enrollment is { } enrollment)
             {
-                await RunAddProfileAsync(
-                    new AddProfileRequest(row.ProfileId, row.Profile.Email));
+                await RunAddProfileAsync(enrollment);
             }
         }, row);
     }
@@ -211,9 +202,7 @@ public partial class LauncherView : UserControl, IDisposable
 
         await RunActionAsync(async () =>
         {
-            await _sessions.CloseAsync(row.ProfileId);
-            await _catalog.DeleteAsync(row.ProfileId);
-            await _credentials.DeleteAsync(row.ProfileId);
+            await _profileActions.DeleteAsync(row.ProfileId);
             await RefreshAsync();
             SetStatus("Profile '" + row.Name + "' deleted.");
         });

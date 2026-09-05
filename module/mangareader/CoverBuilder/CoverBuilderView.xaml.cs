@@ -3,6 +3,7 @@ using System.Windows;
 using System.Windows.Controls;
 using Microsoft.Win32;
 using Module.Mangareader.Archive;
+using Module.Mangareader.CoverBuilder;
 using Module.Mangareader.ShareLogic;
 
 namespace Module.Mangareader;
@@ -10,7 +11,9 @@ namespace Module.Mangareader;
 public partial class CoverBuilderView : UserControl, IDisposable
 {
     private readonly CoverBuilderService _service = new();
+    private readonly MangaCoverLoader _coverLoader = new();
     private CancellationTokenSource? _operationCancellation;
+    private CancellationTokenSource? _coverCancellation;
     private FetchedCoverResult? _fetchedCover;
     private string? _resultStatus;
     private bool _settingLibrary;
@@ -25,24 +28,35 @@ public partial class CoverBuilderView : UserControl, IDisposable
 
     public event EventHandler<CoverBakedEventArgs>? CoverBaked;
 
-    public void SetLibrary(IReadOnlyList<MangaTitleCardModel> titles)
+    /// <summary>
+    /// Receives the domain snapshot and forms this feature's own picker
+    /// presentation from it. The combo displays the normalized card title and
+    /// previews the selected card's cover, neither of which the domain record
+    /// carries, so the cards are built here rather than borrowed from Library.
+    /// </summary>
+    public void SetLibrary(IReadOnlyList<MangaTitle> titles)
     {
         var selectedPath = (TitlePicker.SelectedItem as MangaTitleCardModel)?.FolderPath;
+        var cards = (titles ?? [])
+            .Select(title => new MangaTitleCardModel(title))
+            .ToList();
+
         _settingLibrary = true;
         try
         {
-            TitlePicker.ItemsSource = titles;
-            TitlePicker.SelectedItem = titles.FirstOrDefault(title => string.Equals(
-                title.FolderPath,
+            TitlePicker.ItemsSource = cards;
+            TitlePicker.SelectedItem = cards.FirstOrDefault(card => string.Equals(
+                card.FolderPath,
                 selectedPath,
                 StringComparison.OrdinalIgnoreCase))
-                ?? titles.FirstOrDefault();
+                ?? cards.FirstOrDefault();
         }
         finally
         {
             _settingLibrary = false;
         }
         UpdateAvailability();
+        LoadSelectedCover();
     }
 
     private void BrowseSourceButton_Click(object sender, RoutedEventArgs e)
@@ -77,7 +91,11 @@ public partial class CoverBuilderView : UserControl, IDisposable
 
     private void TitlePicker_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
-        if (!_settingLibrary) _resultStatus = null;
+        if (!_settingLibrary)
+        {
+            _resultStatus = null;
+            LoadSelectedCover();
+        }
         UpdateAvailability();
         e.Handled = true;
     }
@@ -274,6 +292,65 @@ public partial class CoverBuilderView : UserControl, IDisposable
         cancellation.Dispose();
     }
 
+    /// <summary>
+    /// Loads the preview for the selected title only — the preview binding is
+    /// the sole consumer of a card's cover here, so a bulk load would decode
+    /// covers nobody displays. The shared loader reads the same render cache
+    /// Library populates, so this is normally a cache hit.
+    /// </summary>
+    private void LoadSelectedCover()
+    {
+        var card = TitlePicker.SelectedItem as MangaTitleCardModel;
+
+        var previous = _coverCancellation;
+        var cancellation = new CancellationTokenSource();
+        _coverCancellation = cancellation;
+        previous?.Cancel();
+
+        _ = LoadCoverAsync(card, cancellation);
+    }
+
+    private async Task LoadCoverAsync(
+        MangaTitleCardModel? card,
+        CancellationTokenSource cancellation)
+    {
+        try
+        {
+            if (card is null || card.Cover is not null) return;
+
+            var cover = await _coverLoader.LoadAsync(
+                card.Manga,
+                MangaCoverLoader.PreviewPixelWidth,
+                cancellation.Token);
+            if (cover is null || _disposed
+                || !ReferenceEquals(_coverCancellation, cancellation)) return;
+
+            await Dispatcher.InvokeAsync(() =>
+            {
+                if (!_disposed && ReferenceEquals(_coverCancellation, cancellation))
+                {
+                    card.Cover = cover;
+                }
+            });
+        }
+        catch (OperationCanceledException) when (cancellation.IsCancellationRequested)
+        {
+        }
+        catch (Exception)
+        {
+            // The preview is best effort; the placeholder icon stays visible.
+        }
+        finally
+        {
+            if (ReferenceEquals(_coverCancellation, cancellation))
+            {
+                _coverCancellation = null;
+            }
+
+            cancellation.Dispose();
+        }
+    }
+
     public void Dispose()
     {
         if (_disposed) return;
@@ -281,5 +358,7 @@ public partial class CoverBuilderView : UserControl, IDisposable
         SourceField.TextChanged -= SourceField_TextChanged;
         _operationCancellation?.Cancel();
         _operationCancellation = null;
+        _coverCancellation?.Cancel();
+        _coverCancellation = null;
     }
 }

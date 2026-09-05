@@ -2,14 +2,19 @@ using Module.Mangareader.Archive;
 
 namespace Module.Mangareader.ShareLogic;
 
+/// <summary>
+/// Cross-feature library snapshot. Carries domain titles only: each consumer
+/// builds its own presentation, so no card model or cover state crosses the
+/// feature boundary.
+/// </summary>
 public sealed class LibraryChangedEventArgs : EventArgs
 {
-    public LibraryChangedEventArgs(IReadOnlyList<MangaTitleCardModel> titles)
+    public LibraryChangedEventArgs(IReadOnlyList<MangaTitle> titles)
     {
         Titles = titles ?? throw new ArgumentNullException(nameof(titles));
     }
 
-    public IReadOnlyList<MangaTitleCardModel> Titles { get; }
+    public IReadOnlyList<MangaTitle> Titles { get; }
 }
 
 public sealed class CoverBakedEventArgs : EventArgs

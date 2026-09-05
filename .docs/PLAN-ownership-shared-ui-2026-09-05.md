@@ -244,8 +244,8 @@ Smoke akhir cukup satu daftar representatif yang menggabungkan fase: CamoProf ad
 
 - [ ] P0 — Discovery Yuzskill canonical.
 - [ ] P1 — Adapter Add Profile tunggal, generic gated transport.
-- [ ] P2 — Launcher action ownership.
-- [ ] P3 — Ownership MangaReader dan domain-only feature contracts.
+- [ ] P2 — Launcher action ownership. IMPLEMENTATION COMPLETE / LIVE VERIFICATION PENDING — lihat Checkpoint P2.
+- [ ] P3 — Ownership MangaReader dan domain-only feature contracts. IMPLEMENTATION COMPLETE / LIVE VERIFICATION PENDING — lihat Checkpoint P3.
 - [ ] P4 — Common Reader contribution ownership.
 - [ ] P5 — Chapter Selector shared template.
 - [ ] P6 — Sidebar shared scrollbar.
@@ -256,6 +256,101 @@ Smoke akhir cukup satu daftar representatif yang menggabungkan fase: CamoProf ad
 Isi checkpoint di dokumen ini setelah increment koheren:
 
 `Phase/status | file changed/moved/deleted | keputusan kontrak | checks aktual | pending/next`.
+
+### Checkpoint P2 — 2026-09-05
+
+**Phase/status:** P2 / IMPLEMENTATION COMPLETE, LIVE VERIFICATION PENDING.
+
+**File changed/added:** tidak ada file dipindah atau dihapus.
+
+- Baru: `module/camoprof/Features/ProfileActions/ProfileActionsFeature.cs` — `ProfileActionsFeature` (Delete + CheckGoogle) dan kontrak `GoogleCheckOutcome`.
+- Berubah: `module/camoprof/Launcher/LauncherView.xaml.cs` — dua handler menjadi penerusan; field dan parameter ctor `GoogleAccountService` + `GoogleCredentialStore` dihapus.
+- Berubah: `module/camoprof/CamoprofView.xaml.cs` — composition root membangun dan meneruskan `ProfileActionsFeature`.
+- Tidak ada perubahan XAML, style, template, atau primitive `setting/Components/`; `SettingDialog.Confirm` dipakai ulang tanpa diubah, jadi approval boundary shared UI tidak tersentuh.
+
+**Keputusan kontrak:**
+
+- Delete: urutan `close session -> delete catalog -> delete credential` kini satu command `ProfileActionsFeature.DeleteAsync`. Confirmation tetap di view; tidak ada efek destructive sebelum confirm. Return `Task` karena view tidak memakai hasil antara — tidak ada record hasil yang diciptakan tanpa consumer.
+- Check Google: keputusan kapan pairing/credential repair diperlukan pindah ke `ProfileActionsFeature.CheckGoogleAsync`; `GoogleAccountService` tetap dipakai apa adanya.
+- `GoogleCheckOutcome(GoogleAccountResult? Account, AddProfileRequest? Enrollment)`: `Account == null` menandai tidak ada live check (path unlinked) sehingga view tidak mengubah `row.Google` — identik dengan perilaku lama. `Enrollment != null` adalah keputusan fitur, dan view meneruskannya ke `AddProfileFeature` (kontrak publik sibling), bukan ke internal coordinator.
+- Placeholder `Checking` tetap rendering milik view tetapi dipicu callback `checkStarting`, yang hanya dipanggil fitur saat live check benar-benar berjalan. Ini menjaga satu pemilik keputusan tanpa menduplikasi branch `IsLinked` di view.
+- Launch/Close dan Open GitHub sengaja TIDAK dipindah: keduanya pass-through satu effect ke `BrowserSessionCoordinator` (mekanisme session existing) tanpa sequencing domain, dan plan mengizinkan handler penerusan sederhana tetap di view.
+- Generasi `profileId` di `AddProfileButton_Click` tetap di view: Add Profile bukan bagian inventaris P2 dan `AddProfileFeature` sudah menjadi satu-satunya entry point flow tersebut.
+
+**Checks aktual:**
+
+- `dotnet build module/camoprof/Module.Camoprof.csproj -c Release -p:CitizenRuntimeRoot=<temp>` → Build succeeded, 0 Warning, 0 Error. Deploy sengaja dialihkan ke temp karena `Citadel.Shell` (PID 14824) sedang berjalan dengan session browser aktif; output Shell milik pengguna tidak disentuh dan temp sudah dibersihkan.
+- `dotnet test tests/Module.Camoprof.Tests -c Release` → Passed 55, Failed 0, Skipped 0 (run segar, bukan evidence historis).
+- `git diff --check` bersih. Grep membuktikan tidak ada sisa referensi `_google`/`_credentials`/`GoogleAccountService`/`GoogleCredentialStore` di `Launcher/`; satu-satunya `_google` tersisa adalah backing field `LauncherProfileRow.Google` yang tidak terkait.
+- Test csproj tidak diubah: `LauncherView`/`CamoprofView`/`ProfileActionsFeature` memang tidak termasuk Compile Include test, jadi tidak ada linked path yang perlu diperbarui.
+- Tidak ada test baru, dan ini gap yang disengaja: `ProfileActionsFeature` bergantung pada `ProfileCatalog`, `GoogleCredentialStore`, dan `GoogleAccountService` konkret (filesystem Credenz nyata, DPAPI, network, browser) tanpa seam. Mengonstruksinya di test memanggil `CredenzPath.Resolve()` yang menulis file probe ke vault Credenz pengguna. Menambah interface atau parameter nullable demi testability berarti abstraksi baru di luar scope P2, dan test berisi delegate palsu yang hanya menghitung panggilan dilarang instruksi operator.
+
+**Pending/next:**
+
+- Live smoke BELUM dijalankan (butuh WPF live, operator, dan profile disposable): Delete pada profile disposable termasuk confirm/batal, Check Google pada profile linked, unlinked, dan credential-rejected, Launch/Close, Open GitHub saat session terbuka dan tertutup, serta keadaan busy/disabled selama aksi berjalan.
+- Tracker P1 masih `[ ]` padahal P1 sudah ter-commit sebagai `3158dee`; tidak diubah karena di luar scope P2.
+- P0 (discovery Yuzskill di AGENTS.md) masih pending, tidak menghalangi P2, dan tidak disentuh.
+
+### Checkpoint P3 — 2026-09-05
+
+**Phase/status:** P3 / IMPLEMENTATION COMPLETE, LIVE VERIFICATION PENDING. Dikerjakan dalam tiga increment (A Library, B kontrak+History, C CoverBuilder), masing-masing di-build hijau sebelum lanjut.
+
+**File dipindah (5, isi tidak berubah selain namespace/using):**
+
+- `shareLogic/LibraryScanner.cs` → `Library/LibraryScanner.cs` (ns `Module.Mangareader.Library`). Consumer satu-satunya `LibraryView`, yang sudah meng-import namespace itu.
+- `shareLogic/ReadingHistoryStore.cs` → `History/ReadingHistoryStore.cs` (ns `Module.Mangareader.History`).
+- `shareLogic/HistoryCardModel.cs` → `History/HistoryCardModel.cs` (ns `Module.Mangareader.History`).
+- `shareLogic/CoverBuilderService.cs` → `CoverBuilder/CoverBuilderService.cs` (ns `Module.Mangareader.CoverBuilder`).
+- `shareLogic/CoverSourceLoader.cs` → `CoverBuilder/CoverSourceLoader.cs` (ns `Module.Mangareader.CoverBuilder`), termasuk `CoverSourceResult`/`FetchedCoverResult`.
+
+Bukti privat: grep seluruh repo menunjukkan tidak ada consumer di luar fitur pemilik untuk kelima tipe itu, dan tidak ada test project yang me-link filenya.
+
+**File baru (2):**
+
+- `History/ReadingHistory.cs` — owner recording: `Record`, `Changed`, `Read`.
+- `tests/Module.Mangareader.Reader.Tests/ChapterRenderCacheIdentityTests.cs` — 2 test identitas cache (lihat Checks).
+
+**File berubah (6):**
+
+- `shareLogic/MangaReaderEvents.cs` — `LibraryChangedEventArgs.Titles` kini `IReadOnlyList<MangaTitle>`.
+- `shareLogic/MangaCoverLoader.cs` — tambah `public const int PreviewPixelWidth = 320` (satu sumber untuk lebar decode semua consumer).
+- `Library/LibraryView.xaml.cs` — `NotifyTitlesChanged(IReadOnlyList<MangaTitle>)`; menerbitkan domain titles pada jalur sukses, pasca-cover, dan gagal (`[]`); memakai `PreviewPixelWidth`.
+- `History/HistoryView.xaml.cs` — `SetLibrary(IReadOnlyList<MangaTitle>)`, `UseHistory(ReadingHistory)`, cover milik sendiri, `Record` publik dihapus.
+- `CoverBuilder/CoverBuilderView.xaml.cs` — `SetLibrary(IReadOnlyList<MangaTitle>)` membangun card model sendiri, preview cover dimuat fitur.
+- `MangaReaderView.xaml.cs` — memiliki `ReadingHistory`, meneruskan chapter event ke owner itu.
+
+**Keputusan ownership dan kontrak:**
+
+- Kontrak lintas fitur kini domain-only. Yang tetap shared karena consumer nyatanya lebih dari satu: `MangaTitle`/`ChapterInfo` (semua fitur), `MangaTitleCardModel` (Library + CoverBuilder), `MangaCardPresentation` (Library + History), `MangaCoverLoader` + `ChapterRenderCache` (Library + History + CoverBuilder), `OpenChapterRequestedEventArgs`, `Archive/`. Tidak ada rename folder massal dan tidak ada kontrak internal yang dipromosikan ke `Citadel.Contract`.
+- `HistoryCardModel` tidak lagi berlangganan `Cover` dari card model Library; ia punya `Cover` mutable sendiri yang diisi `MangaCoverLoader`. Karena tidak ada subscription tersisa, `IDisposable` dan `Dispose` dihapus — bukan menghilangkan cleanup, melainkan tidak ada lagi yang perlu dilepas. Efek sampingnya History tidak lagi menahan referensi ke card milik Library.
+- **Cover refresh dijaga lewat identitas cache, bukan lewat tipe kartu.** Cover lama dipakai ulang hanya ketika `ChapterRenderCache.GetChapterFolder(chapter)` tidak berubah; folder itu diturunkan dari path + length + mtime file chapter. Jadi re-scan biasa dan `Record` tidak menyebabkan flicker, sementara chapter yang di-bake/diganti menghasilkan key baru dan cover-nya dimuat ulang. Ini invariant yang sebelumnya tidak di-test dan kini menjadi tumpuan correctness P3.
+- Recording tidak lagi membutuhkan instance `HistoryTab`: composition root memiliki `ReadingHistory`, History screen hanya subscribe `Changed`. `Changed` sengaja synchronous — `ReaderWindow.OnActiveChapterChanged` memanggil `UpdateWindowTitle()` sebelum raise, jadi sudah pasti di UI thread; menambah Dispatcher guard hanya mengubah timing tanpa alasan.
+- Cover History dimuat paralel (`MaxDegreeOfParallelism = 4`, pola dan stale-guard sama dengan `LibraryView.LoadCoversAsync`) hanya untuk kartu yang belum punya cover. Lebar decode sama dengan Library → cache hit, bukan decode kedua.
+- CoverBuilder hanya memuat cover title terpilih, karena binding preview `SelectedItem.Cover` adalah satu-satunya consumer cover di layar itu; memuat semua N cover berarti men-decode yang tidak pernah ditampilkan. Load dipicu setelah `SetLibrary` memulihkan selection dan saat user mengganti pilihan, dan dilewati selama rebuild agar tidak start/cancel berulang.
+- Card model di CoverBuilder dibangun sendiri dari domain titles, bukan meminjam instance Library: `DisplayMemberPath="Title"` butuh judul ternormalisasi dan preview butuh `Cover`, keduanya tidak ada di `MangaTitle`. Pemilihan title, source lokal/URL, urutan fetch-before-bake, hasil/error, dan `ArchiveReplacementTransaction` tidak diubah.
+- **Library: tidak ada controller/state framework baru.** `LibraryScanPersistence` sudah menjadi owner aturan capture-attempt/persist-only-on-success dan tetap dipakai apa adanya; yang tersisa di view adalah state UI (busy, status, empty panel, cards) dan lifecycle CTS. Semua invariant yang diminta (captured attempt, field disabled saat scan, cancellation + stale-result guard, restore/auto-scan sekali, persist hanya setelah sukses, zero-title tetap eligible, gagal/cancel tidak menimpa path, folder unavailable tidak menghapus preferensi) tidak disentuh dan tetap pada pemiliknya.
+- `LibraryView.Titles` (public, nol caller) sengaja dibiarkan: cleanup tidak terkait P3.
+
+**Checks aktual:**
+
+- `dotnet build module/mangareader/Module.Mangareader.csproj -c Release -p:CitizenRuntimeRoot=<temp>` dijalankan setelah tiap increment (3×): Build succeeded, 0 Warning, 0 Error. Deploy dialihkan ke temp karena `Citadel.Shell` masih berjalan; output Shell milik pengguna tidak disentuh, temp sudah dibersihkan.
+- `Module.Mangareader.Library.Tests` 24/24; `Module.Mangareader.Reader.Tests` 97/97 (95 lama + 2 baru); `Module.Mangareader.Archive.Tests` 33/33. Total 154 passed, 0 failed, 0 skipped — run segar.
+- Test csproj TIDAK perlu diubah: tidak ada file yang dipindah berada di Compile Include test manapun (diverifikasi grep pada semua csproj). `ChapterRenderCache.cs` dan `MangaLibrary.cs` sudah ter-link di Reader.Tests, jadi test baru tidak menambah include.
+- Test baru memakai file temp nyata, tanpa mock: chapter tidak berubah → folder cache sama; chapter ditulis ulang (length berubah) → folder cache berbeda. Test kedua akan gagal seandainya identitas cache berhenti mengikuti isi file, yaitu tepat cara cover basi bisa bocor setelah bake.
+- Grep memastikan tidak ada sisa `ShareLogic.<tipe yang dipindah>` maupun path `shareLogic/<file lama>`; `git diff --check` bersih.
+- Tidak ada perubahan XAML, style, template, atau primitive `setting/Components/`, jadi approval boundary shared UI tidak tersentuh.
+
+**Perbedaan perilaku kecil yang disengaja (dicatat, bukan disembunyikan):**
+
+- Preview cover di Cover Builder kini dimuat async oleh fiturnya sendiri, jadi ada jeda beberapa milidetik (cache hit) setelah memilih title atau setelah scan; sebelumnya bitmap sudah tersedia karena diisi Library. Yang tampil tetap sama.
+- History mengisi cover sendiri. Dengan carry-over berbasis key cache tidak ada flicker saat re-scan/Record, dan setelah bake cover benar-benar dimuat ulang.
+
+**Pending/next:**
+
+- LIVE VERIFICATION PENDING — build/test bukan bukti visual. Butuh WPF live dengan library disposable: scan sukses/empty/gagal/cancel → restart restore → buka chapter → pastikan History tercatat sebelum tab History dibuka → fetch/bake cover → refresh Library dan History serta konfirmasi cover BARU yang tampil, bukan cover lama.
+- P4–P6 tidak disentuh. P0 masih pending.
+- `.docs/PLAN-mangareader-downloader.md` ikut berubah di worktree selama P3 berjalan (reconcile Yuzskill bertanggal 2026-09-05, inspeksi HEAD `3158dee`), BUKAN oleh pekerjaan ini. Dibiarkan utuh sesuai batas "pertahankan perubahan user/agent lain".
+- Worktree masih memuat perubahan P2 yang belum di-commit; keduanya dibiarkan tanpa commit sesuai instruksi.
 
 Laporan akhir kepada user: ringkas perubahan ownership, kode redundant yang dihapus dan bukti tidak ada caller, hasil build/test aktual, status live yang jujur, serta sisa blocker. Jangan menyatakan goal selesai hanya karena token menipis atau semua file sudah dipindahkan.
 

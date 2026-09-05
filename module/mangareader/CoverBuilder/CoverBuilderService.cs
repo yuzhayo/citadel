@@ -1,6 +1,7 @@
 using Module.Mangareader.Archive;
+using Module.Mangareader.ShareLogic;
 
-namespace Module.Mangareader.ShareLogic;
+namespace Module.Mangareader.CoverBuilder;
 
 public sealed record CoverBuilderResult(
     CoverSourceResult Source,

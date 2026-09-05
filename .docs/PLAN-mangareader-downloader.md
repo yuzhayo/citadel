@@ -1,9 +1,11 @@
 # PLAN: MangaReader local-first Downloader
 
-Status: **LOCKED — implementation has not started**
-Baseline: `main` at `ae450bc` on 2026-09-02. The worktree contains unrelated
-Reader-control WIP; this plan does not authorize touching, reverting, building
-over, or claiming that work.
+Status: **PRODUCT DECISIONS LOCKED — plan refined, not implementation approval**
+Historical baseline: `main` at `ae450bc` on 2026-09-02.
+Yuzskill reconciliation: 2026-09-05, inspected HEAD `3158dee`; no Downloader
+source was found. Unrelated ownership-refactor WIP is present. Recheck HEAD,
+status and actual integration contracts before execution; neither historical
+paths nor a clean worktree are prerequisites to doing independent scoped work.
 
 This document turns the recorded Comix research and the user's selected product
 decisions into the complete implementation contract for MangaReader's
@@ -11,6 +13,43 @@ Downloader. It supersedes the discovery-only Downloader notes in
 `module/mangareader/TASKLIST.md`. It does not authorize implementation, a
 commit, a release, changes to `stealthB`, or live mutation of the real manga
 library.
+
+## 0. Agent execution contract
+
+Activate Yuzskill for the actual repository through `skills_begin`, read every
+required skill completely, acknowledge its revision, then check `skills_status`.
+If MCP is unavailable, follow the collection's file fallback at
+`C:\Users\YUZHA\Yuzskill\AGENTS.md`. Relevant workflows: modular-architecture,
+engineering-quality, planning-and-delivery, architecture-and-contracts,
+shared-ui, verification-and-review, stack-guidance and citadel-project.
+Read local `AGENTS.md`, `module/README.md`, and `.docs/SHARED-UI-BEHAVIOR.md`.
+Changing protected agent configuration is not a prerequisite to reading skills
+or executing already authorized source work; do not bypass its protection.
+
+This refinement preserves the product in section 3. It corrects implementation
+directions that could create duplicate ownership or unnecessary infrastructure:
+Queue is independent of both screens; feature protocol/decoding stays local;
+PyHost extensions are capability-driven, not a mandatory v2 rewrite; new UI
+primitives require the existing approval boundary; and phases verify coherent
+increments rather than scaffold every listed file first.
+
+Use this document for execution checkpoints, not a second parallel plan. After
+compaction, reload active skills, this plan/checkpoint, git diff and the current
+owner/callers before editing. Preserve unrelated WIP. Coordinate only actual
+file/contract overlaps with the ownership-refactor plan; do not silently revert
+its changes or require P0-P6 completion when the slice is independent.
+
+For unfamiliar/version-sensitive APIs, use Context7 to resolve the actual
+library then query the needed topic: Microsoft .NET Desktop Guide for WPF
+resources/Dispatcher, .NET for streaming/cancellation, Playwright Python for
+browser operations, and Camoufox if its version documentation is available.
+Verify against local types/source. At this refinement the repo declares
+`net10.0-windows`, SDK `10.0.400`, `camoufox==0.5.5`, and
+`playwright>=1.51,<1.52`; these are pins, not proof of installed versions.
+Do not upgrade to match a current snippet, substitute Node Playwright examples
+for Python signatures, or assume Context7 contains version-specific Camoufox
+docs. Use official versioned source when necessary. No library research, Comix
+live test, or dependency upgrade was performed by this plan refinement.
 
 ## 1. Goal
 
@@ -33,9 +72,9 @@ only reading surfaces.
 
 ## 2. Evidence baseline
 
-The canonical evidence is
-`.docs/RESEARCH-comix-downloader-2026-09-01.md`. It proves, within the tested
-logged-out sample:
+The canonical historical evidence is
+`.docs/RESEARCH-comix-downloader-2026-09-01.md`. It records, within the tested
+logged-out sample (not a current live guarantee):
 
 - direct Camoufox can render Comix and reach its signed `/api/v1` calls;
 - ordinary Chromium/WebView-like execution failed on the secure bundle;
@@ -45,8 +84,8 @@ logged-out sample:
   publish variants;
 - two sampled `5x5`, algorithm-3 scrambled pages were decoded successfully;
 - a transient ten-page CBZ fixture passed archive and image validation; and
-- the current `stealthB` wrapper failed before navigation and is not a ready
-  reusable browser library.
+- the then-tested `stealthB` wrapper failed before navigation; this does not
+  establish its current state or make it a Downloader dependency.
 
 The following remain implementation gates, not proven facts:
 
@@ -54,7 +93,7 @@ The following remain implementation gates, not proven facts:
 - retry, recovery, pause, restart resume, and cancellation;
 - long-running rate-limit and domain behavior;
 - every scramble/encryption variant;
-- the final PyHost v2, queue, persistence, and WPF behavior; and
+- the required transport capabilities, queue, persistence, and WPF behavior; and
 - exact live semantics for public actions not exercised during research, such
   as `I'm Feeling Lucky`.
 
@@ -95,19 +134,24 @@ DownloaderView (parent/router)
 There is no nested tab control, third title-detail screen, modal catalog, or
 separate OS window.
 
-`DownloaderView` owns only the current route and module-lifetime services. Each
-child owns its own state. The parent may route these typed events only:
+`DownloaderView` owns only routing/composition and attaches children to their
+lifetime. Each child owns its presentation state; Queue owns job state, not
+either screen. Composition may construct module-lifetime services but must not
+implement their policies. The route/event surface includes:
 
 ```text
 CatalogScreen      -> OpenDownloadList
-CatalogScreen      -> ChaptersQueued
+Catalog feature    -> QueueChapters command on the Queue contract
+Queue              -> ChaptersQueued result
 DownloadListScreen -> BackRequested
 Queue              -> QueueSummaryChanged
 ```
 
 Routing back to Catalog restores its provider, filters, result page, selected
 title/group, selected chapters, and scroll position. Queue execution is not
-owned by the visible child and continues while Catalog is shown.
+owned by the visible child and continues while Catalog is shown. Hiding either
+screen does not dispose the queue/provider; only the owning module lifetime
+ends them. Additional internal controls are not new routed screens.
 
 ### 3.2 Lazy provider activation
 
@@ -118,8 +162,9 @@ owned by the visible child and continues while Catalog is shown.
 - Typing search text or changing a filter performs no remote request.
 - `Start`, `Load more`, explicit Author/Artist lookup, title selection,
   explicit refresh, or a queued job are the only network triggers.
-- There is no timer, catalog polling, infinite-scroll fetch, provider prewarm,
-  or automatic refresh.
+- There is no network polling timer, infinite-scroll fetch, provider prewarm,
+  or automatic refresh. A bounded idle-cleanup timer/backoff for active work is
+  allowed; it must not issue periodic remote requests or independent health probes.
 - A provider browser/session is created lazily, retained only while an active
   request or job needs it, and released after bounded idle or module shutdown.
   The implementation must not leave an orphan Camoufox process.
@@ -136,8 +181,10 @@ The Catalog header contains:
 6. `Download List (n)` with an active/paused/failed job count badge.
 
 Advanced Filters are provider-owned composition built from shared fields. The
-Comix panel owns the field layout and produces one immutable
-`ComixBrowseQuery`; it never builds URLs or calls the provider.
+Comix filter feature owns input state and validation and produces one immutable
+`ComixBrowseQuery`; its panel binds that state and translates input events.
+Neither panel nor Catalog builds provider URLs. Remote/network state reflects
+explicit requests/jobs, not a background connectivity monitor.
 
 Rules:
 
@@ -204,6 +251,11 @@ queued:
 
 Display-title equality alone is never evidence that a remote and local title
 are the same.
+
+Root/mapping are obtained through feature contracts, not named controls or a
+second reader of Library preference files. Each job snapshots its confirmed
+root and target; changing Library selection cannot silently redirect an active
+job. A mismatch before publish pauses that job for explicit reconciliation.
 
 ### 3.6 Persistent Download List
 
@@ -288,33 +340,37 @@ This policy prevents a visually complete but semantically mixed chapter.
 ## 4. Parent/children architecture
 
 ```text
-MangaReaderView
-└── DownloaderView                         parent/router only
-    ├── DownloaderContext                  stable child contract
-    ├── CatalogScreen                      owns browse/detail state
-    │   ├── SourceRegistry                 source + filter contribution
-    │   ├── CatalogCoordinator
-    │   └── TitleSelectionCoordinator
-    └── DownloadListScreen                 owns queue presentation
-        └── DownloadQueueCoordinator       module-lifetime application service
-            └── DownloadJobRunner
-                └── ChapterDownloadPipeline
+MangaReader composition / lifetime
+└── Downloader feature
+    ├── DownloaderView                     route host, no job policy
+    │   ├── CatalogScreen                  browse/detail presentation
+    │   └── DownloadListScreen             queue presentation only
+    ├── Catalog feature                    query/detail/selection state
+    ├── Queue feature                      sole job state/effect owner
+    │   └── runner + recovery + publication
+    └── source registry                    provider + filter contributions
 ```
 
-Children never reach into named controls on their parent or one another. The
-stable context exposes only:
+Arrows here indicate ownership, not new required classes. Use the existing
+catalog/context/command/event conventions; no extra event bus or container.
+Parent lifetime holds the queue independently of route visibility. Children
+never reach into named controls or mutable collections on siblings. The narrow
+context/contracts expose only what their actual consumers need:
 
 - route commands;
 - read-only queue summary and change events;
 - current Library-root/mapping operations;
 - source-registry access;
-- lifecycle cancellation/dispatcher access; and
+- lifecycle cancellation (Dispatcher remains in the WPF presentation adapter); and
 - typed `QueueChapters` commands.
 
-The Queue does not reference WPF. Catalog does not mutate Queue collections.
-Library does not call Comix. Downloader does not call internal `LibraryView`
-fields. Completion crosses the boundary through a typed `ChapterPublished`
-event handled by a small Library bridge.
+Queue logic does not reference WPF; DownloadListScreen may live beside it but
+only binds snapshots/commands. Catalog does not mutate Queue collections.
+Library does not call Comix. Completion crosses a typed `ChapterPublished`
+event to Library's refresh contract, not a call into `LibraryView` internals.
+Cover integration calls CoverBuilder's feature contract, not its screen or
+private service. Reuse the current post-refactor contracts; if absent, add the
+smallest entry at the owning feature, without moving its policy into parent.
 
 ## 5. Feature ownership
 
@@ -322,17 +378,18 @@ event handled by a small Library bridge.
 |---|---|---|
 | Downloader parent | route and child lifetime | filters, jobs, API, files |
 | Source registry | explicit provider list/capabilities | runtime discovery/reflection |
-| Comix filter panel | input state and validation | URL/API construction |
+| Comix filter feature | input state/validation; panel binds and composes shared controls | URL/API construction |
 | Catalog coordinator | query generation, result/detail state, stale-response guard | local CBZ mutation |
 | Comix source adapter | Comix routes, signed calls, parsing, normalization | WPF, queue, archive writing |
 | Title selection | active group, chapter selection, target mapping request | download execution |
 | Queue coordinator | durable job intent and state transitions | network/browser implementation |
 | Job runner | concurrency, pause, retry, recovery orchestration | WPF controls |
-| Transport | bootstrap/session, HTTP streaming, browser fallback | Comix parsing, CBZ structure |
+| Downloader transport | streaming and owned browser/session lifecycle | Comix parsing, queue retry policy, CBZ structure |
 | Comix page decoder | Comix scramble header/algorithm handling | queue or publication |
 | CBZ publisher | completeness check, package validation, atomic commit | provider UI/API |
-| Library bridge | root/mapping and post-publication refresh | remote browsing |
-| Cover integration | optional existing Cover Builder invocation | second archive writer |
+| Source mapping | confirmed remote identity to target-folder mapping | Library preference storage, screen controls |
+| Library bridge | Library-root access and post-publication refresh via contract | mapping persistence, remote browsing |
+| Cover integration | optional CoverBuilder feature-contract invocation | private sibling services, second archive writer |
 
 ## 6. Provider contracts
 
@@ -382,10 +439,19 @@ public interface IMangaSource
 
 Provider-neutral models contain normalized identity and display data only.
 Comix query keys, API payloads, cipher bootstrap, group fields, and scramble
-headers remain in `Downloader/Sources/Comix/`. `ComixFilterPanel` is colocated
+headers remain in `Features/Downloader/Sources/Comix/`. `ComixFilterPanel` is colocated
 there because its fields are also provider-specific, but it talks to Catalog
 only through the generic filter-contribution contract and cannot call the
 adapter directly.
+
+The interface above is a boundary sketch, not an instruction to create every
+DTO/class in advance. The filter contribution yields a UI-free query value
+owned by its registered source. Catalog/Queue never switch on Comix types.
+Manifest page transforms are also source-owned: the pipeline invokes a source
+operation/contribution and receives validated output; it does not inspect
+scramble headers or instantiate ComixPageDecoder. Keep that policy out of
+generic PageTransport and PyHost. Add only the small callable seam needed by
+this real consumer, not a separate decoder registry or backend framework.
 
 Remote identity is at least:
 
@@ -395,14 +461,15 @@ provider ID + title HID/internal ID + chapter remote ID + group ID
 
 Chapter number is display/matching metadata, never the sole key.
 
-## 7. Browser, PyHost v2, and transport contract
+## 7. Browser and transport capability contract
 
 ### 7.1 Browser backend
 
-Direct Camoufox is the first `IBrowserBackend` because it passed the tested
-Comix flow. `stealthB` is not copied or referenced. A later repaired and tested
-`stealthB` may implement the same backend without changing Catalog, Queue, or
-the provider contract.
+Use direct Camoufox behind the Downloader-owned browser adapter, based on the
+historical Comix evidence. Reuse existing mechanisms where compatible;
+`stealthB` is not copied or referenced. Do not require an `IBrowserBackend`
+hierarchy or implement a hypothetical second backend merely to satisfy this
+tree. Catalog/Queue depend on the source/transport contract, not browser internals.
 
 Browser responsibilities are deliberately narrow:
 
@@ -414,37 +481,49 @@ Browser responsibilities are deliberately narrow:
 
 It never renders a Citadel streaming reader or owns downloaded chapter state.
 
-### 7.2 PyHost v2
+### 7.2 Reuse PyHost; extend only a demonstrated gap
 
-Extend the existing single C#↔Python seam; citizens never import Python files.
-All v1 CamoProf commands and semantics remain backward compatible.
+Reuse `module/sharedLogic/cs/PyHost.cs` request/response transport and the
+existing Python `register_commands`/lifecycle-hook plugin mechanism. Downloader
+owns its C# command/payload adapter and Python browser/provider plugin. Shared
+PyHost must not acquire Comix URLs, download-job state, retries, filter DTOs,
+or feature command wrappers. Never reference the sibling CamoProf
+BrowserSessionCoordinator or reuse its Google browser/profile/process.
 
-Required v2 capabilities:
+The MangaReader lifetime owns its lazily started PyHost instance and resources;
+sharing transport code does not mean sharing CamoProf's running instance.
+Reuse RuntimeSetup and deployed payload conventions rather than copying a
+runtime installer. Startup must work without opening CamoProf's Runtime screen.
 
-- request IDs with exactly one terminal response;
-- typed progress events associated with a request/job ID;
-- active-request cancellation while another request is running;
-- per-browser/session locking for mutating operations;
-- disconnected-browser cleanup and orphan-safe shutdown;
-- `browser.open`, `page.goto`, `page.evaluate_json`,
-  `page.fetch_to_file`, `browser.close`, and `request.cancel`;
-- bounded response sizes and timeouts;
-- URL validation; and
-- destination-path containment for browser downloads.
+Required outcomes, implemented incrementally with their consuming slice:
 
-`page.fetch_to_file` streams directly to an allowed staging destination and
-returns status, response headers, byte count, detected content evidence, and
-hash. Page bytes are never base64-encoded into NDJSON.
+- request IDs, one terminal response, bounded sizes/timeouts;
+- progress attributed to the correct request/job; native-stream progress stays
+  in C#, with protocol events added only if browser fallback needs them;
+- active-work cancellation remains responsive, with session locking and no
+  cross-job/process teardown; no unbounded status polling workaround;
+- disconnect/EOF/shutdown cleanup and bounded idle release;
+- URL validation and destination containment for browser writes.
 
-Startup readiness is split:
+First inspect which of these already exist. Add minimal generic request
+cancellation/event support only where absent and demonstrated by an active
+Downloader request. Document any additive protocol change beside the existing
+protocol; preserve all CamoProf wire/error/lifecycle semantics. A broad
+"PyHost v2" replacement, second registry or lease framework is not a milestone.
+If compatibility cannot be kept with a small extension, surface that specific
+gap before changing shared behavior; independent UI/domain work can continue.
 
-- v1 account commands still require absolute `CITADEL_CREDENZ`;
-- Downloader browser commands require absolute `CITADEL_BROWSER_ROOT` and
-  `CITADEL_DOWNLOAD_ROOT`;
-- browser profiles live under
-  `%LocalAppData%\Citadel\MangaReader\browser\<provider>` and never under a
-  CamoProf Google profile; and
-- `ping` reports protocol/capability readiness separately.
+Browser operations cover open/navigation, bounded JSON evaluation, streamed
+fetch and close as actually needed. Command names/payloads belong to the
+Downloader plugin adapter, not a speculative universal browser API.
+Browser fetch writes directly to allowed staging and returns headers, byte
+count and hash/evidence. Do not encode chapter/page bytes into NDJSON.
+
+Account commands retain `CITADEL_CREDENZ` validation. Downloader validates its
+own absolute browser/download roots, with profiles under
+`%LocalAppData%\Citadel\MangaReader\browser\<provider>`, never Google profiles.
+Readiness/capabilities distinguish missing runtime, missing plugin and failed
+provider bootstrap; opening the tab must not auto-install or start a browser.
 
 ### 7.3 Hybrid transport
 
@@ -494,8 +573,13 @@ Failed
 Completed
 ```
 
-Only `Completed` has a published, verified final file. A crash or cancellation
-in any earlier state cannot leave a final-path CBZ that appears complete.
+`Completed` means publication and durable completion are confirmed. Before
+atomic rename, cancellation/failure leaves no new final CBZ. After rename but
+before queue/index save, a valid final CBZ can exist while durable job state
+still says Publishing. Reconcile that window using the existing source
+manifest/identity; never delete or re-download a valid file just to make the
+state diagram true. Restart still pauses unfinished work, with no automatic
+network activity; local reconciliation may recognize an already completed job.
 
 ### 8.2 Concurrency and cancellation
 
@@ -503,7 +587,8 @@ in any earlier state cannot leave a final-path CBZ that appears complete.
 - Each page has bounded timeout, initial attempt, and at most three retries per
   pass.
 - Job cancellation is cooperative first; process-tree termination is the last
-  orphan-safety escalation.
+  orphan-safety escalation and only for a process owned by Downloader. Do not
+  kill a browser serving another job/request or the separate CamoProf process.
 - Pause waits for or cancels current bounded writes, validates completed staging
   files, commits queue state, then reports Paused.
 - Manual Resume revalidates staging before reuse.
@@ -518,7 +603,10 @@ in any earlier state cannot leave a final-path CBZ that appears complete.
 └── pages\
 ```
 
-These are runtime files, not manga-library sidecars. Every staged page records
+These are runtime files, not manga-library sidecars. `queue.json` is the sole
+durable job-state authority; `job.json`, if needed, contains staging/page records,
+not a second independently mutable copy of queue state. Omit it if those records
+already have an owner in the manifest/store. Every staged page records
 ordinal, remote page identity, expected/observed size when available, content
 hash, detected format, transform state, and validation state. Resume reuses a
 page only when its record and bytes validate against the current immutable job
@@ -530,8 +618,9 @@ new job.
 
 ### 8.4 Atomic publication
 
-The publisher writes a unique `.partial.<guid>.cbz` in the final target folder
-so final rename stays on the same volume. Before commit it verifies:
+The publisher writes a unique `.partial.<guid>.tmp` ZIP payload in the final
+target folder so final rename stays on the same volume without using a
+discoverable chapter extension. Before commit it verifies:
 
 - every expected page exists exactly once and in manifest order;
 - every image opens and decodes;
@@ -544,6 +633,15 @@ New files are atomically renamed into place. Replacing an existing file uses
 the existing archive lock/replacement policy and retains only the latest backup.
 Different source identity at the same target path is a conflict, not an
 overwrite and not an automatic `(2)` suffix.
+
+Publication and queue JSON are not one atomic transaction. Persist the intended
+job identity/target before rename; after interruption, validate the final file's
+provenance/completeness and reconcile the existing job before retrying effects.
+Reuse the job/store/source manifest already specified, not an extra transaction
+database. Verify the temporary name against the current scanner: a
+`.partial.<guid>.cbz` would still match its chapter-extension filter. Do not
+broaden Library scanning rules or archive infrastructure to hide a temporary
+file that the publisher can keep non-discoverable itself.
 
 ## 9. Persistence and update safety
 
@@ -605,36 +703,46 @@ Reuse the existing:
 - `SettingActionCard`; and
 - theme/viewport resources.
 
-Add only missing general primitives with behavior pairs and shared UIA tests:
+Also reuse `SettingTabs`, `SettingViewport`, `SettingListStyle` and
+`SettingCardStyle` for the tab, finite viewport, selectable lists and surfaces.
+Shared styles and each control's documented behavior pair remain canonical.
 
-```text
-setting/Components/
-├── MultiSelect.xaml(.cs)       checklist dropdown + selected summary
-└── TagPicker.xaml(.cs)         searchable resolved tags + selected chips
-```
+Multi-select and searchable resolved-tag selection are required capabilities,
+not automatic authorization to add `SettingMultiSelect`/`SettingTagPicker`
+primitives. Inspect the current inventory first. Prefer a reusable combo of
+existing fields, selectable lists/toggles, buttons and shared scrolling. A
+combo owns arrangement/selection composition, delegates universal input/focus/
+rendering, and needs no extra approval within approved feature implementation.
+If new primitive/style/template behavior is genuinely missing, report the gap
+and obtain explicit approval before adding it; this plan refinement does not
+grant that approval. Do not block unrelated slices on that UI decision.
 
-The shared primitives know nothing about Comix, genres, ratings, authors,
-artists, providers, or remote requests. Numeric fields use `SettingField` with
-feature-owned validation. Author/Artist lookup presentation stays inside
-Downloader until a second real consumer proves a general shared lookup
-component.
+Shared controls/combos know nothing about Comix, genres, ratings, authors,
+artists, providers, or requests. Numeric fields use `SettingField` with
+feature-owned validation. Author/Artist lookup presentation stays with the
+provider/Catalog feature; share only a proven provider-neutral composition.
 
 The Catalog grid may extract the visual frame of `MangaTitleCard` only if both
 local and remote consumers can use a screen-blind data/presentation contract.
 Local and remote models and actions remain separate; no adapter may fill a
-local `MangaTitle` with remote placeholders.
+local `MangaTitle` with remote placeholders. Extraction is optional, not a gate:
+an existing shared card/combo can host remote content without refactoring the
+local Library card. Do not redesign local UI to make Downloader possible.
 
 ## 11. Target file tree
 
-A folder is introduced only when a feature owns multiple cohesive files. No
-folder is created merely to contain one file.
+This is an ownership map, not a file-creation checklist. Reuse current files
+and introduce a folder/class only for a meaningful owner or real boundary.
+Do not make a hierarchy per method, enforce a file-count quota, or create empty
+layers for hypothetical future providers. Queue's pipeline remains inside
+Queue ownership until another actual consumer needs a narrower shared service.
 
 ```text
 module/mangareader/
 ├── MangaReaderView.xaml(.cs)                 add one Downloader tab only
-├── Downloader/
+├── Features/Downloader/
 │   ├── DownloaderView.xaml(.cs)              parent/router
-│   ├── DownloaderContract.cs                 context, route, typed events
+│   ├── DownloaderContract.cs                 narrow context, routes, commands/events
 │   ├── Catalog/
 │   │   ├── CatalogScreen.xaml(.cs)
 │   │   ├── CatalogCoordinator.cs
@@ -645,14 +753,16 @@ module/mangareader/
 │   │   ├── DownloadQueueCoordinator.cs
 │   │   ├── DownloadJob.cs
 │   │   ├── DownloadJobRunner.cs
-│   │   └── DownloadQueueStore.cs
-│   ├── Pipeline/
-│   │   ├── ChapterDownloadPipeline.cs
+│   │   ├── DownloadQueueStore.cs
+│   │   ├── ChapterDownloadPipeline.cs        owned by Queue, not a global pipeline
 │   │   ├── PageTransport.cs
 │   │   ├── PageRecoveryPolicy.cs
-│   │   ├── DownloadIdentity.cs
-│   │   ├── DownloadSourceIndex.cs
 │   │   └── CbzChapterPublisher.cs
+│   ├── DownloadIdentity.cs                   UI-free identity used by real consumers
+│   ├── DownloadSourceIndex.cs                mapping/publication index owner
+│   ├── DownloaderPyHostClient.cs             feature command/payload adapter
+│   ├── mangareader_downloader/               owned Python plugin; registered lazily
+│   │   └── plugin.py                         commands/lifecycle + cohesive files as needed
 │   └── Sources/
 │       ├── IMangaSource.cs
 │       ├── MangaSourceRegistry.cs
@@ -663,123 +773,162 @@ module/mangareader/
 │           ├── ComixContracts.cs
 │           ├── ComixFilterPanel.xaml(.cs)
 │           └── ComixPageDecoder.cs
-├── shareLogic/
-│   └── Archive/                              extend only generic publication seams
-└── Library/                                  typed refresh bridge, no remote logic
+├── shareLogic/Archive/                       reuse lock/validation/replacement, no rewrite
+├── CoverBuilder/                            feature contract, no screen/private-service calls
+└── Library/                                 root/refresh contract, no remote logic
 
 module/sharedLogic/
 ├── cs/
-│   └── PyHost.cs                             v1-compatible v2 client/event/cancel support
-└── pyhost/
-    ├── pyhost.py                             protocol dispatcher/lifecycle
-    ├── browser_runtime.py                    generic Camoufox backend
-    ├── README.md                             canonical v1+v2 protocol
-    └── tests/
-        └── test_pyhost.py
+│   └── PyHost.cs                             reuse transport; minimal additive gap only
+├── pyhost/
+│   ├── pyhost.py                             existing dispatcher/plugin/lifecycle owner
+│   └── README.md                             update actual protocol additions only
+└── tests/test_pyhost.py                      existing shared host regression owner
 
 setting/Components/
-├── MultiSelect.xaml(.cs)
-└── TagPicker.xaml(.cs)
+└── <reusable combo only if missing>          primitives require separate approval
 
 tests/
 ├── Module.Mangareader.Downloader.Tests/      linked pure feature sources
-└── Citadel.Uia/                              shared controls + live WPF contracts
+└── Citadel.Uia/                              relevant shared-control/WPF checks
 ```
 
 The citizen project remains outside `Citadel.slnx`; pure linked-source tests may
 be added to the solution like the existing Archive and Library test projects.
-No new third-party archive or UI dependency is required.
+No new third-party archive or UI dependency is required. The feature-owned
+Python package uses the existing `Citizen.targets` plugin deployment convention
+(`Features/*/<package>/*.py`) and a module project registration; C# shared-source
+inclusion follows the current citizen pattern. Verify both build and packaged
+payload. No copy of CamoProf internals, deployment framework, unconditional
+browser bootstrap, or provider-specific file in shared pyhost is required.
 
 ## 12. Implementation sequence
 
-### Phase 0 — clean baseline and live contract capture
+Each phase below is a coherent consumer path, not a demand to scaffold all
+models, controls and runtime capabilities before showing a result. Reuse
+existing checks; record `phase | files/owners | outcome | checks | pending` in
+this document. Do not repeat passing checks on unchanged inputs or create a
+second tracker. Gate only the phase that actually depends on a blocked contract.
 
-1. Start only after the unrelated Reader-control WIP is committed, removed, or
-   explicitly assigned; never overwrite it.
-2. Freeze exact Comix sort labels/query keys, filter tag IDs, page contract, and
-   public defaults as recorded fixtures without copying the extension runtime.
-3. Capture `I'm Feeling Lucky` only if it is explicitly retained; otherwise
-   leave it deferred.
-4. Add characterization tests proving current local CBZ loading ignores a
-   non-image `META-INF` entry and current Library refresh remains unchanged.
-5. Use disposable library/job roots. Never mutate `D:\[ MANGA ]` during tests.
+### Phase 0 — scoped baseline and contract capture
 
-### Phase 1 — pure domain and source contracts
+Owner: this plan, current integration contracts and research fixtures.
+Inspect live paths/callers, shared UI inventory and transport capabilities.
+Preserve unrelated WIP; coordinate overlapping edits, not a mandatory clean
+worktree/commit. During authorized implementation, revalidate Comix query keys,
+IDs/defaults and the page contract against current logged-out evidence. Keep
+Lucky deferred. Use disposable library/job roots, never the real collection.
 
-1. Implement normalized remote identities/models, immutable browse query, job
-   state machine, recovery policy, and explicit source registry.
-2. Implement Comix filter validation/serialization against captured fixtures.
-3. Implement deterministic target mapping, filename, source-index, and collision
-   policies as pure tests before network or WPF code.
+Gate: owner/consumer map and exact gaps are recorded; dated research is not
+claimed as live PASS. Reuse or add only missing characterization for non-image
+metadata and partial-file discovery before publication is implemented.
 
-### Phase 2 — PyHost v2 and generic browser backend
+### Phase 1 — minimal catalog contract and idle screen
 
-1. Characterize every v1 command and CamoProf caller before modifying transport.
-2. Add v2 event dispatch, cancellation, browser/session registry, locking,
-   destination containment, cleanup, and direct Camoufox backend.
-3. Preserve v1 request/response/error/lifecycle behavior exactly.
-4. Validate no orphan browser remains after shutdown, EOF, timeout, or parent
-   termination.
+Owner: Downloader composition, Catalog and source registration.
+Implement only identity/query/result types needed for Browse, one explicit
+source registration, and the idle Catalog composed from shared controls.
+Filter validation belongs to its feature; views remain adapters. Do not create
+the entire queue/decoder hierarchy here. Resolve required UI compositions under
+section 10 when this slice needs them, rather than waiting for a control framework.
 
-### Phase 3 — Comix adapter and catalog data path
+Gate: one tab, no remote activity on open/provider/input changes, local query
+validation and stable child-owned state. Check the actual UI/feature boundary
+with a controlled source and record live UI evidence separately.
+Dependency: Phase 0.
 
-1. Implement lazy bootstrap and signed Browse/search/detail/group/chapter/page
-   calls.
-2. Normalize remote data without leaking Comix DTOs outside the adapter.
-3. Implement Enter/Search-only author/artist lookup and explicit pagination.
-4. Add recorded-contract fixtures and an opt-in logged-out live smoke; regular
-   tests never depend on live Comix.
+### Phase 2 — explicit Browse through a feature-owned browser adapter
 
-### Phase 4 — queue, staging, decoder, and publisher
+Owner: Comix source, Downloader C#/Python adapter and its process lifetime.
+Wire Start -> lazy Camoufox -> one normalized Browse response -> Catalog.
+Reuse transport/plugin installation; add only the generic gap this request
+demonstrates. No mandatory v2 backend/registry rewrite. Cancellation, timeout,
+root separation and disposal must work for this real path before extension.
 
-1. Implement atomic queue/index stores and restart-to-Paused recovery.
-2. Implement native streaming plus browser fallback, size/time bounds, byte
-   format detection, hashes, and staging validation.
-3. Implement header-driven Comix decode with synthetic `5x5` round-trip and
-   captured algorithm-3 fixtures; unknown variants fail visibly.
-4. Implement first-pass continuation, failed-only recovery, source-fallback
-   state, completeness validation, and atomic CBZ publication.
+Gate: Start succeeds or reports a bounded error; latest-request-wins and
+shutdown/EOF cleanup hold. Run affected CamoProf transport checks if shared
+code changes. Regular tests use recorded/synthetic data; live smoke is opt-in.
+Dependency: Phase 1.
 
-### Phase 5 — missing shared controls
+### Phase 3 — catalog, filters and title/group selection end to end
 
-1. Implement `SettingMultiSelect` and `SettingTagPicker` with keyboard support,
-   visible focus, empty/disabled/error states, fluid sizing, shared styling,
-   cleanup, and UIA contracts.
-2. Do not add provider-specific options or remote behavior to shared controls.
-3. Reuse all existing shared fields/buttons/tables/scrollbars instead of local
-   templates.
+Owner: Catalog/TitleSelection and Comix source/filter feature.
+Extend the working Browse path to explicit pagination, Enter/Search-only
+lookups, detail/group/chapter/manifest discovery and Back restoration. Keep
+provider payloads local and preserve one active group. Add only contracts with
+actual consumers. Establish confirmed folder mapping through Library's contract.
 
-### Phase 6 — two-screen WPF integration
+Gate: public logged-out filter/selection path works, stale responses cannot
+commit, and remote models never masquerade as local title/card models.
+Dependency: Phase 2; relevant reusable filter combo from section 10.
 
-1. Add the one Downloader tab and small parent router.
-2. Build Catalog screen, provider/filter composition, card grid, internal title
-   detail state, one-group chapter selection, and queue badge.
-3. Build Download List screen and exact Back-to-Catalog state restoration.
-4. Prove opening/selecting/editing remains network-idle until an explicit
-   action.
-5. Keep Catalog responsive while queue events update through immutable
-   summaries.
+### Phase 4 — one queued chapter through publication, then recovery
 
-### Phase 7 — Library, fallback, cover, and cleanup
+Owner: Queue, its pipeline/store/publisher and source-owned decoder.
+First deliver queue intent -> staged pages -> validated CBZ -> Library refresh
+for one selected chapter. Then add restart-to-Paused, bounded concurrency,
+native streaming/browser fallback, failed-only recovery and source-fallback
+state around that same path; no parallel downloader/archive implementation.
+Use existing archive locks/validation and implement source transforms behind
+the source boundary. Reconcile crash-after-rename before retrying publication.
 
-1. Complete explicit title-folder mapping and Library refresh bridge.
-2. Complete cross-group candidate presentation and whole-chapter replacement.
-3. Reuse Cover Builder for optional post-batch cover bake.
-4. Delete superseded helpers, duplicate templates, compatibility wrappers, and
-   temporary fixtures; do not retain a second download/archive path.
-5. Update canonical docs/tasklist only after each gate passes.
+Gate: a complete chapter opens locally; missing/unknown/corrupt pages never
+publish; resume reuses only validated matching staging. Targeted fault checks
+cover retry bounds, pause, manifest change, collision and publication recovery.
+Dependency: Phase 3. UI for queue progress/actions is consumed in Phase 6.
 
-### Phase 8 — full validation and handoff
+### Phase 5 — shared-composition completion (only remaining gaps)
 
-1. Run pure Downloader, Archive, Library, PyHost v1/v2, shared component, and
-   full solution tests with bounded parallelism.
-2. Build MangaReader Debug and Release directly and verify isolated deployment.
-3. Run live WPF Catalog/Download List QA at minimum, normal, and maximized
-   window sizes.
-4. Run one opt-in complete logged-out Comix chapter through a disposable local
-   library, including app restart/pause/resume and final Reader open.
-5. Do not commit, bump a version, build an installer, or publish a release
-   unless separately requested.
+Owner: existing shared components/combos and provider filter presentation.
+Reuse compositions already delivered with Catalog. Add a reusable combo only
+where the inventory is insufficient; do not automatically create MultiSelect
+and TagPicker primitives. Any genuine new primitive/style/template requires
+approval under section 10. Keep provider options and remote calls outside shared UI.
+
+Gate: relevant keyboard/focus/selection/disabled/fluid-layout/cleanup behavior
+works. If existing controls already cover it, mark satisfied; no new file/test
+suite is required just to have a Phase 5 deliverable.
+Dependency: actual UI consumer; may be completed within Phases 1-3.
+
+### Phase 6 — Download List and two-screen routing
+
+Owner: DownloadList presentation and Downloader route host.
+Connect queue commands/snapshots to Download List, accessible only from the
+Catalog button. Back restores Catalog state without fetching. Route changes
+never dispose Queue; immutable progress updates are marshalled by the WPF
+adapter, not by WPF code inside Queue. Verify all specified queue actions.
+
+Gate: background job continues while Catalog is visible; screens do not share
+mutable state or call sibling internals; open/select/type remain network-idle.
+Dependency: Phases 3-4 and any remaining Phase 5 capability.
+
+### Phase 7 — fallback, cover and integration cleanup
+
+Owner: Queue/Comix fallback plus Library and CoverBuilder feature contracts.
+Finish alternate-group confirmation and whole-chapter replacement, optional
+post-batch cover bake, and publication refresh. Preserve independent source
+identities and warn without invalidating published chapters on cover failure.
+Delete directly superseded paths/temporary harnesses after caller checks;
+retain the small sanitized regression fixtures actually used by tests.
+
+Gate: no mixed-group archive, no silent folder claiming, no private sibling
+service access, and no leftover alternate download path.
+Dependency: Phases 4 and 6.
+
+### Phase 8 — integration validation and handoff
+
+Build MangaReader Release directly and verify isolated deployment including
+its Python plugin. Build CamoProf/Shell when shared changes affect them; Debug
+is additional only for a concrete configuration concern. Reuse per-phase test
+evidence, then run the solution suite once with bounded parallelism for final
+shared integration. Diagnose failures locally instead of looping full suites.
+
+Live gates: Catalog/Download List at minimum, normal and maximized sizes; one
+opt-in complete Comix chapter in a disposable library, restart/pause/resume and
+Reader open. CamoProf smoke remains necessary if shared runtime behavior changed.
+Unavailable live evidence remains PENDING, not an implied PASS.
+Do not commit, bump, build an installer or publish unless separately requested.
+Dependency: all required outcomes above, not a prescribed number of files/tests.
 
 ## 13. Validation matrix
 
@@ -800,10 +949,10 @@ No new third-party archive or UI dependency is required.
 | publication | expected count/order/decode/ZIP/source manifest validated; no partial final path on any injected failure |
 | Reader regression | non-image metadata is ignored; final CBZ opens; cover still selects the first supported image |
 | PyHost v1 | all existing CamoProf commands and error/lifecycle contracts remain green |
-| PyHost v2 | events, cancellation, path escape, response size, locking, timeout, EOF, disconnect, and orphan cleanup pass |
+| Downloader transport capabilities | actually added cancellation/events, path containment, response bounds, locking, timeout, EOF/disconnect and owned-process cleanup pass; no required v2 rewrite |
 | shared controls | keyboard, focus, selection, chips, fluid layout, unload/cleanup, and UIA behavior pass |
 | full regression | current `Citadel.slnx` suite passes after integration |
-| citizen builds | MangaReader Debug/Release build and deploy with zero warnings/errors and no private shared Citadel DLLs |
+| citizen builds | MangaReader Release and affected citizens build/deploy cleanly with the Downloader plugin present and no private shared Citadel DLLs; Debug only if configuration-specific risk exists |
 | hygiene | `git diff --check`; no runtime profiles, pages, CBZ fixtures, secrets, caches, or queue data tracked |
 
 ### 13.2 Live WPF gates
@@ -836,15 +985,17 @@ fixture PASS cannot be reported as a current live PASS.
 | provider DTO leaks into app | adapter normalizes at its boundary |
 | title name maps to wrong local folder | identity mapping requires first-use confirmation |
 | one broken page blocks all later pages | FailedPageSet records it and first pass continues |
-| partial chapter appears complete | final path exists only after full validation and atomic commit |
+| partial chapter appears complete | incomplete temporary files are not discoverable; final path exists only after full validation and atomic rename |
+| crash after rename before queue save | reconcile final provenance/identity with durable job intent; never blindly delete or publish twice |
 | fallback mixes translations | cross-group recovery always replaces the whole chapter |
 | signed URL expires during resume | refresh same-source manifest, then validate identity before reuse |
 | browser download escapes staging | canonical allowed-root containment in C# and Python |
-| PyHost v2 breaks CamoProf | v1 characterization and regression gate before integration |
+| shared transport extension breaks CamoProf | keep feature commands local; verify affected v1 contracts before integration |
 | browser remains after app exit | EOF/finally/graceful close/process-tree escalation contract |
 | source site changes filter/API | Comix contract/version remains inside its adapter and fixtures fail visibly |
 | shared UI gains Comix logic | shared controls accept generic items/state only |
-| Catalog state is lost on queue view | separate child state retained by parent route host |
+| Catalog state is lost on queue view | Catalog owns state; route host preserves child lifetime without owning/mutating that state |
+| screen navigation stops a job | Queue is owned by module lifetime, not DownloadListScreen |
 | update removes profiles/queue | all mutable state remains under LocalAppData |
 
 ## 15. Done definition
@@ -856,8 +1007,12 @@ survives restart without auto-resuming; page failures continue then recover
 only failed pages; a cross-group fallback can never mix individual pages; every
 published CBZ is complete, validated, provenance-tagged, atomically committed,
 visible in the local Library, and readable by the existing Reader; all shared
-UI is reused or promoted without provider logic; PyHost v1 remains compatible;
-and automated plus available live WPF gates pass before any PASS claim.
+UI is reused or approved/promoted without provider logic; existing CamoProf
+transport remains compatible; and relevant automated, live WPF and live chapter
+gates pass. If implementation/build checks pass but required live evidence is
+unavailable, report IMPLEMENTATION COMPLETE / LIVE VERIFICATION PENDING, not
+the whole goal complete. Do not broaden this task into unrelated repairs merely
+to clear every older repository issue.
 
 ## 16. Explicit non-goals
 
@@ -878,7 +1033,10 @@ and automated plus available live WPF gates pass before any PASS claim.
 - adding a third-party UI or archive dependency; and
 - commit, version bump, installer build, or release publication.
 
-There are no remaining open product decisions in this Downloader plan. Any
-change to screen count, trigger policy, source/group fallback, identity,
-persistence, output integrity, browser backend, or local-folder mapping must be
-reviewed as a plan change before implementation.
+The product choices above stay locked. Implementation details are resolved from
+current owners/consumers, not treated as pre-approved infrastructure or primitive
+creation. Ask only for a genuine missing capability approval or material product
+change; do not repeatedly ask permission for normal steps already authorized.
+Changes to screen count, trigger policy, source/group fallback, identity,
+persistence, output integrity, browser choice or local-folder mapping require
+review as a plan change before implementation.

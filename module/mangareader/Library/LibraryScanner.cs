@@ -1,8 +1,13 @@
 using System.IO;
 using Module.Mangareader.Archive;
+using Module.Mangareader.ShareLogic;
 
-namespace Module.Mangareader.ShareLogic;
+namespace Module.Mangareader.Library;
 
+/// <summary>
+/// Library-private folder scan. LibraryView is the only consumer, so this
+/// lives with the feature rather than in shared logic.
+/// </summary>
 public sealed class LibraryScanner
 {
     private static readonly HashSet<string> ChapterExtensions = new(
