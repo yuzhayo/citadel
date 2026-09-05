@@ -2,6 +2,7 @@ using System.Windows;
 using System.Windows.Automation;
 using System.Windows.Controls;
 using Citadel.Setting.Components;
+using Module.Mangareader.ReaderCore;
 using Module.Mangareader.ShareLogic;
 
 namespace Module.Mangareader;

@@ -246,7 +246,7 @@ Smoke akhir cukup satu daftar representatif yang menggabungkan fase: CamoProf ad
 - [ ] P1 — Adapter Add Profile tunggal, generic gated transport.
 - [ ] P2 — Launcher action ownership. IMPLEMENTATION COMPLETE / LIVE VERIFICATION PENDING — lihat Checkpoint P2.
 - [ ] P3 — Ownership MangaReader dan domain-only feature contracts. IMPLEMENTATION COMPLETE / LIVE VERIFICATION PENDING — lihat Checkpoint P3.
-- [ ] P4 — Common Reader contribution ownership.
+- [ ] P4 — Common Reader contribution ownership. IMPLEMENTATION COMPLETE / LIVE VERIFICATION PENDING — lihat Checkpoint P4.
 - [ ] P5 — Chapter Selector shared template.
 - [ ] P6 — Sidebar shared scrollbar.
 - [ ] Cleanup caller/compile/deploy references selesai.
@@ -351,6 +351,46 @@ Bukti privat: grep seluruh repo menunjukkan tidak ada consumer di luar fitur pem
 - P4–P6 tidak disentuh. P0 masih pending.
 - `.docs/PLAN-mangareader-downloader.md` ikut berubah di worktree selama P3 berjalan (reconcile Yuzskill bertanggal 2026-09-05, inspeksi HEAD `3158dee`), BUKAN oleh pekerjaan ini. Dibiarkan utuh sesuai batas "pertahankan perubahan user/agent lain".
 - Worktree masih memuat perubahan P2 yang belum di-commit; keduanya dibiarkan tanpa commit sesuai instruksi.
+
+### Checkpoint P4 — 2026-09-05
+
+**Phase/status:** P4 / IMPLEMENTATION COMPLETE, LIVE VERIFICATION PENDING. Baseline aktual: HEAD `7cdc338` — P2 dan P3 sudah ter-commit dan worktree bersih sebelum P4 dimulai, jadi catatan "P2 belum di-commit" di Checkpoint P3 sudah tidak berlaku.
+
+**File dipindah (1):**
+
+- `Reader/Features/Drawer/ReaderDrawerContributions.cs` → `Reader/ReaderCore/ReaderDrawerContributions.cs`, namespace `Module.Mangareader` → `Module.Mangareader.ReaderCore` mengikuti konvensi folder ReaderCore. Isi kedua tipe tidak berubah; yang ditambah hanya doc comment yang menyatakan ownership. File lama dihapus, tidak ada wrapper atau salinan kedua.
+
+**File berubah (3):**
+
+- `Reader/Features/Drawer/ReaderDrawer.xaml` — tambah `xmlns:core`, dan `DataType` implicit DataTemplate menjadi `core:ReaderDrawerCardContribution`. Isi template (`ContentPresenter Content="{Binding Card}"`) dan layout tidak berubah.
+- `Reader/Features/ChapterNavigation/ReaderChapterNavigation.cs` — tambah `using Module.Mangareader.ReaderCore;`. Ini satu-satunya dari tujuh consumer yang belum meng-import namespace itu; enam lainnya sudah.
+- `tests/Module.Mangareader.Reader.Tests/Module.Mangareader.Reader.Tests.csproj` — Compile Include dan Link dipindah ke `Reader\ReaderCore\ReaderDrawerContributions.cs`.
+
+**Keputusan ownership:**
+
+- Bukti yang membenarkan pemindahan: grep menunjukkan `ReaderDrawer.xaml.cs` sebagai host TIDAK pernah memakai `ReaderDrawerCardContribution` maupun `ReaderDrawerCards` — ia hanya memakai `ReaderDrawerContribution` abstrak dari `ReaderFeatureContract.cs`. Ketujuh pemakai tipe konkrit adalah sibling: AutoScroll, Zoom, Dim, Pin, Reset, Fullscreen, ChapterNavigation. Jadi keduanya memang kontrak bersama Reader yang kebetulan tersimpan di internal satu fitur.
+- Kontrak abstrak (`ReaderDrawerContribution`, `IReaderDrawerContributionProvider`, `IReaderDrawerContributionHost`) SENGAJA tetap di `Reader/ReaderFeatureContract.cs`. Memindahkannya ke ReaderCore akan mengganti namespace dua interface yang dipakai 7 fitur + Drawer + `ReaderFeatureHost` + test demi kosmetik — persis yang plan larang. Yang dihapus adalah kepemilikan Drawer atas kontrak bersama, bukan lokasi file kontrak utama.
+- `ReaderDrawerCards` tetap `internal static` dan tetap hanya memakai `SettingCardStyle`/`SettingBodyStyle` melalui `SetResourceReference`. Tidak ada primitive, template, style, atau behavior baru; approval boundary shared UI tidak tersentuh.
+- Drawer tetap hanya mengurutkan dan menampilkan: `ReaderFeatureHost` yang mengurutkan (`OrderBy(Order).ThenBy(Key)`, plus guard duplicate key) lalu memanggil `SetContributions`; Drawer menampilkannya lewat implicit DataTemplate. Ordering, guard, dan layout card tidak diubah.
+- Guard "tepat satu Drawer contribution host" di `ReaderFeatureHost.cs` tidak disentuh; Drawer tetap required role dan tidak dijadikan optional.
+- `ReaderDefaultFeatureCatalog` tetap satu-satunya registration point dan tidak berubah. Setelah P4, satu-satunya referensi ke kelas `ReaderDrawer` di luar folder Drawer adalah baris registrasi di catalog itu.
+- `ReaderDrawerPolicy` tetap internal Drawer karena satu-satunya consumer adalah `ReaderDrawer.xaml.cs`.
+- **`ChapterSurfaceModel` TIDAK dipindah, dengan bukti.** Consumer mapping-nya memang Reader-saja (ChapterLoadingFeature, ChapterPreloader, ChapterCoordinator, ReaderChapterNavigationHub, ReaderFeatureContract), jadi syarat plan terpenuhi. Tetapi ia satu grup kohesif dengan `ChapterLoadingContracts.cs` (`LoadedChapter`, `LoadedPage`, `PageRenderQuality`, `ChapterRenderRequest`) yang consumer-nya persis sama dan semuanya masih di `shareLogic`. Memindahkan hanya `ChapterSurfaceModel` memecah grup itu ke dua namespace tanpa mengurangi coupling apa pun, sedangkan memindahkan seluruh grup berarti "memindahkan seluruh shareLogic" yang dilarang batas fase ini.
+
+**Checks aktual:**
+
+- `dotnet build module/mangareader/Module.Mangareader.csproj -c Release -p:CitizenRuntimeRoot=<temp>` → Build succeeded, 0 Warning, 0 Error. Deploy dialihkan ke temp agar output Shell yang sedang dipakai tidak tersentuh; temp sudah dibersihkan. XAML WPF dikompilasi saat build, jadi `{x:Type core:ReaderDrawerCardContribution}` yang tidak resolve akan menggagalkan build — resolusi tipe template terbukti, tetapi itu BUKAN bukti tampilan.
+- `dotnet test tests/Module.Mangareader.Reader.Tests -c Release` → 97/97 passed, 0 failed, 0 skipped (run segar). Suite ini yang relevan: `ReaderControllerTests` memuat 9 assertion `Assert.IsType<ReaderDrawerCardContribution>` untuk card tiap fitur, dan `ReaderFeatureHostTests` menguji guard satu-host, ordering, serta duplicate key.
+- Library dan Archive tests tidak dijalankan ulang karena P4 tidak menyentuh satu pun file yang mereka link (diperiksa dari Compile Include csproj masing-masing).
+- Grep memastikan tidak ada sisa referensi path lama di csproj/cs/md, dan tidak ada sibling yang masih membutuhkan file internal Drawer untuk mendefinisikan card.
+- `git diff --check` bersih. Satu artifact build `*_wpftmp.csproj` sisa WPF markup-compile pass ditemukan untracked dan dihapus; bukan file sumber.
+- Tidak ada test baru: pemindahan ini tidak mengubah perilaku apa pun dan behavior card/host sudah tercakup 97 test existing. Menambah test per class/getter dilarang instruksi fase ini.
+
+**Pending/next:**
+
+- LIVE VERIFICATION PENDING — belum ada bukti visual sama sekali. Perlu smoke native: buka/tutup Drawer, Pin, lalu tiap card control (Zoom, Dim, kecepatan Auto-scroll, Fullscreen, Reset, chapter picker) pada window normal; pastikan urutan card, layout, hover/focus, dan accessible name tidak berubah.
+- P5 dan P6 tidak disentuh. P0 masih pending dan tidak menghalangi P4.
+- Perubahan P4 belum di-commit sesuai instruksi.
 
 Laporan akhir kepada user: ringkas perubahan ownership, kode redundant yang dihapus dan bukti tidak ada caller, hasil build/test aktual, status live yang jujur, serta sisa blocker. Jangan menyatakan goal selesai hanya karena token menipis atau semua file sudah dipindahkan.
 

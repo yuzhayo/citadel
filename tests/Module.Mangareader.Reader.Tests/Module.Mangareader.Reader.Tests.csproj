@@ -54,8 +54,8 @@
              Link="Reader\Features\Drawer\ReaderDrawer.xaml.cs">
       <DependentUpon>ReaderDrawer.xaml</DependentUpon>
     </Compile>
-    <Compile Include="..\..\module\mangareader\Reader\Features\Drawer\ReaderDrawerContributions.cs"
-             Link="Reader\Features\Drawer\ReaderDrawerContributions.cs" />
+    <Compile Include="..\..\module\mangareader\Reader\ReaderCore\ReaderDrawerContributions.cs"
+             Link="Reader\ReaderCore\ReaderDrawerContributions.cs" />
     <Compile Include="..\..\module\mangareader\Reader\Features\Drawer\ReaderDrawerPolicy.cs"
              Link="Reader\Features\Drawer\ReaderDrawerPolicy.cs" />
     <Compile Include="..\..\module\mangareader\Reader\ReaderFeatureCatalog.cs"
