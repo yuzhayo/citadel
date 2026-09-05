@@ -2,6 +2,7 @@ using System.IO;
 using System.Text.Json.Nodes;
 using CitadelBridge;
 using Module.Camoprof.Features.AddProfile;
+using Module.Camoprof.SharedLogic;
 using Xunit;
 
 namespace Module.Camoprof.Tests;
@@ -274,6 +275,48 @@ public class AddProfileCoordinatorTests
 
         Assert.Equal(AddProfileOutcome.Expired, result.Outcome);
         Assert.Equal(new[] { "armed", "challenge", "expired" }, collected.States);
+    }
+
+    [Theory]
+    [InlineData("start")]
+    [InlineData("status")]
+    [InlineData("finish")]
+    [InlineData("cancel")]
+    public async Task Session_commands_carry_session_id_in_payload(string operation)
+    {
+        const string profile = "test-profile";
+        const string sessionId = "resolved-session-id";
+        var requests = new List<(string Command, JsonObject Payload)>();
+        using var sessions = new BrowserSessionCoordinator(
+            profile, sessionId, (command, payload, token) =>
+            {
+                requests.Add((command, (JsonObject)payload.DeepClone()));
+                return Task.FromResult(new JsonObject());
+            });
+        var client = new AddProfilePyHostClient(sessions);
+
+        // Real feature adapter -> real session dispatcher -> captured process I/O.
+        switch (operation)
+        {
+            case "start":
+                await client.StartAsync(profile, "user@example.com", default);
+                break;
+            case "status":
+                await client.StatusAsync(profile, default);
+                break;
+            case "finish":
+                await client.FinishAsync(profile, default);
+                break;
+            case "cancel":
+                await client.CancelAsync(profile, default);
+                break;
+        }
+
+        var request = Assert.Single(requests);
+        Assert.Equal("camoprof.add_profile." + operation, request.Command);
+        Assert.Equal(sessionId, request.Payload["session"]?.GetValue<string>());
+        if (operation == "start")
+            Assert.Equal("user@example.com", request.Payload["expected_email"]?.GetValue<string>());
     }
 
     private sealed class CollectingProgress : IProgress<AddProfileUpdate>

@@ -163,61 +163,6 @@ public sealed class PyHost : IDisposable
                 cancellationToken)
             .ConfigureAwait(false);
 
-    /// <summary>
-    /// Add Profile plugin commands (camoprof.add_profile.*). Start arms the capture listener
-    /// BEFORE navigating the enrollment page to Google's sign-in, so the
-    /// response returning means capture is live. Status never carries
-    /// plaintext. Finish is the ONLY command whose response contains a
-    /// secret, exactly once — the caller must treat it as confidential and
-    /// is responsible for not forwarding it to UI layers. Cancel is an
-    /// idempotent full teardown.
-    /// </summary>
-    public async Task<JsonObject> StartAddProfileAsync(
-        string sessionId,
-        string? expectedEmail = null,
-        CancellationToken cancellationToken = default)
-    {
-        var parameters = new JsonObject { ["session"] = sessionId };
-        if (!string.IsNullOrWhiteSpace(expectedEmail))
-        {
-            parameters["expected_email"] = expectedEmail;
-        }
-
-        return await SendAsync(
-                "camoprof.add_profile.start",
-                parameters,
-                DefaultTimeout,
-                cancellationToken)
-            .ConfigureAwait(false);
-    }
-
-    public async Task<JsonObject> AddProfileStatusAsync(
-        string sessionId, CancellationToken cancellationToken = default)
-        => await SendAsync(
-                "camoprof.add_profile.status",
-                new JsonObject { ["session"] = sessionId },
-                DefaultTimeout,
-                cancellationToken)
-            .ConfigureAwait(false);
-
-    public async Task<JsonObject> AddProfileFinishAsync(
-        string sessionId, CancellationToken cancellationToken = default)
-        => await SendAsync(
-                "camoprof.add_profile.finish",
-                new JsonObject { ["session"] = sessionId },
-                DefaultTimeout,
-                cancellationToken)
-            .ConfigureAwait(false);
-
-    public async Task<JsonObject> AddProfileCancelAsync(
-        string sessionId, CancellationToken cancellationToken = default)
-        => await SendAsync(
-                "camoprof.add_profile.cancel",
-                new JsonObject { ["session"] = sessionId },
-                DefaultTimeout,
-                cancellationToken)
-            .ConfigureAwait(false);
-
     public async Task<JsonObject> CloseSessionAsync(
         string sessionId, CancellationToken cancellationToken = default)
         => await SendAsync(

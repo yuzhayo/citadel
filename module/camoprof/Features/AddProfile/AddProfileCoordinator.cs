@@ -39,15 +39,12 @@ internal sealed class AddProfileCoordinator
     {
         _sessions = sessions;
         _credentials = credentials;
+        var client = new AddProfilePyHostClient(sessions);
         EnsureHeadedSessionAsync = EnsureHeadedSessionCoreAsync;
-        StartAsync = (profile, expectedEmail, token)
-            => sessions.StartAddProfileAsync(profile, expectedEmail, token);
-        StatusAsync = (profile, token)
-            => sessions.AddProfileStatusAsync(profile, token);
-        FinishAsync = (profile, token)
-            => sessions.AddProfileFinishAsync(profile, token);
-        CancelAsync = async (profile, token) =>
-            await sessions.AddProfileCancelAsync(profile, token);
+        StartAsync = client.StartAsync;
+        StatusAsync = client.StatusAsync;
+        FinishAsync = client.FinishAsync;
+        CancelAsync = client.CancelAsync;
         CloseSessionAsync = (profile, token)
             => sessions.CloseAsync(profile, token);
         SaveCredentialAsync = (profile, email, password, token)

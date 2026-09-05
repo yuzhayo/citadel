@@ -29,8 +29,27 @@ internal sealed class BrowserSessionCoordinator : IDisposable
         new(StringComparer.OrdinalIgnoreCase);
     private readonly SemaphoreSlim _operationGate = new(1, 1);
     private readonly object _sync = new();
+    private readonly Func<string, JsonObject, CancellationToken, Task<JsonObject>> _sendSessionCommand;
     private PyHost? _host;
     private int _disposed;
+
+    public BrowserSessionCoordinator()
+    {
+        _sendSessionCommand = (command, payload, token) =>
+            EnsureHost().SendAsync(command, payload, TimeSpan.FromSeconds(120), token);
+    }
+
+    // Test boundary: seed a known session and replace only process I/O.
+    // Lookup, payload construction, gating and cleanup still run normally.
+    internal BrowserSessionCoordinator(
+        string profile,
+        string sessionId,
+        Func<string, JsonObject, CancellationToken, Task<JsonObject>> sendSessionCommand)
+        : this()
+    {
+        _sendSessionCommand = sendSessionCommand;
+        _sessions.Add(profile, new SessionRegistration(sessionId, false));
+    }
 
     public event EventHandler<ProfileSessionChangedEventArgs>? SessionChanged;
 
@@ -197,15 +216,16 @@ internal sealed class BrowserSessionCoordinator : IDisposable
     }
 
     /// <summary>
-    /// Add Profile routing. Status is a fast local call on the host — safe to
-    /// poll at 500 ms behind the operation gate. AddProfileFinishAsync
-    /// is the one command whose response carries a secret; it is only ever
-    /// called by the Add Profile coordinator, which stores the credential
-    /// before returning a non-secret result. Launcher/UI layers never see it.
+    /// Generic session-scoped command dispatcher: resolves the profile's
+    /// session ID, sends the command through PyHost, and handles
+    /// BROWSER_GONE. Preserves operation gate, disposal checks, and
+    /// session cleanup on browser failure. Features build their own
+    /// command names and payloads; this method owns session safety.
     /// </summary>
-    public async Task<JsonObject> StartAddProfileAsync(
+    public async Task<JsonObject> SendSessionCommandAsync(
         string profile,
-        string? expectedEmail,
+        string command,
+        JsonObject? parameters,
         CancellationToken cancellationToken = default)
     {
         await _operationGate.WaitAsync(cancellationToken);
@@ -216,68 +236,13 @@ internal sealed class BrowserSessionCoordinator : IDisposable
                 ?? throw new PyHostException(
                     "SESSION_NOT_FOUND",
                     "tidak ada session terbuka untuk '" + profile + "'");
-            try
-            {
-                return await EnsureHost().StartAddProfileAsync(
-                    session.SessionId, expectedEmail, cancellationToken);
-            }
-            catch (PyHostException ex) when (ex.Code == "BROWSER_GONE")
-            {
-                Forget(profile);
-                throw;
-            }
-        }
-        finally
-        {
-            _operationGate.Release();
-        }
-    }
 
-    public async Task<JsonObject> AddProfileStatusAsync(
-        string profile,
-        CancellationToken cancellationToken = default)
-    {
-        await _operationGate.WaitAsync(cancellationToken);
-        try
-        {
-            ThrowIfDisposed();
-            var session = GetSession(profile)
-                ?? throw new PyHostException(
-                    "SESSION_NOT_FOUND",
-                    "tidak ada session terbuka untuk '" + profile + "'");
-            try
-            {
-                return await EnsureHost().AddProfileStatusAsync(
-                    session.SessionId, cancellationToken);
-            }
-            catch (PyHostException ex) when (ex.Code == "BROWSER_GONE")
-            {
-                Forget(profile);
-                throw;
-            }
-        }
-        finally
-        {
-            _operationGate.Release();
-        }
-    }
+            var payload = parameters ?? new JsonObject();
+            payload["session"] = session.SessionId;
 
-    public async Task<JsonObject> AddProfileFinishAsync(
-        string profile,
-        CancellationToken cancellationToken = default)
-    {
-        await _operationGate.WaitAsync(cancellationToken);
-        try
-        {
-            ThrowIfDisposed();
-            var session = GetSession(profile)
-                ?? throw new PyHostException(
-                    "SESSION_NOT_FOUND",
-                    "tidak ada session terbuka untuk '" + profile + "'");
             try
             {
-                return await EnsureHost().AddProfileFinishAsync(
-                    session.SessionId, cancellationToken);
+                return await _sendSessionCommand(command, payload, cancellationToken);
             }
             catch (PyHostException ex) when (ex.Code == "BROWSER_GONE")
             {
@@ -292,12 +257,14 @@ internal sealed class BrowserSessionCoordinator : IDisposable
     }
 
     /// <summary>
-    /// Best-effort idempotent teardown. A missing local session means the
-    /// pyhost-side enrollment was already disarmed by the session-death
-    /// lifecycle hook, so the absence is reported rather than thrown.
+    /// Generic session-scoped nullable command dispatcher: like
+    /// SendSessionCommandAsync, but returns null when no session is
+    /// tracked instead of throwing. Best-effort idempotent teardown.
     /// </summary>
-    public async Task<JsonObject?> AddProfileCancelAsync(
+    public async Task<JsonObject?> SendSessionCommandOrNullAsync(
         string profile,
+        string command,
+        JsonObject? parameters,
         CancellationToken cancellationToken = default)
     {
         await _operationGate.WaitAsync(cancellationToken);
@@ -310,10 +277,12 @@ internal sealed class BrowserSessionCoordinator : IDisposable
                 return null;
             }
 
+            var payload = parameters ?? new JsonObject();
+            payload["session"] = session.SessionId;
+
             try
             {
-                return await EnsureHost().AddProfileCancelAsync(
-                    session.SessionId, cancellationToken);
+                return await _sendSessionCommand(command, payload, cancellationToken);
             }
             catch (PyHostException ex) when (ex.Code == "BROWSER_GONE")
             {
