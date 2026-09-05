@@ -39,8 +39,23 @@ def _log(msg):
     print("[pyhost] " + msg, file=sys.stderr, flush=True)
 
 
+MAX_RESPONSE_BYTES = 4 * 1024 * 1024
+
+
 def _respond(obj):
-    sys.stdout.write(json.dumps(obj, ensure_ascii=False) + "\n")
+    """Tulis satu baris respons. Batas 4 MiB ditegakkan SEBELUM menulis:
+    envelope yang terlalu besar diganti error RESPONSE_TOO_LARGE yang kecil dan
+    stabil, bukan dikirim sebagai baris tak terbatas yang harus di-buffer host."""
+    line = json.dumps(obj, ensure_ascii=False)
+    size = len(line.encode("utf-8"))
+    if size > MAX_RESPONSE_BYTES:
+        rid = obj.get("id") if isinstance(obj, dict) else None
+        line = json.dumps(
+            _err(rid, "RESPONSE_TOO_LARGE",
+                 "respons %d byte melebihi batas %d byte"
+                 % (size, MAX_RESPONSE_BYTES)),
+            ensure_ascii=False)
+    sys.stdout.write(line + "\n")
     sys.stdout.flush()
 
 

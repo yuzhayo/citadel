@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using System.Diagnostics;
+using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 
@@ -74,6 +75,7 @@ public sealed class PyHost : IDisposable
         };
         startInfo.ArgumentList.Add("-u"); // unbuffered: NDJSON must flush per line
         startInfo.ArgumentList.Add(pyhostScript);
+        startInfo.Environment["PYTHONIOENCODING"] = "utf-8";
         startInfo.Environment["CITADEL_CREDENZ"] = credenzDir;
         if (!string.IsNullOrWhiteSpace(pyhostPlugins))
         {
@@ -351,6 +353,74 @@ public sealed class PyHost : IDisposable
         }
     }
 
+    /// <summary>
+    /// Ceiling on one materialized response line. Python refuses to write an
+    /// envelope larger than the same 4 MiB UTF-8 bound, so reaching this on the
+    /// C# side means stdout stopped being a protocol stream. Counted in
+    /// characters, which bounds the allocation for the ASCII-dominant protocol
+    /// without ever reading the line to completion first.
+    /// </summary>
+    private const int MaximumResponseLineCharacters = 4 * 1024 * 1024;
+
+    private readonly char[] _lineBuffer = new char[8192];
+    private readonly StringBuilder _lineBuilder = new();
+    private int _lineBufferStart;
+    private int _lineBufferCount;
+
+    /// <summary>
+    /// Reads one newline-terminated line, stopping as soon as the ceiling is
+    /// passed. Not thread-safe: it keeps leftover characters buffered between
+    /// calls, so it belongs to the single read loop. Returns null at end of
+    /// stream, after yielding a trailing partial line if one was in progress.
+    /// </summary>
+    private async Task<string?> ReadBoundedLineAsync()
+    {
+        _lineBuilder.Clear();
+        while (true)
+        {
+            if (_lineBufferStart >= _lineBufferCount)
+            {
+                _lineBufferCount = await _process.StandardOutput
+                    .ReadAsync(_lineBuffer.AsMemory(0, _lineBuffer.Length))
+                    .ConfigureAwait(false);
+                _lineBufferStart = 0;
+                if (_lineBufferCount == 0)
+                {
+                    return _lineBuilder.Length == 0 ? null : TakeBufferedLine();
+                }
+            }
+
+            while (_lineBufferStart < _lineBufferCount)
+            {
+                var character = _lineBuffer[_lineBufferStart++];
+                if (character == '\n')
+                {
+                    return TakeBufferedLine();
+                }
+
+                if (character == '\r')
+                {
+                    continue;
+                }
+
+                _lineBuilder.Append(character);
+                if (_lineBuilder.Length > MaximumResponseLineCharacters)
+                {
+                    throw new PyHostException(
+                        "RESPONSE_TOO_LARGE",
+                        "pyhost response exceeded " + MaximumResponseLineCharacters + " characters");
+                }
+            }
+        }
+    }
+
+    private string TakeBufferedLine()
+    {
+        var line = _lineBuilder.ToString();
+        _lineBuilder.Clear();
+        return line;
+    }
+
     private async Task ReadLoopAsync()
     {
         Exception? endedBy = null;
@@ -358,7 +428,7 @@ public sealed class PyHost : IDisposable
         {
             while (true)
             {
-                var line = await _process.StandardOutput.ReadLineAsync().ConfigureAwait(false);
+                var line = await ReadBoundedLineAsync().ConfigureAwait(false);
                 if (line is null)
                 {
                     break; // EOF — the host exited or closed its end.
@@ -410,10 +480,14 @@ public sealed class PyHost : IDisposable
         }
 
         // The read loop is the truth about the process being gone: every
-        // outstanding request fails at once instead of hanging to timeout.
-        var gone = new PyHostException(
-            "HOST_EXITED",
-            endedBy?.Message ?? "pyhost closed stdout (EOF)");
+        // outstanding request fails at once instead of hanging to timeout. A
+        // protocol failure keeps its own stable code so callers can tell an
+        // oversized response from a vanished host.
+        var gone = endedBy is PyHostException protocol
+            ? protocol
+            : new PyHostException(
+                "HOST_EXITED",
+                endedBy?.Message ?? "pyhost closed stdout (EOF)");
         foreach (var pair in _pending)
         {
             if (_pending.TryRemove(pair.Key, out var completion))

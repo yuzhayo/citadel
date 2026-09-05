@@ -17,6 +17,13 @@ fix the code.
   treat any non-JSON stdout line as a bug in pyhost.
 - Requests are processed **sequentially**, each bounded by a timeout:
   default **120 s**, overridable per request via `"timeout": <seconds>`.
+- **One response line is bounded at 4 MiB of UTF-8.** pyhost refuses to write a
+  larger envelope and substitutes a small `RESPONSE_TOO_LARGE` error carrying the
+  original id; the C# reader stops at the same ceiling instead of buffering an
+  unbounded line, and fails outstanding requests with that code. Page bytes
+  therefore never travel through this protocol — they stream natively in C#, or a
+  browser-context fetch writes them straight into allowed staging and only the
+  evidence comes back.
 - Unknown command → `UNKNOWN_COMMAND`. Malformed JSON → `BAD_JSON`.
   Handler crash → `INTERNAL`. Timeout → `TIMEOUT`.
 
@@ -325,6 +332,7 @@ Responds first, then closes every context and exits 0.
 | `ENROLLMENT_START_FAILED` | listener install or login-page navigation failed |
 | `WRONG_ACCOUNT` | active identity differs from `expected_email` |
 | `SESSION_NOT_FOUND` | unknown session id |
+| `RESPONSE_TOO_LARGE` | response envelope exceeded the 4 MiB line bound |
 | `INTERNAL` | anything else (message carries type + detail) |
 
 ## v2 (reserved — not implemented)

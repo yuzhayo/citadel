@@ -4,7 +4,11 @@ using System.Windows.Controls;
 using Citadel.Core.Modules;
 using Citadel.Core.Rpl;
 using Citadel.Setting.Components;
+using Module.Mangareader.Features.Downloader;
+using Module.Mangareader.Features.Downloader.Queue;
+using Module.Mangareader.Features.Downloader.Sources;
 using Module.Mangareader.History;
+using Module.Mangareader.Library;
 using Module.Mangareader.ShareLogic;
 
 namespace Module.Mangareader;
@@ -12,6 +16,9 @@ namespace Module.Mangareader;
 public partial class MangaReaderView : UserControl, IContentHeaderActionProvider
 {
     private readonly ReadingHistory _history = new();
+    private readonly LibraryRootContext _libraryRoot = new();
+    private readonly DownloaderPyHostClient _downloaderBrowser;
+    private readonly DownloadQueueFeature _queue;
     private ReaderWindow? _readerWindow;
     private bool _disposed;
 
@@ -22,6 +29,29 @@ public partial class MangaReaderView : UserControl, IContentHeaderActionProvider
         // Recording is owned here, not by the History screen, so a chapter is
         // recorded whether or not that tab has ever been opened.
         HistoryTab.UseHistory(_history);
+
+        // Library owns one root for the whole module lifetime. Injected before
+        // either child receives Loaded, so the single restore happens through
+        // the shared owner instead of a second reader of the preference file.
+        LibraryTab.UseLibraryRoot(_libraryRoot);
+
+        var stagingRoot = DownloaderJson.DefaultRoot();
+        _downloaderBrowser = new DownloaderPyHostClient(stagingRoot);
+        var sources = MangaSourceRegistry.CreateDefault(_downloaderBrowser);
+        var index = new DownloadSourceIndex(stagingRoot);
+        _queue = new DownloadQueueFeature(
+            _libraryRoot,
+            sources,
+            _downloaderBrowser,
+            new DownloadQueueStore(stagingRoot),
+            index);
+        DownloaderTab.UseContext(new DownloaderContext(sources, _queue, _libraryRoot, index));
+
+        // The module lifetime owns queue execution independently of which routed
+        // screen is visible. A restart parks every job, so starting here causes
+        // no automatic network activity.
+        _queue.Start();
+
         lifetime.Add(DisposeView);
     }
 
@@ -114,7 +144,11 @@ public partial class MangaReaderView : UserControl, IContentHeaderActionProvider
         LibraryTab.Dispose();
         HistoryTab.Dispose();
         CoverBuilderTab.Dispose();
+        DownloaderTab.Dispose();
         _readerWindow?.Close();
         _readerWindow = null;
+
+        _queue.Dispose();
+        _downloaderBrowser.Dispose();
     }
 }

@@ -158,37 +158,31 @@ public partial class CoverBuilderView : UserControl, IDisposable
             return;
         }
 
-        var localPath = source;
-        string sourceLabel;
-        if (CoverSourceLoader.TryGetRemoteUri(source, out _))
-        {
-            if (_fetchedCover is null
-                || !string.Equals(
-                    source,
-                    _fetchedCover.SourceUrl,
-                    StringComparison.Ordinal))
-            {
-                StatusText.Text = "Fetch this URL successfully before baking the cover.";
-                return;
-            }
-
-            localPath = _fetchedCover.LocalPath;
-            sourceLabel = _fetchedCover.SourceLabel;
-        }
-        else
-        {
-            sourceLabel = Path.GetFileName(localPath);
-        }
+        // Source resolution belongs to the feature contract: a remote URL is
+        // fetched into Citadel storage before any archive mutation, so this
+        // handler no longer gates baking on a prior successful Fetch.
+        var isRemoteSource = CoverSourceLoader.TryGetRemoteUri(source, out var remoteUri);
+        CoverSourceReference sourceReference = isRemoteSource
+            ? new CoverSourceReference.RemoteUrl(source)
+            : new CoverSourceReference.LocalPath(source);
+        var sourceLabel = isRemoteSource
+            ? _fetchedCover is not null
+              && string.Equals(source, _fetchedCover.SourceUrl, StringComparison.Ordinal)
+                ? _fetchedCover.SourceLabel
+                : remoteUri.Host
+            : Path.GetFileName(source);
 
         var cancellation = BeginOperation();
         _resultStatus = null;
-        StatusText.Text = "Detecting the chapter format and rebuilding the first chapter...";
+        StatusText.Text = isRemoteSource
+            ? "Fetching the cover image, then rebuilding the first chapter..."
+            : "Detecting the chapter format and rebuilding the first chapter...";
 
         try
         {
-            var result = await _service.BuildFromLocalAsync(
+            var result = await _service.BakeAsync(
                 selected.Manga,
-                localPath,
+                sourceReference,
                 cancellation.Token);
             if (_disposed || !ReferenceEquals(_operationCancellation, cancellation)) return;
 
@@ -253,11 +247,7 @@ public partial class CoverBuilderView : UserControl, IDisposable
         var hasTitle = TitlePicker.SelectedItem is MangaTitleCardModel;
         var source = SourceField.Text.Trim();
         var isRemote = CoverSourceLoader.TryGetRemoteUri(source, out _);
-        var fetchedRemote = isRemote
-            && _fetchedCover is not null
-            && string.Equals(source, _fetchedCover.SourceUrl, StringComparison.Ordinal)
-            && File.Exists(_fetchedCover.LocalPath);
-        var sourceReady = source.Length > 0 && (!isRemote || fetchedRemote);
+        var sourceReady = source.Length > 0;
 
         TitlePicker.IsEnabled = !_busy;
         SourceField.IsEnabled = !_busy;
@@ -265,9 +255,7 @@ public partial class CoverBuilderView : UserControl, IDisposable
         FetchButton.IsEnabled = !_busy && isRemote;
         BakeButton.IsEnabled = !_busy && hasTitle && sourceReady;
         StatusText.Text = _resultStatus ?? (hasTitle
-            ? isRemote && !fetchedRemote
-                ? "Fetch the URL to local storage before baking."
-                : "Ready. The earliest chapter will receive the generated cover page."
+            ? "Ready. The earliest chapter will receive the generated cover page."
             : "Scan a Library to load titles.");
     }
 

@@ -11,6 +11,7 @@ referenced in pyhost/README.md.
 import json
 import asyncio
 import importlib.util
+import io
 import os
 import subprocess
 import sys
@@ -141,6 +142,39 @@ class PyHostProtocolTest(unittest.TestCase):
         r = self.call("session.close", session="does-not-exist")
         self.assertFalse(r["ok"])
         self.assertEqual(r["error"]["code"], "SESSION_NOT_FOUND")
+
+
+class PyHostResponseBoundTest(unittest.TestCase):
+    """Batas 4 MiB per baris respons ditegakkan SEBELUM menulis.
+
+    Respons normal harus lewat tanpa diubah; envelope raksasa harus diganti
+    error kecil yang stabil dan tetap membawa id peminta, supaya host C# tidak
+    pernah harus men-buffer baris tak terbatas.
+    """
+
+    def _capture(self, payload):
+        buffer = io.StringIO()
+        with mock.patch.object(sys, "stdout", buffer):
+            PYHOST_MODULE._respond(payload)
+        return buffer.getvalue()
+
+    def test_normal_response_written_unchanged(self):
+        line = self._capture({"id": 7, "ok": True, "value": "x"})
+
+        self.assertTrue(line.endswith("\n"))
+        self.assertEqual(
+            json.loads(line), {"id": 7, "ok": True, "value": "x"})
+
+    def test_oversized_response_becomes_stable_error(self):
+        oversized = "x" * (PYHOST_MODULE.MAX_RESPONSE_BYTES + 1)
+
+        line = self._capture({"id": 9, "ok": True, "blob": oversized})
+        message = json.loads(line)
+
+        self.assertEqual(message["id"], 9)
+        self.assertFalse(message["ok"])
+        self.assertEqual(message["error"]["code"], "RESPONSE_TOO_LARGE")
+        self.assertLess(len(line.encode("utf-8")), 4096)
 
 
 class PyHostCancellationTest(unittest.IsolatedAsyncioTestCase):

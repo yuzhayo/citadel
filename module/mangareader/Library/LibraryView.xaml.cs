@@ -14,8 +14,7 @@ public partial class LibraryView : UserControl, IDisposable
     private readonly LibraryScanner _scanner = new();
     private readonly MangaCoverLoader _coverLoader = new();
     private readonly ObservableCollection<MangaTitleCardModel> _cards = new();
-    private readonly LibraryPathStore _pathStore = new();
-    private readonly LibraryScanPersistence _scanPersistence;
+    private LibraryRootContext? _root;
     private CancellationTokenSource? _scanCancellation;
     private bool _autoRestored;
     private bool _disposed;
@@ -24,8 +23,20 @@ public partial class LibraryView : UserControl, IDisposable
     {
         InitializeComponent();
         TitleGrid.ItemsSource = _cards;
-        _scanPersistence = new LibraryScanPersistence(_pathStore);
         Loaded += LibraryView_Loaded;
+    }
+
+    /// <summary>
+    /// Attaches the module-lifetime root owner. The parent injects this before
+    /// Loaded, so the single restore runs against the shared context instead of
+    /// a second reader of the preference file.
+    /// </summary>
+    public void UseLibraryRoot(LibraryRootContext root)
+    {
+        ArgumentNullException.ThrowIfNull(root);
+        if (ReferenceEquals(_root, root)) return;
+
+        _root = root;
     }
 
     public event EventHandler<OpenChapterRequestedEventArgs>? OpenChapterRequested;
@@ -38,10 +49,10 @@ public partial class LibraryView : UserControl, IDisposable
 
     private async void LibraryView_Loaded(object sender, RoutedEventArgs e)
     {
-        if (_disposed || _autoRestored) return;
+        if (_disposed || _autoRestored || _root is null) return;
         _autoRestored = true;
 
-        var loaded = _pathStore.Load();
+        var loaded = _root.Restore();
         if (loaded.Path is not null)
         {
             LibraryPath.Text = loaded.Path;
@@ -76,7 +87,7 @@ public partial class LibraryView : UserControl, IDisposable
 
     private async Task ScanLibraryAsync()
     {
-        if (_disposed) return;
+        if (_disposed || _root is null) return;
 
         var path = LibraryPath.Text.Trim();
         if (path.Length == 0)
@@ -90,7 +101,7 @@ public partial class LibraryView : UserControl, IDisposable
 
         // The path is captured once, at scan start. Completion persists
         // this attempt, never whatever the field says later.
-        var attempt = _scanPersistence.BeginScan(path);
+        var attempt = _root.BeginScan(path);
 
         var previous = _scanCancellation;
         var cancellation = new CancellationTokenSource();
@@ -172,9 +183,9 @@ public partial class LibraryView : UserControl, IDisposable
         LibraryScanAttempt attempt,
         string status)
     {
-        if (_disposed || !ReferenceEquals(_scanCancellation, scan)) return;
+        if (_disposed || _root is null || !ReferenceEquals(_scanCancellation, scan)) return;
 
-        var save = _scanPersistence.CompleteScan(
+        var save = _root.CompleteScan(
             attempt,
             succeeded: true,
             cancelled: scan.IsCancellationRequested);

@@ -1,0 +1,192 @@
+<UserControl x:Class="Module.Mangareader.Features.Downloader.Queue.DownloadListScreen"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:setting="clr-namespace:Citadel.Setting.Components;assembly=Citadel.Setting"
+             Background="{DynamicResource Bg}"
+             Foreground="{DynamicResource Fg}"
+             UseLayoutRounding="True"
+             SnapsToDevicePixels="True">
+    <setting:SettingViewport Mode="Contained">
+        <Grid>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="*" />
+                <RowDefinition Height="Auto" />
+            </Grid.RowDefinitions>
+
+            <setting:SettingActionCard>
+                <setting:SettingActionCard.Content>
+                    <StackPanel Orientation="Horizontal">
+                        <setting:SettingButton x:Name="BackButton"
+                                               MinWidth="140"
+                                               Content="Back to Catalog"
+                                               Click="BackButton_Click"
+                                               AutomationProperties.Name="Back to catalog" />
+                        <setting:SettingButton x:Name="ClearCompletedButton"
+                                               MinWidth="140"
+                                               Margin="10,0,0,0"
+                                               Content="Clear completed"
+                                               Click="ClearCompletedButton_Click"
+                                               AutomationProperties.Name="Clear completed jobs" />
+                    </StackPanel>
+                </setting:SettingActionCard.Content>
+                <setting:SettingActionCard.ActionContent>
+                    <TextBlock x:Name="SummaryText"
+                               VerticalAlignment="Center"
+                               Foreground="{DynamicResource Body}"
+                               Text="No jobs" />
+                </setting:SettingActionCard.ActionContent>
+            </setting:SettingActionCard>
+
+            <Border Grid.Row="1"
+                    Margin="0,10,0,0"
+                    Style="{DynamicResource SettingCardStyle}">
+                <Grid>
+                    <!-- Sorting is opt-in and presentation-only: the shared
+                         table sorts its collection view, never the durable
+                         queue order. The Action column is never sortable. -->
+                    <setting:SettingTable x:Name="JobTable"
+                                          CanUserSortColumns="True"
+                                          AutomationProperties.Name="Download queue">
+                        <setting:SettingTable.InteractiveColumns>
+                            <DataGridTemplateColumn Header="Title"
+                                                    CanUserSort="True"
+                                                    SortMemberPath="TitleDisplayName"
+                                                    MinWidth="160">
+                                <DataGridTemplateColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <TextBlock Text="{Binding TitleDisplayName}"
+                                                   FontWeight="SemiBold"
+                                                   TextTrimming="CharacterEllipsis"
+                                                   ToolTip="{Binding TitleDisplayName}" />
+                                    </DataTemplate>
+                                </DataGridTemplateColumn.CellTemplate>
+                            </DataGridTemplateColumn>
+
+                            <DataGridTemplateColumn Header="Chapter"
+                                                    CanUserSort="True"
+                                                    SortMemberPath="ChapterDisplayName"
+                                                    MinWidth="140">
+                                <DataGridTemplateColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <TextBlock Text="{Binding ChapterDisplayName}"
+                                                   TextTrimming="CharacterEllipsis"
+                                                   ToolTip="{Binding ChapterDisplayName}" />
+                                    </DataTemplate>
+                                </DataGridTemplateColumn.CellTemplate>
+                            </DataGridTemplateColumn>
+
+                            <DataGridTemplateColumn Header="Group"
+                                                    CanUserSort="True"
+                                                    SortMemberPath="GroupDisplayName"
+                                                    MinWidth="120">
+                                <DataGridTemplateColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <TextBlock Text="{Binding GroupDisplayName}"
+                                                   TextTrimming="CharacterEllipsis"
+                                                   ToolTip="{Binding GroupDisplayName}" />
+                                    </DataTemplate>
+                                </DataGridTemplateColumn.CellTemplate>
+                            </DataGridTemplateColumn>
+
+                            <DataGridTemplateColumn Header="Status"
+                                                    CanUserSort="True"
+                                                    SortMemberPath="State"
+                                                    MinWidth="110">
+                                <DataGridTemplateColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <TextBlock Text="{Binding StateText}" />
+                                    </DataTemplate>
+                                </DataGridTemplateColumn.CellTemplate>
+                            </DataGridTemplateColumn>
+
+                            <DataGridTemplateColumn Header="Progress"
+                                                    CanUserSort="True"
+                                                    SortMemberPath="CompletedPages"
+                                                    MinWidth="90">
+                                <DataGridTemplateColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <TextBlock Text="{Binding ProgressText}" />
+                                    </DataTemplate>
+                                </DataGridTemplateColumn.CellTemplate>
+                            </DataGridTemplateColumn>
+
+                            <DataGridTemplateColumn Header="Detail"
+                                                    CanUserSort="False"
+                                                    MinWidth="200">
+                                <DataGridTemplateColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <TextBlock Text="{Binding Warning}"
+                                                   Foreground="{DynamicResource Dim}"
+                                                   TextWrapping="Wrap" />
+                                    </DataTemplate>
+                                </DataGridTemplateColumn.CellTemplate>
+                            </DataGridTemplateColumn>
+
+                            <DataGridTemplateColumn Header="Action"
+                                                    CanUserSort="False"
+                                                    MinWidth="240">
+                                <DataGridTemplateColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <setting:SettingTableActions>
+                                            <setting:SettingTableActions.PrimaryContent>
+                                                <StackPanel Orientation="Horizontal">
+                                                    <setting:SettingButton Content="{Binding PrimaryActionLabel}"
+                                                                           Tag="{Binding}"
+                                                                           Click="PauseResume_Click"
+                                                                           AutomationProperties.Name="{Binding PrimaryActionLabel}" />
+                                                    <setting:SettingButton Content="Retry"
+                                                                           Margin="8,0,0,0"
+                                                                           Tag="{Binding}"
+                                                                           Click="Retry_Click"
+                                                                           AutomationProperties.Name="Retry job" />
+                                                </StackPanel>
+                                            </setting:SettingTableActions.PrimaryContent>
+                                            <setting:SettingTableActions.SecondaryContent>
+                                                <StackPanel Orientation="Horizontal">
+                                                    <setting:SettingButton Content="Choose source"
+                                                                           Tag="{Binding}"
+                                                                           IsEnabled="{Binding CanChooseFallback}"
+                                                                           Click="ChooseSource_Click"
+                                                                           AutomationProperties.Name="Choose fallback source group" />
+                                                    <setting:SettingButton Content="Open folder"
+                                                                           Margin="8,0,0,0"
+                                                                           Tag="{Binding}"
+                                                                           IsEnabled="{Binding CanOpenFolder}"
+                                                                           Click="OpenFolder_Click"
+                                                                           AutomationProperties.Name="Open published folder" />
+                                                    <setting:SettingButton Content="Remove"
+                                                                           Margin="8,0,0,0"
+                                                                           Tag="{Binding}"
+                                                                           Click="Remove_Click"
+                                                                           AutomationProperties.Name="Remove job" />
+                                                </StackPanel>
+                                            </setting:SettingTableActions.SecondaryContent>
+                                        </setting:SettingTableActions>
+                                    </DataTemplate>
+                                </DataGridTemplateColumn.CellTemplate>
+                            </DataGridTemplateColumn>
+                        </setting:SettingTable.InteractiveColumns>
+                    </setting:SettingTable>
+
+                    <TextBlock x:Name="EmptyText"
+                               HorizontalAlignment="Center"
+                               VerticalAlignment="Center"
+                               FontSize="16"
+                               FontWeight="SemiBold"
+                               IsHitTestVisible="False"
+                               Text="No queued chapters."
+                               Visibility="Collapsed" />
+                </Grid>
+            </Border>
+
+            <TextBlock x:Name="StatusText"
+                       Grid.Row="2"
+                       Margin="2,10,2,0"
+                       TextWrapping="Wrap"
+                       Foreground="{DynamicResource Accent}"
+                       Visibility="Collapsed"
+                       AutomationProperties.LiveSetting="Polite" />
+        </Grid>
+    </setting:SettingViewport>
+</UserControl>

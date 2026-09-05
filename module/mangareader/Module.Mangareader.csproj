@@ -2,6 +2,23 @@
 
   <Import Project="..\Citizen.targets" />
 
+  <!--
+    Shared C# source (PyHost transport + RuntimeSetup + CredenzPath), compiled
+    into this citizen exactly as CamoProf does. Internal helpers only.
+  -->
+  <ItemGroup>
+    <Compile Include="..\sharedLogic\cs\**\*.cs" />
+  </ItemGroup>
+
+  <!--
+    The Downloader owns one pyhost feature plugin. Citizen.targets deploys
+    Features/*/<package>/*.py flat beside the shared pyhost payload and the C#
+    host activates it via CITADEL_PYHOST_PLUGINS at spawn.
+  -->
+  <PropertyGroup>
+    <PyhostPluginName>mangareader_downloader</PyhostPluginName>
+  </PropertyGroup>
+
   <ItemGroup>
     <None Update="Features\Rar\Rar.exe"
           CopyToOutputDirectory="PreserveNewest"

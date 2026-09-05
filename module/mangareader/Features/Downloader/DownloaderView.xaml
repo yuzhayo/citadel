@@ -1,0 +1,16 @@
+<UserControl x:Class="Module.Mangareader.Features.Downloader.DownloaderView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:catalog="clr-namespace:Module.Mangareader.Features.Downloader.Catalog"
+             xmlns:queue="clr-namespace:Module.Mangareader.Features.Downloader.Queue"
+             Background="{DynamicResource Bg}"
+             Foreground="{DynamicResource Fg}"
+             UseLayoutRounding="True"
+             SnapsToDevicePixels="True">
+    <!-- Two routed children and nothing else. Both stay alive while hidden:
+         routing away must not dispose the queue or the provider session. -->
+    <Grid>
+        <catalog:CatalogScreen x:Name="CatalogScreen" />
+        <queue:DownloadListScreen x:Name="DownloadListScreen" Visibility="Collapsed" />
+    </Grid>
+</UserControl>

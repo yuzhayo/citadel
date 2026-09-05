@@ -1,0 +1,93 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="coverlet.collector" Version="6.0.4" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
+    <PackageReference Include="xunit" Version="2.9.3" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="3.1.4" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\setting\Citadel.Setting.csproj" />
+  </ItemGroup>
+
+  <!--
+    The MangaReader citizen is never a normal solution dependency: the pure
+    Downloader sources are linked directly, exactly as the citizen compiles
+    them. Screen XAML is not linked, so these tests cover contracts,
+    persistence, publication and decoding rather than rendering. The Comix
+    filter panel is the one control that must come along, because the single
+    registry entry constructs it.
+  -->
+  <ItemGroup>
+    <Page Include="..\..\module\mangareader\Features\Downloader\Sources\Comix\ComixFilterPanel.xaml"
+          Link="Downloader\Sources\Comix\ComixFilterPanel.xaml" />
+    <Compile Include="..\..\module\mangareader\Features\Downloader\Sources\Comix\ComixFilterPanel.xaml.cs"
+             Link="Downloader\Sources\Comix\ComixFilterPanel.xaml.cs">
+      <DependentUpon>ComixFilterPanel.xaml</DependentUpon>
+    </Compile>
+    <Compile Include="..\..\module\mangareader\Features\Downloader\Catalog\CatalogFeature.cs"
+             Link="Downloader\Catalog\CatalogFeature.cs" />
+    <Compile Include="..\..\module\mangareader\Features\Downloader\DownloadSourceIndex.cs"
+             Link="Downloader\DownloadSourceIndex.cs" />
+    <Compile Include="..\..\module\mangareader\Features\Downloader\DownloaderPyHostClient.cs"
+             Link="Downloader\DownloaderPyHostClient.cs" />
+    <Compile Include="..\..\module\mangareader\Features\Downloader\Queue\DownloadQueueModels.cs"
+             Link="Downloader\Queue\DownloadQueueModels.cs" />
+    <Compile Include="..\..\module\mangareader\Features\Downloader\Queue\DownloadQueueStore.cs"
+             Link="Downloader\Queue\DownloadQueueStore.cs" />
+    <Compile Include="..\..\module\mangareader\Features\Downloader\Queue\DownloadQueueFeature.cs"
+             Link="Downloader\Queue\DownloadQueueFeature.cs" />
+    <Compile Include="..\..\module\mangareader\Features\Downloader\Queue\PageTransport.cs"
+             Link="Downloader\Queue\PageTransport.cs" />
+    <Compile Include="..\..\module\mangareader\Features\Downloader\Queue\ChapterDownloadPipeline.cs"
+             Link="Downloader\Queue\ChapterDownloadPipeline.cs" />
+    <Compile Include="..\..\module\mangareader\Features\Downloader\Queue\CbzChapterPublisher.cs"
+             Link="Downloader\Queue\CbzChapterPublisher.cs" />
+    <Compile Include="..\..\module\mangareader\Features\Downloader\Sources\MangaSourceContracts.cs"
+             Link="Downloader\Sources\MangaSourceContracts.cs" />
+    <Compile Include="..\..\module\mangareader\Features\Downloader\Sources\MangaSourceRegistry.cs"
+             Link="Downloader\Sources\MangaSourceRegistry.cs" />
+    <Compile Include="..\..\module\mangareader\Features\Downloader\Sources\Comix\ComixSource.cs"
+             Link="Downloader\Sources\Comix\ComixSource.cs" />
+    <Compile Include="..\..\module\mangareader\Features\Downloader\Sources\Comix\ComixPageDecoder.cs"
+             Link="Downloader\Sources\Comix\ComixPageDecoder.cs" />
+    <Compile Include="..\..\module\mangareader\Library\LibraryRootContext.cs"
+             Link="Library\LibraryRootContext.cs" />
+    <Compile Include="..\..\module\mangareader\Library\LibraryPathStore.cs"
+             Link="Library\LibraryPathStore.cs" />
+    <Compile Include="..\..\module\mangareader\Library\LibraryScanPersistence.cs"
+             Link="Library\LibraryScanPersistence.cs" />
+    <Compile Include="..\..\module\mangareader\Library\LibraryScanner.cs"
+             Link="Library\LibraryScanner.cs" />
+    <Compile Include="..\..\module\mangareader\CoverBuilder\CoverSourceReference.cs"
+             Link="CoverBuilder\CoverSourceReference.cs" />
+    <Compile Include="..\..\module\mangareader\CoverBuilder\CoverSourceLoader.cs"
+             Link="CoverBuilder\CoverSourceLoader.cs" />
+    <Compile Include="..\..\module\mangareader\CoverBuilder\CoverBuilderService.cs"
+             Link="CoverBuilder\CoverBuilderService.cs" />
+    <Compile Include="..\..\module\mangareader\shareLogic\MangaLibrary.cs"
+             Link="ShareLogic\MangaLibrary.cs" />
+    <Compile Include="..\..\module\mangareader\shareLogic\NaturalStringComparer.cs"
+             Link="ShareLogic\NaturalStringComparer.cs" />
+    <Compile Include="..\..\module\mangareader\shareLogic\Archive\*.cs"
+             Link="Archive\%(Filename)%(Extension)" />
+    <Compile Include="..\..\module\mangareader\Features\Rar\RarArchiveFeature.cs"
+             Link="Rar\RarArchiveFeature.cs" />
+    <Compile Include="..\..\module\sharedLogic\cs\**\*.cs"
+             Link="SharedCs\%(Filename)%(Extension)" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Using Include="Xunit" />
+  </ItemGroup>
+
+</Project>

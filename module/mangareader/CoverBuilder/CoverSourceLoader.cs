@@ -107,14 +107,60 @@ public sealed class CoverSourceLoader
         return destination.ToArray();
     }
 
+    /// <summary>
+    /// Reuses an artifact fetched earlier for the same URL, but only when the
+    /// stored file still decodes as an image. This never downloads: Fetch stays
+    /// an explicit action, and reuse is a cache hit rather than a prerequisite.
+    /// </summary>
+    public bool TryGetFetchedArtifact(string? sourceUrl, out string localPath)
+    {
+        localPath = string.Empty;
+        if (!TryGetRemoteUri(sourceUrl, out var uri)) return false;
+
+        var candidate = FetchedPathFor(uri);
+        if (!File.Exists(candidate)) return false;
+
+        try
+        {
+            using var stream = new FileStream(
+                candidate,
+                FileMode.Open,
+                FileAccess.Read,
+                FileShare.Read);
+            var decoder = BitmapDecoder.Create(
+                stream,
+                BitmapCreateOptions.PreservePixelFormat,
+                BitmapCacheOption.OnLoad);
+            if (decoder.Frames.Count == 0) return false;
+        }
+        catch (Exception exception) when (
+            exception is IOException
+                or UnauthorizedAccessException
+                or NotSupportedException
+                or FileFormatException
+                or ArgumentException)
+        {
+            return false;
+        }
+
+        localPath = candidate;
+        return true;
+    }
+
+    private static string FetchedIdentity(Uri uri) =>
+        Convert.ToHexString(
+            SHA256.HashData(Encoding.UTF8.GetBytes(uri.AbsoluteUri)))[..16];
+
+    private string FetchedPathFor(Uri uri) =>
+        Path.Combine(_downloadRoot, $"cover-{FetchedIdentity(uri)}.png");
+
     private async Task<string> SaveFetchedPngAsync(
         Uri uri,
         byte[] pngBytes,
         CancellationToken cancellationToken)
     {
         Directory.CreateDirectory(_downloadRoot);
-        var identity = Convert.ToHexString(
-            SHA256.HashData(Encoding.UTF8.GetBytes(uri.AbsoluteUri)))[..16];
+        var identity = FetchedIdentity(uri);
         var localPath = Path.Combine(_downloadRoot, $"cover-{identity}.png");
         var temporaryPath = Path.Combine(
             _downloadRoot,

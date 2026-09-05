@@ -191,7 +191,8 @@ direction and fit modes are explicitly outside this scope.
 - [ ] Phase 5: add only the missing generic shared multi-select/tag components.
 - [ ] Phase 6: integrate the one Downloader tab with Catalog and button-opened
       Download List routed screens.
-- [ ] Phase 7: integrate safe local-folder mapping, Library refresh, optional
-      existing Cover Builder reuse, and remove redundant code.
+- [ ] Phase 7: integrate safe local-folder mapping, keep successful CBZ
+      publication terminal without Library/Cover Builder chaining, and remove
+      redundant code.
 - [ ] Phase 8: pass pure, PyHost, archive, shared UI, WPF, build/deployment, full
       regression, and one disposable complete live-chapter validation gate.
