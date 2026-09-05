@@ -248,7 +248,7 @@ Smoke akhir cukup satu daftar representatif yang menggabungkan fase: CamoProf ad
 - [ ] P3 — Ownership MangaReader dan domain-only feature contracts. IMPLEMENTATION COMPLETE / LIVE VERIFICATION PENDING — lihat Checkpoint P3.
 - [ ] P4 — Common Reader contribution ownership. IMPLEMENTATION COMPLETE / LIVE VERIFICATION PENDING — lihat Checkpoint P4.
 - [ ] P5 — Chapter Selector shared template. IMPLEMENTATION COMPLETE / LIVE VERIFICATION PENDING — lihat Checkpoint P5.
-- [ ] P6 — Sidebar shared scrollbar.
+- [ ] P6 — Sidebar shared scrollbar. IMPLEMENTATION COMPLETE / LIVE VERIFICATION PENDING — lihat Checkpoint P6.
 - [ ] Cleanup caller/compile/deploy references selesai.
 - [ ] Affected builds dan regression checks selesai.
 - [ ] Live smoke selesai; jika belum, goal belum fully verified.
@@ -435,6 +435,53 @@ Perbandingan isi mengonfirmasi tidak ada perilaku unik yang hilang: Background/F
 - LIVE VERIFICATION PENDING — build/test bukan bukti visual, dan P5 justru perubahan visual. Yang belum diuji di UI native: item normal, selected, hover, keyboard focus, navigasi keyboard (panah/Home/End), membuka chapter target lewat double-click, Enter, dan tombol Open chapter, serta Escape/Back. **Periksa accessible label item chapter** — lihat gap di atas. Tidak ada klaim visual PASS.
 - P6 tidak disentuh. P0 masih pending dan tidak menghalangi P5.
 - Perubahan P5 belum di-commit sesuai instruksi.
+
+### Checkpoint P6 — 2026-09-05
+
+**Phase/status:** P6 / IMPLEMENTATION COMPLETE, LIVE VERIFICATION PENDING. Baseline aktual: HEAD `ff1c63c` — P5 sudah ter-commit, worktree bersih sebelum P6.
+
+**File berubah (1) dan baru (1):**
+
+- `core/Citadel.Ui/Theme/ThemeResources.xaml` — 6 baris ditambah, 0 dihapus: satu attribute `Style="{DynamicResource SettingScrollViewerStyle}"` pada `ScrollViewer` di dalam template `SidebarListStyle`, plus komentar alasannya. Tidak ada template, style, timer, animasi, attached behavior, atau implicit style global yang baru.
+- Baru: `tests/Citadel.Uia/SidebarSharedScrollTests.cs` — 2 test.
+
+**Kondisi awal (terkonfirmasi, bukan diasumsikan):** `ScrollViewer` di template `SidebarListStyle` tidak punya `Style` sama sekali, jadi memakai template default WPF; sedangkan `SettingListStyle` (`setting/SettingResources.xaml:193-198`) sudah menunjuk `SettingScrollViewerStyle`. Owner shared-nya `setting/Components/ScrollBar.xaml:84`, yang men-set `ScrollBarAutoFade.IsEnabled=True` dan template berisi `PART_VerticalScrollBar`/`PART_HorizontalScrollBar` bergaya `SettingScrollBarStyle`. Tidak ada implementasi kedua yang dibuat; P6 hanya menunjuk owner yang sudah ada.
+
+**Keputusan wiring:**
+
+- **StaticResource tidak mungkin dipakai di sini.** `Citadel.Ui` hanya mereferensikan `Citadel.Core`, dan `Citadel.Setting` mereferensikan Core + Contract — keduanya sibling, jadi dictionary Setting tidak terjangkau saat parse XAML. Selain itu `ThemeResourcesTests` menegakkan invariant repo `Assert.DoesNotContain("StaticResource", theme)`; komentar yang ditambahkan sengaja tidak memuat kata itu (grep akhir: 0 occurrence di file tersebut).
+- Deferred resource reference adalah pola yang sudah dipakai semua consumer lintas-assembly untuk style yang sama: `HistoryView.xaml:24`, `LibraryView.xaml:50`, `ReaderDrawer.xaml:21`, `ReaderWindow.xaml:31`, `Viewport.xaml:42`. `App.xaml` merge `ThemeResources` → `RailButtonResources` → `SettingResources`, sehingga saat runtime style tersedia di application resources. Context7 mengonfirmasi urutan lookup dynamic resource (element → logical tree → application → theme → system) dan bahwa reference yang tidak ditemukan "results in no property setting operation", jadi degradasinya aman, bukan exception.
+- Urutan attribute disamakan dengan contoh yang sudah ada di `SettingListStyle`.
+- `ItemsPresenter`, `CanContentScroll`, horizontal Disabled, dan visibilitas vertical tetap lewat TemplateBinding. `SettingScrollViewerStyle` tidak men-set ketiga properti itu, sehingga nilai dari `SidebarListStyle` maupun override lokal `PART_NavList`/`PART_PinList` tetap berlaku sebagai local value. `Focusable="False"` lokal juga tetap.
+- `PART_PinList` memakai `Vertical=Disabled` sehingga tidak pernah menampilkan scrollbar; perubahan ini efektif hanya untuk `PART_NavList` saat overflow.
+- Tidak ada assembly dipindah, tidak ada ProjectReference baru, tidak ada timing shared behavior yang diubah.
+
+**Test baru (2) dan alasannya:**
+
+- `SidebarList_OverflowingContent_RendersThroughTheSharedScrollViewerStyle` — menyusun dictionary persis seperti `App.xaml` (`ThemeResources.Bind(Tokens, Lifetime)` + `RailButtonResources` + `SettingResources`), memasang `SidebarListStyle` lewat `SetResourceReference`, lalu menegaskan `scrollViewer.Style` adalah INSTANCE yang sama dengan `SettingScrollViewerStyle`, dan `PART_VerticalScrollBar` yang ter-realize memiliki AutomationId `VerticalScrollBar`, `ActualWidth` 10, serta Visible saat overflow.
+- `UnstyledScrollViewer_IsNotCapturedByAnImplicitGlobalStyle` — ScrollViewer tanpa style pada komposisi yang sama tetap `Style == null`; ini menjaga batas "jangan menambah implicit global ScrollViewer style".
+- Mengapa ditambah, padahal instruksi meminta menjalankan test existing: tidak ada satu pun test yang menyusun komposisi dictionary aplikasi (`ShellHarness` hanya harness Router/gate dan tidak merge ThemeResources/SettingResources), sementara kegagalan wiring ini SILENT — reference yang tidak resolve membuat `Style` null dan sidebar diam-diam kembali ke chrome sistem tanpa build atau test mana pun gagal. Negative control-nya disimpulkan dari pasangan test ini, bukan dengan mengubah-ubah source: test kedua membuktikan tidak ada implicit style, jadi tanpa attribute eksplisit `Style` pasti null dan `Assert.Same` pada test pertama pasti gagal (lebar rail pun bukan 10).
+- Test memakai fixture existing (`Sta`, pola `Arrange`/`Descendants` seperti `SharedComponentBehaviorTests`) dan tidak memasang module dummy ke deployment pengguna.
+
+**Checks aktual:**
+
+- `dotnet build core/Citadel.Shell/Citadel.Shell.csproj -c Release` → Build succeeded, 0 Warning, 0 Error.
+- `dotnet test tests/Citadel.Ui.Tests -c Release` → 14/14 passed. Suite ini memuat `ThemeResourcesTests` (invariant tanpa StaticResource, dynamic metric/brush live) dan `SidebarLayoutTests` (row height, icon center, TitleX, FullWidth, collapsed) → layout dan navigasi Sidebar tidak regresi.
+- `dotnet test tests/Citadel.Uia -c Release --filter SharedComponentBehaviorTests` → 34/34 passed (shared scrollbar template, orientasi, page commands, lifecycle detach/reattach, ketersediaan resource).
+- `dotnet test tests/Citadel.Uia -c Release` dijalankan SATU kali karena perubahan menyentuh template sidebar Shell → **228/228 passed** (226 existing + 2 baru), 0 failed, 0 skipped.
+- Build/test UIA men-deploy citizen fixture `blank` dan payload sharedLogic ke `core/Citadel.Shell/bin/Release/...` (output repo). Aplikasi pengguna yang sedang berjalan ternyata berada di `C:\Users\YUZHA\AppData\Local\Yuzhayo.Citadel\current\Citadel.Shell.exe` — lokasi installed, bukan output repo — jadi tidak tersentuh. Ini diverifikasi dari path proses, bukan diasumsikan.
+- `git diff --check` bersih; artifact `*_wpftmp.csproj` dibersihkan. `git status` akhir hanya memuat satu file yang diubah dan satu file test baru.
+
+**Perbedaan visual yang diharapkan (jujur: belum diverifikasi live):**
+
+- Saat `PART_NavList` overflow, scrollbar vertikal berpindah dari chrome sistem ke rail shared yang auto-fade: reveal saat wheel/keyboard/pointer masuk/focus/thumb drag, lalu hide setelah **1.5s idle** (bukan 500ms idle chrome). Rail shared lebih sempit dari chrome default, jadi area konten sidebar sedikit melebar hanya ketika overflow; tidak ada pergeseran layout akibat fade karena opacity yang berubah.
+- ScrollViewer kini memiliki Background `TransparentBrush` dari shared style (sebelumnya null), sama seperti semua consumer lain; efeknya area grid menjadi hit-testable, tanpa mengubah ukuran.
+
+**Pending/next:**
+
+- LIVE VERIFICATION PENDING — build/test bukan bukti visual. Belum diuji di UI native pada window normal DAN minimum: non-overflow (tanpa scrollbar), overflow (rail shared), wheel, keyboard (panah/PageUp/PageDown/Home/End) beserta focus, thumb drag, idle 1.5s lalu fade tanpa menggeser layout, unload/reload tidak meninggalkan timer atau handler aktif, dan navigasi route tetap benar.
+- P0 masih pending. P1–P5 sudah ter-commit sampai `ff1c63c`. **Seluruh plan BELUM selesai**: live smoke untuk semua fase masih pending, jadi goal keseluruhan belum fully verified.
+- Perubahan P6 belum di-commit sesuai instruksi.
 
 Laporan akhir kepada user: ringkas perubahan ownership, kode redundant yang dihapus dan bukti tidak ada caller, hasil build/test aktual, status live yang jujur, serta sisa blocker. Jangan menyatakan goal selesai hanya karena token menipis atau semua file sudah dipindahkan.
 

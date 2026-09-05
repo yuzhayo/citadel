@@ -119,10 +119,16 @@
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="{x:Type ListBox}">
+                    <!-- The shared scrollbar owner lives in Citadel.Setting, which
+                         this assembly does not reference, so the style is resolved
+                         at runtime from the merged application dictionaries. Where
+                         it is unavailable the reference sets nothing and the
+                         default template remains in effect. -->
                     <ScrollViewer
                         Focusable="False"
                         CanContentScroll="{TemplateBinding ScrollViewer.CanContentScroll}"
                         HorizontalScrollBarVisibility="{TemplateBinding ScrollViewer.HorizontalScrollBarVisibility}"
+                        Style="{DynamicResource SettingScrollViewerStyle}"
                         VerticalScrollBarVisibility="{TemplateBinding ScrollViewer.VerticalScrollBarVisibility}">
                         <ItemsPresenter />
                     </ScrollViewer>
