@@ -243,14 +243,14 @@ Smoke akhir cukup satu daftar representatif yang menggabungkan fase: CamoProf ad
 ## 8. Tracker dan format checkpoint
 
 - [ ] P0 — Discovery Yuzskill canonical.
-- [ ] P1 — Adapter Add Profile tunggal, generic gated transport.
+- [ ] P1 — Adapter Add Profile tunggal, generic gated transport. IMPLEMENTATION COMPLETE / LIVE VERIFICATION PENDING — ter-commit `3158dee`.
 - [ ] P2 — Launcher action ownership. IMPLEMENTATION COMPLETE / LIVE VERIFICATION PENDING — lihat Checkpoint P2.
 - [ ] P3 — Ownership MangaReader dan domain-only feature contracts. IMPLEMENTATION COMPLETE / LIVE VERIFICATION PENDING — lihat Checkpoint P3.
 - [ ] P4 — Common Reader contribution ownership. IMPLEMENTATION COMPLETE / LIVE VERIFICATION PENDING — lihat Checkpoint P4.
 - [ ] P5 — Chapter Selector shared template. IMPLEMENTATION COMPLETE / LIVE VERIFICATION PENDING — lihat Checkpoint P5.
 - [ ] P6 — Sidebar shared scrollbar. IMPLEMENTATION COMPLETE / LIVE VERIFICATION PENDING — lihat Checkpoint P6.
-- [ ] Cleanup caller/compile/deploy references selesai.
-- [ ] Affected builds dan regression checks selesai.
+- [x] Cleanup caller/compile/deploy references selesai. Bukti: Penutupan integrasi butir 1 dan 2.
+- [x] Affected builds dan regression checks selesai. Bukti: Penutupan integrasi butir 3 (559 test lulus).
 - [ ] Live smoke selesai; jika belum, goal belum fully verified.
 
 Isi checkpoint di dokumen ini setelah increment koheren:
@@ -482,6 +482,54 @@ Perbandingan isi mengonfirmasi tidak ada perilaku unik yang hilang: Background/F
 - LIVE VERIFICATION PENDING — build/test bukan bukti visual. Belum diuji di UI native pada window normal DAN minimum: non-overflow (tanpa scrollbar), overflow (rail shared), wheel, keyboard (panah/PageUp/PageDown/Home/End) beserta focus, thumb drag, idle 1.5s lalu fade tanpa menggeser layout, unload/reload tidak meninggalkan timer atau handler aktif, dan navigasi route tetap benar.
 - P0 masih pending. P1–P5 sudah ter-commit sampai `ff1c63c`. **Seluruh plan BELUM selesai**: live smoke untuk semua fase masih pending, jadi goal keseluruhan belum fully verified.
 - Perubahan P6 belum di-commit sesuai instruksi.
+
+### Penutupan integrasi P1–P6 — 2026-09-05
+
+**Status keseluruhan:** P1–P6 IMPLEMENTATION COMPLETE, P0 belum dikerjakan, **LIVE VERIFICATION PENDING**. Menurut definisi plan ini belum "benar-benar selesai": smoke live belum dijalankan, jadi goal keseluruhan belum fully verified.
+
+**Baseline dan commit:** `ce578d5` (sebelum P1) → HEAD `0d3f85c`. Lima commit: `3158dee` (P1), `7cdc338` (P2+P3), `dc1ad52` (P4), `ff1c63c` (P5), `0d3f85c` (P6). Worktree bersih saat penutupan dimulai. Catatan: baris "Perubahan P6 belum di-commit" di Checkpoint P6 sudah tidak berlaku — P6 ter-commit sebagai `0d3f85c`.
+
+**1. Review diff gabungan (31 file, +1712/−538).**
+
+- Semua perubahan source berada di subsistem yang direncanakan: `module/camoprof`, `module/mangareader`, `module/sharedLogic/cs/PyHost.cs`, `core/Citadel.Ui/Theme/ThemeResources.xaml`, `tests/`, `.docs/`. Diperiksa dengan `git diff --name-only ce578d5..HEAD` plus filter; tidak ada file di luar daftar itu.
+- Kontrak antarfitur tersambung dan tidak ada implementasi ganda:
+  - P1 — `module/sharedLogic/cs/` tidak memuat command Add Profile; satu-satunya penyebutan `camoprof_add_profile` adalah contoh di komentar `CITADEL_PYHOST_PLUGINS`, bukan command.
+  - P2 — `_catalog.DeleteAsync`/`_credentials.DeleteAsync` hanya dipanggil `ProfileActionsFeature`; Launcher hanya memanggil `_profileActions.DeleteAsync`.
+  - P3 — `_store.Record` hanya di `ReadingHistory`; parent hanya memanggil `_history.Record`; `MangaReaderEvents.cs` tidak lagi menyebut `MangaTitleCardModel`.
+  - P4 — tidak ada link test yang menunjuk `Features/Drawer/ReaderDrawerContributions`.
+  - P5 — tidak ada implicit `ListBoxItem` style di `module/` sama sekali.
+  - P6 — `ThemeResources.xaml` 0 occurrence kata yang dilarang invariant `ThemeResourcesTests`.
+- Tidak ada sisa diagnostik: 0 `Console.WriteLine`/`Debug.WriteLine`/`TODO`/`HACK`/`FIXME` di area yang diubah, dan tidak ada `.orig`/`.bak`/`.rej`/`*_wpftmp.csproj`.
+- **Perubahan di luar scope yang ikut ter-commit:** `.docs/PLAN-mangareader-downloader.md` (596 baris) masuk di `7cdc338` bersama P2/P3. Itu reconcile Yuzskill dari proses lain, hanya dokumen, bukan bagian P1–P6. Dicatat, tidak diubah, tidak diklaim sebagai pekerjaan ini.
+- Temuan unrelated, dicatat terpisah dan TIDAK dikerjakan: `module/camoprof/module.json` memiliki `"icon": ""` kosong. Ini valid — `Citadel.Searcher/Reader.cs` hanya mewajibkan `title`/`route`/`entry`/`type`, sedangkan `icon` opsional — dan file itu tidak disentuh P1–P6.
+
+**2. Build gabungan, deployment, dan deteksi citizen.**
+
+- `Module.Camoprof.csproj`, `Module.Mangareader.csproj`, `Citadel.Shell.csproj` (Release) → semuanya Build succeeded, 0 Warning, 0 Error.
+- Build citizen kali ini sengaja memakai target deploy default, bukan temp: aplikasi pengguna yang berjalan berada di `C:\Users\YUZHA\AppData\Local\Yuzhayo.Citadel\current\Citadel.Shell.exe` (diperiksa dari path proses), bukan di output repo, sehingga output repo aman dipakai verifikasi.
+- Deployment terverifikasi di `core/Citadel.Shell/bin/Release/net10.0-windows/module/`: tiga folder (`blank`, `camoprof`, `mangareader`) sama dengan tiga citizen `Module.*.csproj` di `module/` — itulah syarat jumlah yang diperiksa `tools/Build-Release.ps1`.
+  - `camoprof/`: `Module.Camoprof.dll`, `.deps.json`, `.pdb`, `module.json`, `layout.json`.
+  - `mangareader/`: `Module.Mangareader.dll`, `.deps.json`, `.pdb`, `module.json`, `layout.json`, plus `Features/Rar/Rar.exe` dan `Features/Rar/rarreg.key` (prasyarat RAR utuh).
+  - Payload pyhost ter-deploy: `sharedLogic/` dan `sharedLogic/pyhost/camoprof_add_profile/`.
+  - Isolasi bersih: tidak ada `Citadel.*.dll` di folder citizen mana pun; target `VerifyCitizenIsolation` memang menggagalkan build bila ada.
+  - Deteksi: kedua `module.json` memenuhi syarat `Citadel.Searcher/Reader.cs` — `title`, `route`, `entry`, `type` terisi; `entry` cocok dengan DLL yang benar-benar ter-deploy; `type` cocok dengan kelas nyata (`Module.Camoprof.CamoprofModule`, `Module.Mangareader.MangaReaderModule`); `route` (`camoprof`, `manga-reader`) bukan route reserved. Jadi build Shell saja tidak dijadikan bukti — kedua citizen terbukti ter-deploy dan memenuhi syarat deteksi.
+
+**3. Verifikasi otomatis akhir (satu run solution, tidak mengulang per fase).**
+
+- `dotnet test Citadel.slnx -c Release -m:1` → exit 0. Rincian: Citadel.Core.Tests 108/108, Citadel.Ui.Tests 14/14, Citadel.Uia 228/228, Module.Camoprof.Tests 55/55, Module.Mangareader.Archive.Tests 33/33, Module.Mangareader.Library.Tests 24/24, Module.Mangareader.Reader.Tests 97/97. **Total 559 passed, 0 failed, 0 skipped.**
+- Batas cakupan yang jujur: `Citadel.slnx` memang tidak memuat citizen (desain `Citadel.targets`), jadi kompilasi citizen dibuktikan oleh build citizen terpisah di butir 2, bukan oleh run solution ini.
+
+**4. Live test BELUM DILAKUKAN.** Tidak ada tooling UI native yang tersedia di sesi ini, dan meluncurkan serta mengemudikan aplikasi adalah tindakan yang butuh operator. Checklist smoke untuk operator, semuanya dengan library/profile disposable:
+
+- CamoProf: Add Profile (satu jendela login Google), cancel saat proses berlangsung, Check Google pada profile linked/unlinked/credential-rejected, Launch/Close, Open GitHub saat session terbuka dan tertutup, Delete profile disposable termasuk confirm dan batal, keadaan busy/disabled selama aksi.
+- MangaReader: scan sukses/empty/gagal/cancel, restart lalu path ter-restore dan auto-scan hanya sekali, buka chapter, History tercatat sebelum tab History dibuka, Cover Builder fetch + bake pada arsip disposable, refresh Library dan History lalu pastikan cover BARU yang muncul (bukan cover lama), dan cover History tidak flicker saat re-scan/record.
+- Reader: Drawer buka/tutup/pin, seluruh card control (Zoom, Dim, kecepatan Auto-scroll, Fullscreen, Reset, chapter picker), urutan card, dan accessible name card.
+- Chapter Selector: item normal/selected/hover, keyboard focus, navigasi panah/Home/End, buka chapter lewat double-click, Enter, dan tombol Open chapter, Escape/Back, serta periksa accessible label item (lihat gap P5).
+- Sidebar: non-overflow tanpa scrollbar, overflow dengan rail shared, wheel, keyboard, thumb drag, idle 1.5 detik lalu fade tanpa menggeser layout, unload/reload tanpa timer atau handler tertinggal, pada window normal dan minimum.
+
+**5. Temuan yang ditutup.** Tidak ada regresi akibat refactor ini yang ditemukan: seluruh build hijau dan 559 test lulus, termasuk test yang secara khusus menjaga invariant tiap fase (LibraryScanPersistence, ChapterRenderCache identity, Reader card/host contract, shared scrollbar, ThemeResources). Karena itu tidak ada perbaikan tambahan pada fase ini. Dua perbedaan perilaku yang disengaja sudah tercatat di Checkpoint P3 dan P5 (preview cover Cover Builder dimuat async oleh fiturnya sendiri; accessible name per item chapter yang memang sudah tidak aktif sejak sebelum P5) — keduanya butuh keputusan operator, bukan perbaikan diam-diam.
+
+**6. Release: menunggu otorisasi operator.** Belum dilakukan dan tidak akan dilakukan tanpa instruksi eksplisit: bump `version.props` (saat ini `CitadelVersion` = `1.3.7`), commit perubahan dokumen ini, `tools/Build-Release.ps1`, push, dan publikasi release. Karena smoke live belum dijalankan, status paket apa pun yang dibangun sekarang adalah *verification pending*, bukan release yang sudah terbukti.
 
 Laporan akhir kepada user: ringkas perubahan ownership, kode redundant yang dihapus dan bukti tidak ada caller, hasil build/test aktual, status live yang jujur, serta sisa blocker. Jangan menyatakan goal selesai hanya karena token menipis atau semua file sudah dipindahkan.
 

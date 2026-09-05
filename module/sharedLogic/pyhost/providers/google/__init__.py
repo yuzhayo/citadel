@@ -49,32 +49,24 @@ async def detect_google_email(page):
     """Read account identity only; never use Google's display name."""
     try:
         values = await page.evaluate("""
-            () => Array.from(document.querySelectorAll(
-                '[data-email], [aria-label*="@"], a[href*="SignOutOptions"]'))
-              .flatMap(node => [
-                node.getAttribute('data-email'),
-                node.getAttribute('aria-label'),
-                node.textContent
-              ])
-              .filter(Boolean)
+            () => {
+              const accountLabel = document.querySelector('[aria-label*="@"]')
+                ?.getAttribute('aria-label');
+              if (accountLabel) return [accountLabel];
+
+              const dataEmail = document.querySelector('[data-email]')
+                ?.getAttribute('data-email');
+              if (dataEmail) return [dataEmail];
+
+              return Array.from(document.querySelectorAll(
+                  'a[href*="SignOutOptions"]'))
+                .flatMap(node => [node.getAttribute('aria-label'), node.textContent])
+                .filter(Boolean);
+            }
         """)
-        email = extract_email(values)
-        if email:
-            return email
+        return extract_email(values)
     except Exception as e:  # noqa: BLE001 - DOM fallback is best effort
         log("deteksi email via DOM gagal: %s" % type(e).__name__)
-
-    for selector, attribute in (
-            ("[data-email]", "data-email"),
-            ('[aria-label*="@"]', "aria-label")):
-        try:
-            locator = page.locator(selector).first
-            value = await locator.get_attribute(attribute)
-            email = extract_email((value,))
-            if email:
-                return email
-        except Exception:  # noqa: BLE001 - selector optional
-            continue
     return None
 
 

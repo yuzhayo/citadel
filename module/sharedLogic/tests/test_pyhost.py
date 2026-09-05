@@ -28,6 +28,8 @@ PYHOST = os.path.join(ROOT, "pyhost", "pyhost.py")
 # foldernya secara eksplisit.
 sys.path.insert(0, os.path.join(ROOT, "pyhost"))
 
+from providers.google import detect_google_email
+
 SPEC = importlib.util.spec_from_file_location("citadel_pyhost_tests", PYHOST)
 PYHOST_MODULE = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(PYHOST_MODULE)
@@ -442,6 +444,16 @@ class PyHostCancellationTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(response["state"], "active")
         self.assertEqual(response["email"], "user.name@gmail.com")
         await host._drop_session("s1")
+
+    async def test_google_email_detection_does_not_wait_for_a_locator(self):
+        class Page:
+            async def evaluate(self, _script):
+                return []
+
+            def locator(self, _selector):
+                raise AssertionError("email detection must not use waiting locators")
+
+        self.assertIsNone(await detect_google_email(Page()))
 
     async def test_google_inspect_signed_out_has_no_identity(self):
         class Context:
