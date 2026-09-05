@@ -34,6 +34,13 @@ public sealed partial class SettingTable : UserControl
             typeof(SettingTable),
             new FrameworkPropertyMetadata(false, OnSortChanged));
 
+    public static readonly DependencyProperty CanUserSortColumnsProperty =
+        DependencyProperty.Register(
+            nameof(CanUserSortColumns),
+            typeof(bool),
+            typeof(SettingTable),
+            new FrameworkPropertyMetadata(false));
+
     private readonly ObservableCollection<string> _columns = [];
     private readonly ObservableCollection<IReadOnlyList<string>> _rows = [];
     private readonly List<IReadOnlyList<string>> _source = [];
@@ -71,6 +78,16 @@ public sealed partial class SettingTable : UserControl
     {
         get => (bool)GetValue(SortDescendingProperty);
         set => SetValue(SortDescendingProperty, value);
+    }
+
+    /// <summary>
+    /// Enables native header sorting for opt-in interactive columns.
+    /// Legacy text tables keep their existing SortColumn contract.
+    /// </summary>
+    public bool CanUserSortColumns
+    {
+        get => (bool)GetValue(CanUserSortColumnsProperty);
+        set => SetValue(CanUserSortColumnsProperty, value);
     }
 
     public void SetColumns(IEnumerable<string> columns)

@@ -2,6 +2,8 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
 using System.Windows.Automation;
+using System.ComponentModel;
+using System.Reflection;
 using System.Windows.Media;
 using System.Windows.Shell;
 using System.Windows.Threading;
@@ -89,6 +91,52 @@ public class SharedComponentBehaviorTests
                 .OfType<Setter>()
                 .Single(setter => setter.Property == Control.HorizontalContentAlignmentProperty);
             Assert.Equal(HorizontalAlignment.Center, alignment.Value);
+        });
+    }
+
+    [Fact]
+    public void Table_InteractiveHeaderSortsAscendingThenDescending()
+    {
+        Sta.Run(() =>
+        {
+            var source = new[]
+            {
+                new SortableRow("Zulu"),
+                new SortableRow("Alpha"),
+            };
+            var column = new DataGridTextColumn
+            {
+                Header = "Profile",
+                Binding = new System.Windows.Data.Binding(nameof(SortableRow.Name)),
+                SortMemberPath = nameof(SortableRow.Name),
+            };
+            var table = new SettingTable
+            {
+                Width = 640,
+                Height = 240,
+                CanUserSortColumns = true,
+                ItemsSource = source,
+            };
+            table.InteractiveColumns.Add(column);
+            Arrange(table);
+
+            var grid = Descendant<DataGrid>(table);
+            var header = Descendants<DataGridColumnHeader>(grid)
+                .Single(candidate => ReferenceEquals(candidate.Column, column));
+
+            ClickColumnHeader(header);
+            Assert.Equal(ListSortDirection.Ascending, column.SortDirection);
+            Assert.Equal(
+                ["Alpha", "Zulu"],
+                grid.Items.Cast<SortableRow>().Select(row => row.Name));
+
+            ClickColumnHeader(header);
+            Assert.Equal(ListSortDirection.Descending, column.SortDirection);
+            Assert.Equal(
+                ["Zulu", "Alpha"],
+                grid.Items.Cast<SortableRow>().Select(row => row.Name));
+
+            Assert.Equal(["Zulu", "Alpha"], source.Select(row => row.Name));
         });
     }
 
@@ -617,6 +665,11 @@ public class SharedComponentBehaviorTests
     private static T Descendant<T>(DependencyObject root) where T : DependencyObject =>
         Descendants<T>(root).Single();
 
+    private static void ClickColumnHeader(DataGridColumnHeader header) =>
+        typeof(DataGridColumnHeader)
+            .GetMethod("OnClick", BindingFlags.Instance | BindingFlags.NonPublic)!
+            .Invoke(header, null);
+
     private static IEnumerable<T> Descendants<T>(DependencyObject root) where T : DependencyObject
     {
         for (var index = 0; index < VisualTreeHelper.GetChildrenCount(root); index++)
@@ -635,4 +688,6 @@ public class SharedComponentBehaviorTests
     }
 
     private sealed record DisplayChoice(string Title);
+
+    private sealed record SortableRow(string Name);
 }

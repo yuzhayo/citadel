@@ -19,7 +19,7 @@ interaction behavior.
 | `SettingTabs` | left-aligned tab group, equal outer inset, rounded normal/hover/selected/focus states |
 | `SettingViewport` | finite screen root, shared inset, explicit `Contained`/`Document` overflow ownership |
 | `SettingActionCard` | compact fill-width surface with flexible content and right-side actions |
-| `SettingTable` | equal star columns by default, centered headers, left text cells, grid lines, virtualization and scrolling |
+| `SettingTable` | equal star columns by default, centered headers, optional interactive-column header sorting with direction indicator, left text cells, grid lines, virtualization and scrolling |
 | `SettingTableActions` | one action centered; two actions balanced against the cell edges |
 | `SettingDialog` | modal chrome, owner centering and reusable confirmation behavior |
 | `SettingCardStyle` | ordinary shared card background, border, radius, padding and row spacing |

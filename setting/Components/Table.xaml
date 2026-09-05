@@ -14,7 +14,7 @@
         CanUserDeleteRows="False"
         CanUserReorderColumns="False"
         CanUserResizeRows="False"
-        CanUserSortColumns="False"
+        CanUserSortColumns="{Binding CanUserSortColumns, RelativeSource={RelativeSource AncestorType=UserControl}}"
         ColumnWidth="*"
         EnableColumnVirtualization="True"
         EnableRowVirtualization="True"
@@ -48,10 +48,31 @@
                                 BorderBrush="{TemplateBinding BorderBrush}"
                                 BorderThickness="{TemplateBinding BorderThickness}"
                                 Padding="{TemplateBinding Padding}">
-                                <ContentPresenter
-                                    HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
-                                    VerticalAlignment="Center" />
+                                <Grid
+                                    VerticalAlignment="Center">
+                                    <ContentPresenter
+                                        HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
+                                        VerticalAlignment="Center" />
+                                    <TextBlock
+                                        x:Name="SortIndicator"
+                                        Margin="0,0,2,0"
+                                        HorizontalAlignment="Right"
+                                        VerticalAlignment="Center"
+                                        Foreground="{TemplateBinding Foreground}"
+                                        Text="▲"
+                                        Visibility="Collapsed" />
+                                </Grid>
                             </Border>
+                            <ControlTemplate.Triggers>
+                                <Trigger Property="SortDirection" Value="Ascending">
+                                    <Setter TargetName="SortIndicator" Property="Text" Value="▲" />
+                                    <Setter TargetName="SortIndicator" Property="Visibility" Value="Visible" />
+                                </Trigger>
+                                <Trigger Property="SortDirection" Value="Descending">
+                                    <Setter TargetName="SortIndicator" Property="Text" Value="▼" />
+                                    <Setter TargetName="SortIndicator" Property="Visibility" Value="Visible" />
+                                </Trigger>
+                            </ControlTemplate.Triggers>
                         </ControlTemplate>
                     </Setter.Value>
                 </Setter>

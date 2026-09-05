@@ -56,9 +56,12 @@
                 Style="{DynamicResource SettingCardStyle}">
             <Grid>
                 <setting:SettingTable x:Name="ProfileTable"
+                                      CanUserSortColumns="True"
                                       AutomationProperties.Name="CamoProf resident profiles">
                     <setting:SettingTable.InteractiveColumns>
                         <DataGridTemplateColumn Header="Profile"
+                                                CanUserSort="True"
+                                                SortMemberPath="Name"
                                                 MinWidth="140">
                             <DataGridTemplateColumn.CellTemplate>
                                 <DataTemplate>
@@ -71,6 +74,7 @@
                         </DataGridTemplateColumn>
 
                         <DataGridTemplateColumn Header="Google"
+                                                CanUserSort="False"
                                                 MinWidth="190">
                             <DataGridTemplateColumn.CellTemplate>
                                 <DataTemplate>
@@ -84,6 +88,7 @@
                         </DataGridTemplateColumn>
 
                         <DataGridTemplateColumn Header="GitHub"
+                                                CanUserSort="False"
                                                 MinWidth="130">
                             <DataGridTemplateColumn.CellTemplate>
                                 <DataTemplate>
@@ -96,6 +101,7 @@
                         </DataGridTemplateColumn>
 
                         <DataGridTemplateColumn Header="Action"
+                                                CanUserSort="False"
                                                 MinWidth="170">
                             <DataGridTemplateColumn.CellTemplate>
                                 <DataTemplate>
