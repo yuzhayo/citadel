@@ -28,20 +28,24 @@
     registry entry constructs it.
   -->
   <ItemGroup>
-    <Page Include="..\..\module\mangareader\Features\Downloader\Sources\Comix\ComixFilterPanel.xaml"
-          Link="Downloader\Sources\Comix\ComixFilterPanel.xaml" />
-    <Compile Include="..\..\module\mangareader\Features\Downloader\Sources\Comix\ComixFilterPanel.xaml.cs"
-             Link="Downloader\Sources\Comix\ComixFilterPanel.xaml.cs">
+    <Page Include="..\..\module\mangareader\Features\Downloader\FilterSearch\Comix\ComixFilterPanel.xaml"
+          Link="Downloader\FilterSearch\Comix\ComixFilterPanel.xaml" />
+    <Compile Include="..\..\module\mangareader\Features\Downloader\FilterSearch\Comix\ComixFilterPanel.xaml.cs"
+             Link="Downloader\FilterSearch\Comix\ComixFilterPanel.xaml.cs">
       <DependentUpon>ComixFilterPanel.xaml</DependentUpon>
     </Compile>
-    <Page Include="..\..\module\mangareader\Features\Downloader\Sources\Comix\ComixMultiSelectDropDown.xaml"
-          Link="Downloader\Sources\Comix\ComixMultiSelectDropDown.xaml" />
-    <Compile Include="..\..\module\mangareader\Features\Downloader\Sources\Comix\ComixMultiSelectDropDown.xaml.cs"
-             Link="Downloader\Sources\Comix\ComixMultiSelectDropDown.xaml.cs">
+    <Page Include="..\..\module\mangareader\Features\Downloader\FilterSearch\Comix\ComixMultiSelectDropDown.xaml"
+          Link="Downloader\FilterSearch\Comix\ComixMultiSelectDropDown.xaml" />
+    <Compile Include="..\..\module\mangareader\Features\Downloader\FilterSearch\Comix\ComixMultiSelectDropDown.xaml.cs"
+             Link="Downloader\FilterSearch\Comix\ComixMultiSelectDropDown.xaml.cs">
       <DependentUpon>ComixMultiSelectDropDown.xaml</DependentUpon>
     </Compile>
     <Compile Include="..\..\module\mangareader\Features\Downloader\Catalog\CatalogFeature.cs"
              Link="Downloader\Catalog\CatalogFeature.cs" />
+    <Compile Include="..\..\module\mangareader\Features\Downloader\FilterSearch\FilterSearchFeature.cs"
+             Link="Downloader\FilterSearch\FilterSearchFeature.cs" />
+    <Compile Include="..\..\module\mangareader\Features\Downloader\FilterSearch\Comix\ComixFilterSearchPolicy.cs"
+             Link="Downloader\FilterSearch\Comix\ComixFilterSearchPolicy.cs" />
     <Compile Include="..\..\module\mangareader\Features\Downloader\DownloadSourceIndex.cs"
              Link="Downloader\DownloadSourceIndex.cs" />
     <Compile Include="..\..\module\mangareader\Features\Downloader\DownloaderPathContainment.cs"

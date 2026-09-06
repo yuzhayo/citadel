@@ -1,5 +1,6 @@
 using Module.Mangareader.Sources;
 using Module.Mangareader.Features.Downloader.Sources;
+using Module.Mangareader.Features.Downloader.FilterSearch;
 
 namespace Module.Mangareader.Features.Downloader.Catalog;
 
@@ -76,9 +77,9 @@ public sealed class CatalogFeature
 {
     private readonly MangaSourceRegistry _sources;
     private readonly Func<bool> _hasLibraryRoot;
+    private readonly FilterSearchFeature _filterSearch = new();
     private readonly object _gate = new();
 
-    private IRemoteFilterContribution? _filters;
     private RemoteBrowseRequest? _activeRequest;
 
     /// <summary>
@@ -120,7 +121,7 @@ public sealed class CatalogFeature
         {
             lock (_gate)
             {
-                return _filters;
+                return _filterSearch.Contribution;
             }
         }
     }
@@ -132,6 +133,7 @@ public sealed class CatalogFeature
     public void SelectSource(string sourceId)
     {
         var registration = _sources.Find(sourceId);
+        if (registration is null) _filterSearch.Clear();
 
         // Latest navigation wins, in both directions: an old Browse may not paint the
         // previous provider's results into this screen, and an old detail may not
@@ -155,7 +157,7 @@ public sealed class CatalogFeature
                 };
             }
 
-            _filters = registration.CreateFilters();
+            _filterSearch.SelectSource(registration);
             return state with
             {
                 SelectedSourceId = registration.Id,
@@ -195,21 +197,18 @@ public sealed class CatalogFeature
         var source = CurrentSource();
         if (source is null) return;
 
-        var filterState = _filters?.State;
-        if (filterState?.HasBlockingError == true)
+        var validationMessage = _filterSearch.ValidationMessage;
+        if (validationMessage is not null)
         {
             Mutate(state => state with
             {
-                ErrorMessage = filterState.ValidationMessage,
+                ErrorMessage = validationMessage,
                 IsBrowseBusy = false,
             });
             return;
         }
 
-        var request = new RemoteBrowseRequest(
-            string.IsNullOrWhiteSpace(query) ? null : query.Trim(),
-            Page: 1,
-            filterState?.CurrentFilter);
+        var request = _filterSearch.Snapshot(query);
         _activeRequest = request;
         var generation = NextBrowseGeneration();
 

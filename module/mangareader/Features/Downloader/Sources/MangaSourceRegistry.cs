@@ -17,14 +17,14 @@ public interface IRemoteFilterContribution
 
 /// <summary>
 /// Filter input state and local validation, owned by the provider feature.
-/// <see cref="CurrentFilter"/> is an immutable snapshot taken at Start.
+/// <see cref="Snapshot"/> returns the immutable keyword-aware state taken at Start.
 ///
 /// Reset is deliberately not part of this contract: it belongs to the provider's
 /// own Advanced Filters surface, and no host invokes it.
 /// </summary>
 public interface IRemoteFilterState
 {
-    IRemoteBrowseFilter? CurrentFilter { get; }
+    IRemoteBrowseFilter? Snapshot(string? keyword);
 
     bool HasBlockingError { get; }
 
@@ -97,7 +97,8 @@ public sealed class MangaSourceRegistry : IMangaSourceDirectory
         [
             new MangaSourceRegistration(
                 comix,
-                () => new Comix.ComixFilterContribution(comix.LookupAsync)),
+                () => new global::Module.Mangareader.Features.Downloader.FilterSearch.Comix.ComixFilterContribution(
+                    comix.LookupAsync)),
         ]);
     }
 

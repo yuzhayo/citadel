@@ -1,4 +1,4 @@
-<UserControl x:Class="Module.Mangareader.Features.Downloader.Sources.Comix.ComixMultiSelectDropDown"
+<UserControl x:Class="Module.Mangareader.Features.Downloader.FilterSearch.Comix.ComixMultiSelectDropDown"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:setting="clr-namespace:Citadel.Setting.Components;assembly=Citadel.Setting"

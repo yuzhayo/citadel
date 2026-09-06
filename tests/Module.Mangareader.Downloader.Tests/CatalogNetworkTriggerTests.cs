@@ -403,7 +403,7 @@ public sealed class CatalogNetworkTriggerTests
 
         public IRemoteFilterState State => this;
 
-        public IRemoteBrowseFilter? CurrentFilter => new FakeFilter();
+        public IRemoteBrowseFilter? Snapshot(string? keyword) => new FakeFilter();
 
         public bool HasBlockingError => blocking;
 

@@ -152,7 +152,7 @@ public sealed class ChapterSelectionTests
 
         public IRemoteFilterState State => this;
 
-        public IRemoteBrowseFilter? CurrentFilter => null;
+        public IRemoteBrowseFilter? Snapshot(string? keyword) => null;
 
         public bool HasBlockingError => false;
 

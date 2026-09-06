@@ -6,7 +6,7 @@ using System.Windows.Automation;
 using System.Windows.Controls;
 using System.Windows.Media;
 
-namespace Module.Mangareader.Features.Downloader.Sources.Comix;
+namespace Module.Mangareader.Features.Downloader.FilterSearch.Comix;
 
 /// <summary>
 /// One checkable provider option. The key is the provider's own option id and is

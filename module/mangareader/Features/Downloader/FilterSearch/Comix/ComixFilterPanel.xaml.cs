@@ -3,8 +3,9 @@ using System.Windows.Controls;
 using System.Windows.Input;
 using Module.Mangareader.Sources;
 using Module.Mangareader.Features.Downloader.Sources;
+using Module.Mangareader.Features.Downloader.Sources.Comix;
 
-namespace Module.Mangareader.Features.Downloader.Sources.Comix;
+namespace Module.Mangareader.Features.Downloader.FilterSearch.Comix;
 
 /// <summary>
 /// The Comix registration's filter contribution. It owns the panel and hands
@@ -84,7 +85,8 @@ public sealed partial class ComixFilterPanel : UserControl, IRemoteFilterState
         Reset();
     }
 
-    public IRemoteBrowseFilter? CurrentFilter => BuildQuery();
+    public IRemoteBrowseFilter? Snapshot(string? keyword)
+        => ComixFilterSearchPolicy.Apply(BuildQuery(), keyword);
 
     /// <summary>
     /// Blocking covers both a rejected range and an unparseable numeric field, so
