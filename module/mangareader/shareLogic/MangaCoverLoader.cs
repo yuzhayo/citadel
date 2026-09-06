@@ -6,7 +6,7 @@ namespace Module.Mangareader.ShareLogic;
 
 public sealed class MangaCoverLoader
 {
-    public const string TitleCoverFileName = "cover.png";
+    public const string PreferredTitleCoverFileName = "cover.png";
 
     /// <summary>
     /// Decode width for card covers. Every consumer must pass this same
@@ -82,43 +82,65 @@ public sealed class MangaCoverLoader
     {
         if (string.IsNullOrWhiteSpace(titleFolder)) return null;
 
-        var coverPath = Path.Combine(titleFolder, TitleCoverFileName);
-        if (!File.Exists(coverPath)) return null;
-
         try
         {
-            // OnLoad closes the file immediately, so Auto Cover can replace it later
-            // without being blocked by a live WPF image stream.
-            using var payload = new FileStream(
-                coverPath,
-                FileMode.Open,
-                FileAccess.Read,
-                FileShare.ReadWrite | FileShare.Delete);
-            var bitmap = new BitmapImage();
-            bitmap.BeginInit();
-            bitmap.CacheOption = BitmapCacheOption.OnLoad;
-            bitmap.CreateOptions = BitmapCreateOptions.PreservePixelFormat;
-            bitmap.DecodePixelWidth = maximumPixelWidth;
-            bitmap.StreamSource = payload;
-            bitmap.EndInit();
-            bitmap.Freeze();
-            return bitmap;
+            foreach (var coverPath in FindTitleCovers(titleFolder))
+            {
+                try
+                {
+                    // OnLoad closes the file immediately, so another feature can
+                    // replace it later without being blocked by a WPF stream.
+                    using var payload = new FileStream(
+                        coverPath,
+                        FileMode.Open,
+                        FileAccess.Read,
+                        FileShare.ReadWrite | FileShare.Delete);
+                    var bitmap = new BitmapImage();
+                    bitmap.BeginInit();
+                    bitmap.CacheOption = BitmapCacheOption.OnLoad;
+                    bitmap.CreateOptions = BitmapCreateOptions.PreservePixelFormat;
+                    bitmap.DecodePixelWidth = maximumPixelWidth;
+                    bitmap.StreamSource = payload;
+                    bitmap.EndInit();
+                    bitmap.Freeze();
+                    return bitmap;
+                }
+                catch (IOException)
+                {
+                }
+                catch (UnauthorizedAccessException)
+                {
+                }
+                catch (NotSupportedException)
+                {
+                }
+                catch (FileFormatException)
+                {
+                }
+            }
         }
         catch (IOException)
         {
-            return null;
         }
         catch (UnauthorizedAccessException)
         {
-            return null;
         }
-        catch (NotSupportedException)
-        {
-            return null;
-        }
-        catch (FileFormatException)
-        {
-            return null;
-        }
+
+        return null;
     }
+
+    private static IEnumerable<string> FindTitleCovers(string titleFolder) =>
+        Directory
+            .EnumerateFiles(titleFolder, "cover.*", SearchOption.TopDirectoryOnly)
+            // Exactly one extension: excludes Auto Cover's unpublished
+            // cover.png.<guid>.tmp files and unrelated names such as cover-old.jpg.
+            .Where(path => string.Equals(
+                Path.GetFileNameWithoutExtension(path),
+                "cover",
+                StringComparison.OrdinalIgnoreCase))
+            .OrderByDescending(path => string.Equals(
+                Path.GetFileName(path),
+                PreferredTitleCoverFileName,
+                StringComparison.OrdinalIgnoreCase))
+            .ThenBy(path => path, StringComparer.OrdinalIgnoreCase);
 }

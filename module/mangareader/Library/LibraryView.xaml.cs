@@ -328,6 +328,10 @@ public partial class LibraryView : UserControl, IDisposable
     {
         if (_disposed) return;
 
+        // Group navigation changes the result scope. A detail belongs to the
+        // previous scope, so dismiss it before revealing the refreshed grid;
+        // otherwise the filter changes behind the still-visible detail overlay.
+        ChapterSelector.Dismiss();
         _titlesView.Refresh();
         if (_cards.Count == 0) return;
 
