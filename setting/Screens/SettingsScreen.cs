@@ -24,6 +24,7 @@ public sealed class SettingsScreen : SettingScreen
     public const string AppearanceRoute = "settings/appearance";
     public const string LayoutRoute = "settings/layout";
     public const string GalleryRoute = "settings/gallery";
+    public const string SidebarGroupsRoute = "settings/sidebar-groups";
 
     private readonly ISettingHost _host;
     private readonly SettingTable _screens = new();
@@ -67,6 +68,7 @@ public sealed class SettingsScreen : SettingScreen
         Add(LayoutSlot(Card(Row(
             Action("Appearance", "OpenAppearance", () => _host.OpenSettings(AppearanceRoute)),
             Action("Module layout", "OpenLayout", () => _host.OpenSettings(LayoutRoute)),
+            Action("Sidebar groups", "OpenSidebarGroups", () => _host.OpenSettings(SidebarGroupsRoute)),
             Action("Gallery", "OpenGallery", () => _host.OpenSettings(GalleryRoute))),
             "CustomiseCard"), "actions"));
 

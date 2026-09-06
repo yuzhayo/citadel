@@ -27,6 +27,7 @@ internal sealed class ShellSettingHost : ISettingHost
     private readonly Tokens _tokens;
     private readonly Func<Window?> _owner;
     private readonly AppUpdateController _updateController;
+    private readonly SidebarGroupingStore _sidebarGroups;
     private bool _detached;
     private SettingsWindow? _settingsWindow;
     private Action? _rediscover;
@@ -38,7 +39,8 @@ internal sealed class ShellSettingHost : ISettingHost
             tokens,
             owner,
             new VelopackUpdateService(),
-            static () => System.Windows.Application.Current?.Shutdown())
+            static () => System.Windows.Application.Current?.Shutdown(),
+            new SidebarGroupingStore())
     {
     }
 
@@ -47,11 +49,13 @@ internal sealed class ShellSettingHost : ISettingHost
         Tokens tokens,
         Func<Window?> owner,
         IAppUpdateService updates,
-        Action requestExit)
+        Action requestExit,
+        SidebarGroupingStore? sidebarGroups = null)
     {
         _gate = gate ?? throw new ArgumentNullException(nameof(gate));
         _tokens = tokens ?? throw new ArgumentNullException(nameof(tokens));
         _owner = owner ?? throw new ArgumentNullException(nameof(owner));
+        _sidebarGroups = sidebarGroups ?? new SidebarGroupingStore();
         _updateController = new AppUpdateController(
             updates ?? throw new ArgumentNullException(nameof(updates)),
             requestExit ?? throw new ArgumentNullException(nameof(requestExit)),
@@ -60,9 +64,12 @@ internal sealed class ShellSettingHost : ISettingHost
         _gate.RegistryChanged += OnGateChanged;
         _gate.RegistrationRefused += OnRefused;
         _updateController.Changed += OnUpdateChanged;
+        _sidebarGroups.Changed += OnSidebarGroupsChanged;
     }
 
     public event Action? Changed;
+
+    public event Action? SidebarGroupsChanged;
 
     /// <summary>
     /// Shell hands the searcher's rescan and failure snapshot in here. An
@@ -127,6 +134,20 @@ internal sealed class ShellSettingHost : ISettingHost
 
     public void InstallUpdate() => _updateController.Install();
 
+    public IReadOnlyList<SidebarGroup> SidebarGroups() => _sidebarGroups.Snapshot();
+
+    public string CreateSidebarGroup(string name) => _sidebarGroups.Create(name);
+
+    public void RenameSidebarGroup(string id, string name) => _sidebarGroups.Rename(id, name);
+
+    public void DeleteSidebarGroup(string id) => _sidebarGroups.Delete(id);
+
+    public void SetSidebarGroupMembership(string id, string route, bool included) =>
+        _sidebarGroups.SetMembership(id, route, included);
+
+    public void SetSidebarGroupExpanded(string id, bool expanded) =>
+        _sidebarGroups.SetExpanded(id, expanded);
+
     public void OpenSettings(string route)
     {
         var definition = PopupRoute(route)
@@ -162,6 +183,7 @@ internal sealed class ShellSettingHost : ISettingHost
         _gate.RegistryChanged -= OnGateChanged;
         _gate.RegistrationRefused -= OnRefused;
         _updateController.Changed -= OnUpdateChanged;
+        _sidebarGroups.Changed -= OnSidebarGroupsChanged;
         _updateController.Dispose();
 
         var window = _settingsWindow;
@@ -178,6 +200,12 @@ internal sealed class ShellSettingHost : ISettingHost
     private void OnRefused(RegistrationFailure failure) => Changed?.Invoke();
 
     private void OnUpdateChanged() => Changed?.Invoke();
+
+    private void OnSidebarGroupsChanged()
+    {
+        SidebarGroupsChanged?.Invoke();
+        Changed?.Invoke();
+    }
 
     private void OnSettingsWindowClosed(object? sender, EventArgs args)
     {
@@ -198,6 +226,9 @@ internal sealed class ShellSettingHost : ISettingHost
         SettingsScreen.GalleryRoute => new BuiltInRoute(
             "Gallery",
             lifetime => new GalleryScreen(this, lifetime)),
+        SettingsScreen.SidebarGroupsRoute => new BuiltInRoute(
+            "Sidebar groups",
+            lifetime => new SidebarGroupsScreen(this, lifetime)),
         _ => null,
     };
 

@@ -11,7 +11,7 @@ namespace Citadel.Uia;
 
 /// <summary>
 /// Settings stays in the Content card, its
-/// three editors live in one separate Shell-owned window, and all four names
+/// editors live in one separate Shell-owned window, and every reserved name
 /// remain reserved against citizens.
 /// </summary>
 public class BuiltInRouteTests
@@ -108,7 +108,7 @@ public class BuiltInRouteTests
         });
     }
 
-    /// <summary>Only `settings` is a sidebar entry; the other three are not.</summary>
+    /// <summary>Only `settings` is a sidebar entry; editor routes are not.</summary>
     [Fact]
     public void OnlySettings_AppearsInTheSidebar()
     {
@@ -126,6 +126,7 @@ public class BuiltInRouteTests
             Assert.DoesNotContain(SettingsScreen.AppearanceRoute, routes);
             Assert.DoesNotContain(SettingsScreen.LayoutRoute, routes);
             Assert.DoesNotContain(SettingsScreen.GalleryRoute, routes);
+            Assert.DoesNotContain(SettingsScreen.SidebarGroupsRoute, routes);
         });
     }
 
@@ -134,7 +135,8 @@ public class BuiltInRouteTests
     [InlineData("settings/appearance")]
     [InlineData("settings/layout")]
     [InlineData("settings/gallery")]
-    public void AllFourSettingsRoutes_AreReservedAgainstCitizens(string route)
+    [InlineData("settings/sidebar-groups")]
+    public void AllSettingsRoutes_AreReservedAgainstCitizens(string route)
     {
         Sta.Run(() =>
         {

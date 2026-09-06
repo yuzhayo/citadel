@@ -49,6 +49,7 @@ public sealed class ModuleGate : IModuleGate
         "settings/appearance",
         "settings/layout",
         "settings/gallery",
+        "settings/sidebar-groups",
     ];
 
     private readonly MainQueue _main;

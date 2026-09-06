@@ -270,11 +270,11 @@ public class SettingScreensTests
     }
 
     /// <summary>
-    /// The three sub-screens are requested from inside Settings through the host
+    /// The sub-screens are requested from inside Settings through the host
     /// seam. Shell decides how the separate editor window is presented.
     /// </summary>
     [Fact]
-    public void SettingsScreen_RequestsTheThreeSubScreens()
+    public void SettingsScreen_RequestsTheSubScreens()
     {
         Sta.Run(() =>
         {
@@ -284,10 +284,11 @@ public class SettingScreensTests
 
             settings.Click("OpenAppearance");
             settings.Click("OpenLayout");
+            settings.Click("OpenSidebarGroups");
             settings.Click("OpenGallery");
 
             Assert.Equal(
-                [SettingsScreen.AppearanceRoute, SettingsScreen.LayoutRoute, SettingsScreen.GalleryRoute],
+                [SettingsScreen.AppearanceRoute, SettingsScreen.LayoutRoute, SettingsScreen.SidebarGroupsRoute, SettingsScreen.GalleryRoute],
                 host.OpenedSettings);
         });
     }
@@ -304,6 +305,26 @@ public class SettingScreensTests
             settings.Click("UpdateModules");
 
             Assert.Equal(1, host.RediscoveryRequests);
+        });
+    }
+
+    [Fact]
+    public void SidebarGroupsEditor_CreatesEmptyGroupAndShowsInstalledModules()
+    {
+        Sta.Run(() =>
+        {
+            using var lifetime = new LifetimeScope();
+            var host = new StubSettingHost();
+            host.SetScreens(
+                Fake.Descriptor("ftf", "FTF", order: 30),
+                Fake.Descriptor("proxy", "Proxy", order: 40));
+            var editor = new SidebarGroupsScreen(host, lifetime.Value);
+
+            editor.Add("Tools");
+
+            Assert.Equal(["Tools"], editor.GroupNames);
+            Assert.Equal(["ftf", "proxy"], editor.ModuleRoutes);
+            Assert.Empty(Assert.Single(host.SidebarGroups()).Routes);
         });
     }
 

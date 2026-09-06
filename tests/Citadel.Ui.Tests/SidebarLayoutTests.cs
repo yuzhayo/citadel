@@ -127,6 +127,37 @@ public sealed class SidebarLayoutTests
         });
     }
 
+    [Fact]
+    public void GroupHeaderTogglesWithoutSelectingOrNavigatingARoute()
+    {
+        StaTest.Run(() =>
+        {
+            var tokens = new Tokens();
+            using var animations = new AnimationManager();
+            var lifetime = new Lifetime();
+            var sidebar = new Sidebar();
+            var group = NavEntry.Group("tools", "Tools", expanded: true);
+            sidebar.Entries.Add(group);
+            sidebar.Entries.Add(new NavEntry("proxy", "Proxy", "", GroupId: "tools", IsChild: true));
+            sidebar.Attach(tokens, animations, lifetime);
+            WpfLayout.Arrange(sidebar, sidebar.CurrentWidth);
+
+            string? toggled = null;
+            string? navigated = null;
+            sidebar.GroupToggled += id => toggled = id;
+            sidebar.RouteSelected += route => navigated = route;
+            var navList = Assert.IsType<ListBox>(
+                sidebar.Template.FindName(Sidebar.NavListPart, sidebar));
+
+            navList.SelectedItem = group;
+
+            Assert.Equal("tools", toggled);
+            Assert.Null(navigated);
+            Assert.Equal(-1, navList.SelectedIndex);
+            lifetime.Destroy();
+        });
+    }
+
     private static void AssertRows(double expectedHeight, Sidebar sidebar, bool collapsed)
     {
         WpfLayout.Arrange(sidebar, sidebar.CurrentWidth);

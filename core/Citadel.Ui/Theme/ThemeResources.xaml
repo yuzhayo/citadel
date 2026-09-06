@@ -176,6 +176,7 @@
                 Opacity="{Binding TitleOpacity, RelativeSource={RelativeSource AncestorType={x:Type controls:Sidebar}}}"
                 Tag="NavTitleHost">
                 <TextBlock
+                    x:Name="NavTitle"
                     VerticalAlignment="Center"
                     FontFamily="{Binding TitleFontFamily, RelativeSource={RelativeSource AncestorType={x:Type controls:Sidebar}}}"
                     FontSize="{Binding TitleFontSize, RelativeSource={RelativeSource AncestorType={x:Type controls:Sidebar}}}"
@@ -184,6 +185,14 @@
                     TextTrimming="CharacterEllipsis" />
             </Border>
         </Grid>
+        <DataTemplate.Triggers>
+            <DataTrigger Binding="{Binding IsChild}" Value="True">
+                <Setter TargetName="NavTitle" Property="Margin" Value="12,0,0,0" />
+            </DataTrigger>
+            <DataTrigger Binding="{Binding IsGroup}" Value="True">
+                <Setter TargetName="NavTitle" Property="FontWeight" Value="SemiBold" />
+            </DataTrigger>
+        </DataTemplate.Triggers>
     </DataTemplate>
 
     <Style TargetType="{x:Type controls:Sidebar}">
@@ -220,7 +229,7 @@
                                 ItemsSource="{Binding MainEntries, RelativeSource={RelativeSource TemplatedParent}}"
                                 ScrollViewer.HorizontalScrollBarVisibility="Disabled"
                                 ScrollViewer.VerticalScrollBarVisibility="Auto"
-                                SelectedValue="{Binding SelectedRoute, RelativeSource={RelativeSource TemplatedParent}, Mode=TwoWay}"
+                                SelectedValue="{Binding SelectedRoute, RelativeSource={RelativeSource TemplatedParent}, Mode=OneWay}"
                                 SelectedValuePath="Route" />
 
                             <ListBox
@@ -237,7 +246,7 @@
                                 ItemsSource="{Binding PinnedEntries, RelativeSource={RelativeSource TemplatedParent}}"
                                 ScrollViewer.HorizontalScrollBarVisibility="Disabled"
                                 ScrollViewer.VerticalScrollBarVisibility="Disabled"
-                                SelectedValue="{Binding SelectedRoute, RelativeSource={RelativeSource TemplatedParent}, Mode=TwoWay}"
+                                SelectedValue="{Binding SelectedRoute, RelativeSource={RelativeSource TemplatedParent}, Mode=OneWay}"
                                 SelectedValuePath="Route" />
 
                             <!-- Outline overlays the card so its 1 DIP stroke never shifts row geometry. -->

@@ -397,7 +397,8 @@ internal sealed class ShellFixture : IDisposable
         Gate,
         _animations,
         _lifetime,
-        App.BuiltInRoutes(SettingHost));
+        App.BuiltInRoutes(SettingHost),
+        SettingHost);
 
     public void Dispose()
     {

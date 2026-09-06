@@ -16,6 +16,7 @@ public class SearcherReaderTests
         "settings/appearance",
         "settings/layout",
         "settings/gallery",
+        "settings/sidebar-groups",
     ];
 
     private const string Valid = """
@@ -187,6 +188,7 @@ public class SearcherReaderTests
     [InlineData("settings/appearance")]
     [InlineData("settings/layout")]
     [InlineData("settings/gallery")]
+    [InlineData("settings/sidebar-groups")]
     public void ReservedRoutesAreRefusedBeforeAnyAssemblyLoads(string route)
     {
         using var root = ModuleFolder.Create();

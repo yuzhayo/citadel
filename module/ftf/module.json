@@ -1,0 +1,8 @@
+{
+  "title": "FTF",
+  "icon": "",
+  "route": "ftf",
+  "order": 30,
+  "entry": "Module.FTF.dll",
+  "type": "Module.FTF.FtfModule"
+}

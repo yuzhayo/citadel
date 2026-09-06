@@ -1,0 +1,8 @@
+{
+  "title": "Proxy",
+  "icon": "",
+  "route": "proxy",
+  "order": 40,
+  "entry": "Module.Proxy.dll",
+  "type": "Module.Proxy.ProxyModule"
+}

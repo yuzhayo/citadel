@@ -8,6 +8,7 @@ using Citadel.Core.Modules;
 using Citadel.Core.Rpl;
 using Citadel.Core.Tokens;
 using Citadel.Setting.Components;
+using Citadel.Setting;
 using Citadel.Ui.Animations;
 using Citadel.Ui.Controls;
 using Citadel.Ui.Theme;
@@ -28,6 +29,7 @@ public partial class MainWindow : Window
     private readonly Tokens _tokens;
     private readonly ModuleGate _gate;
     private readonly Lifetime _lifetime;
+    private readonly ISettingHost? _settingHost;
     private readonly AnimationManager _animations;
     private Rect? _startupWorkArea;
 
@@ -38,12 +40,14 @@ public partial class MainWindow : Window
         ModuleGate gate,
         AnimationManager animations,
         Lifetime lifetime,
-        IReadOnlyDictionary<string, BuiltInRoute> builtInRoutes)
+        IReadOnlyDictionary<string, BuiltInRoute> builtInRoutes,
+        ISettingHost? settingHost = null)
     {
         _tokens = tokens ?? throw new ArgumentNullException(nameof(tokens));
         _gate = gate ?? throw new ArgumentNullException(nameof(gate));
         _animations = animations ?? throw new ArgumentNullException(nameof(animations));
         _lifetime = lifetime ?? throw new ArgumentNullException(nameof(lifetime));
+        _settingHost = settingHost;
         ArgumentNullException.ThrowIfNull(builtInRoutes);
         _builtInRoutes = builtInRoutes.ToDictionary(
             pair => pair.Key,
@@ -69,6 +73,15 @@ public partial class MainWindow : Window
 
         Sidebar.RouteSelected += OnRouteSelected;
         lifetime.Add(() => Sidebar.RouteSelected -= OnRouteSelected);
+
+        Sidebar.GroupToggled += OnGroupToggled;
+        lifetime.Add(() => Sidebar.GroupToggled -= OnGroupToggled);
+
+        if (_settingHost is not null)
+        {
+            _settingHost.SidebarGroupsChanged += OnSettingHostChanged;
+            lifetime.Add(() => _settingHost.SidebarGroupsChanged -= OnSettingHostChanged);
+        }
 
         gate.RegistryChanged += OnRegistryChanged;
         lifetime.Add(() => gate.RegistryChanged -= OnRegistryChanged);
@@ -215,6 +228,16 @@ public partial class MainWindow : Window
 
     private void OnRouteSelected(string route) => Router.Navigate(route);
 
+    private void OnGroupToggled(string id)
+    {
+        if (_settingHost is null) return;
+        var group = _settingHost.SidebarGroups()
+            .FirstOrDefault(candidate => string.Equals(candidate.Id, id, StringComparison.OrdinalIgnoreCase));
+        if (group is not null) _settingHost.SetSidebarGroupExpanded(id, !group.Expanded);
+    }
+
+    private void OnSettingHostChanged() => SyncSidebarEntries();
+
     private void OnCollapseClick(object sender, RoutedEventArgs args) =>
         Sidebar.SetCollapsed(!Sidebar.IsCollapsed);
 
@@ -256,8 +279,28 @@ public partial class MainWindow : Window
     private void SyncSidebarEntries()
     {
         Sidebar.Entries.Clear();
-        foreach (var descriptor in _gate.Snapshot())
+        var descriptors = _gate.Snapshot();
+        var assigned = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var group in _settingHost?.SidebarGroups() ?? [])
         {
+            Sidebar.Entries.Add(NavEntry.Group(group.Id, group.Name, group.Expanded));
+            foreach (var descriptor in descriptors.Where(item => group.Routes.Contains(item.Route, StringComparer.OrdinalIgnoreCase)))
+            {
+                if (!assigned.Add(descriptor.Route)) continue;
+                if (!group.Expanded) continue;
+                Sidebar.Entries.Add(new NavEntry(
+                    descriptor.Route,
+                    descriptor.Title,
+                    descriptor.Icon ?? string.Empty,
+                    GroupId: group.Id,
+                    IsChild: true));
+            }
+        }
+
+        foreach (var descriptor in descriptors)
+        {
+            if (assigned.Contains(descriptor.Route)) continue;
             Sidebar.Entries.Add(new NavEntry(
                 descriptor.Route,
                 descriptor.Title,

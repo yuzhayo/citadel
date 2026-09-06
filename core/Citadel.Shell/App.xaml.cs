@@ -85,7 +85,8 @@ public partial class App : System.Windows.Application
             tokens,
             () => _window,
             new VelopackUpdateService(),
-            Shutdown);
+            Shutdown,
+            new SidebarGroupingStore());
         _appLifetime.Add(host.Detach);
 
         var window = new MainWindow(
@@ -93,7 +94,8 @@ public partial class App : System.Windows.Application
             gate,
             animations,
             _appLifetime,
-            BuiltInRoutes(host));
+            BuiltInRoutes(host),
+            host);
         _window = window;
 
         MainWindow = window;

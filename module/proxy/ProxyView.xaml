@@ -1,0 +1,33 @@
+<UserControl x:Class="Module.Proxy.ProxyView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:setting="clr-namespace:Citadel.Setting.Components;assembly=Citadel.Setting"
+             Background="{DynamicResource Bg}"
+             Foreground="{DynamicResource Fg}"
+             UseLayoutRounding="True"
+             SnapsToDevicePixels="True">
+    <!-- CamoProf's tab composition, without CamoProf business features. -->
+    <setting:SettingTabs x:Name="WorkspaceTabs" SelectedIndex="0">
+        <TabItem x:Name="LauncherPanel" Header="Launcher">
+            <setting:SettingViewport Mode="Contained">
+                <TextBlock Text="Proxy Launcher"
+                           FontSize="13"
+                           Foreground="{DynamicResource Body}" />
+            </setting:SettingViewport>
+        </TabItem>
+        <TabItem x:Name="EditorPanel" Header="Editor">
+            <setting:SettingViewport Mode="Contained">
+                <TextBlock Text="Proxy Editor"
+                           FontSize="13"
+                           Foreground="{DynamicResource Body}" />
+            </setting:SettingViewport>
+        </TabItem>
+        <TabItem x:Name="RuntimePanel" Header="Runtime">
+            <setting:SettingViewport Mode="Contained">
+                <TextBlock Text="Proxy Runtime"
+                           FontSize="13"
+                           Foreground="{DynamicResource Body}" />
+            </setting:SettingViewport>
+        </TabItem>
+    </setting:SettingTabs>
+</UserControl>

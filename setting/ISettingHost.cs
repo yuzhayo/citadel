@@ -24,6 +24,13 @@ public sealed record AppUpdateState(
     bool Busy,
     bool Available);
 
+/// <summary>One persisted presentation group for the core sidebar.</summary>
+public sealed record SidebarGroup(
+    string Id,
+    string Name,
+    bool Expanded,
+    IReadOnlyList<string> Routes);
+
 /// <summary>
 /// Everything Settings needs to know about the outside world, defined here
 /// rather than in Shell.
@@ -60,6 +67,22 @@ public interface ISettingHost
     /// </summary>
     void OpenSettings(string route);
 
+    /// <summary>Current sidebar presentation groups, in display order.</summary>
+    IReadOnlyList<SidebarGroup> SidebarGroups();
+
+    string CreateSidebarGroup(string name);
+
+    void RenameSidebarGroup(string id, string name);
+
+    void DeleteSidebarGroup(string id);
+
+    void SetSidebarGroupMembership(string id, string route, bool included);
+
+    void SetSidebarGroupExpanded(string id, bool expanded);
+
     /// <summary>Raised on the main thread when Screens/Failures changed.</summary>
     event Action? Changed;
+
+    /// <summary>Raised after persisted sidebar presentation state changes.</summary>
+    event Action? SidebarGroupsChanged;
 }

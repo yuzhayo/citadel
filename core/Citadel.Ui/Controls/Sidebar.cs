@@ -163,6 +163,9 @@ public sealed class Sidebar : Control
     /// <summary>Raised only for a user/list selection; setting SelectedRoute is silent.</summary>
     public event Action<string>? RouteSelected;
 
+    /// <summary>Raised when a group header, rather than a route, is selected.</summary>
+    public event Action<string>? GroupToggled;
+
     public void Attach(Tokens tokens, AnimationManager animations, Lifetime lifetime)
     {
         ArgumentNullException.ThrowIfNull(tokens);
@@ -391,6 +394,13 @@ public sealed class Sidebar : Control
     private void OnSelectionChanged(object sender, SelectionChangedEventArgs args)
     {
         if (args.AddedItems.Count == 0 || args.AddedItems[0] is not NavEntry entry) return;
+
+        if (entry.IsGroup)
+        {
+            if (_navList is not null) _navList.SelectedIndex = -1;
+            if (!string.IsNullOrWhiteSpace(entry.GroupId)) GroupToggled?.Invoke(entry.GroupId);
+            return;
+        }
 
         SetCurrentValue(SelectedRouteProperty, entry.Route);
         if (ReferenceEquals(sender, _navList) && _pinList is not null) _pinList.SelectedIndex = -1;
