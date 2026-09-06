@@ -1,12 +1,20 @@
 using System.IO;
+using Module.Mangareader.Sources;
 using Module.Mangareader.Features.Downloader.Sources;
 using Module.Mangareader.Library;
 
 namespace Module.Mangareader.Features.Downloader.Queue;
 
+/// <summary>
+/// What one queue command did. The two skip counts are kept apart because they mean
+/// different things to the caller: a published chapter is one the user may
+/// explicitly choose to replace, while a job that has not finished is one that must
+/// never be duplicated whatever the user confirmed.
+/// </summary>
 public sealed record QueueAddResult(
     int Queued,
     int SkippedAlreadyPublished,
+    int SkippedAlreadyQueued,
     string? Blocked);
 
 /// <summary>
@@ -25,7 +33,7 @@ public sealed class DownloadQueueFeature : IDisposable
     private readonly DownloadQueueStore _store;
     private readonly DownloadSourceIndex _index;
     private readonly object _gate = new();
-    private readonly List<DownloadJobRecord> _jobs = [];
+    private List<DownloadJobRecord> _jobs = [];
     private readonly Dictionary<string, CancellationTokenSource> _running = new(StringComparer.Ordinal);
     private readonly CancellationTokenSource _lifetime = new();
     private Task? _scheduler;
@@ -82,11 +90,24 @@ public sealed class DownloadQueueFeature : IDisposable
     /// folder. The root is snapshotted here, so a later Library change cannot
     /// redirect an active job.
     /// </summary>
+    /// <param name="allowPublishedReplacement">
+    /// The caller's recorded confirmation that an already published chapter may
+    /// be downloaded again. It defaults to false, so a caller that never asked
+    /// keeps the skip and can never overwrite a library file silently. When
+    /// true the bypass reaches exactly one check —
+    /// <see cref="DownloadSourceIndex.IsPublishedOnDisk"/>. It never reaches the
+    /// duplicate guard for a job that has not finished, which applies whatever the
+    /// caller confirmed. Identity, target filename, provenance and the publisher's
+    /// own collision policy are untouched, so the same source/group lands on the
+    /// same target for an atomic replacement while a different source/group still
+    /// gets its own identity and its own file.
+    /// </param>
     public QueueAddResult QueueChapters(
         RemoteTitleSummary title,
         RemoteSourceGroup group,
         IReadOnlyList<RemoteChapterSummary> chapters,
-        string folderName)
+        string folderName,
+        bool allowPublishedReplacement = false)
     {
         ArgumentNullException.ThrowIfNull(title);
         ArgumentNullException.ThrowIfNull(group);
@@ -97,6 +118,7 @@ public sealed class DownloadQueueFeature : IDisposable
         if (string.IsNullOrWhiteSpace(root))
         {
             return new QueueAddResult(
+                0,
                 0,
                 0,
                 "Library root belum diatur; pilih folder Library lebih dulu.");
@@ -110,9 +132,20 @@ public sealed class DownloadQueueFeature : IDisposable
             sanitizedFolder,
             DateTimeOffset.UtcNow));
 
-        var queued = 0;
-        var skipped = 0;
-        var additions = new List<DownloadJobRecord>();
+        // A read-only pre-check, so a batch that adds nothing costs no durable write,
+        // no change signal and no scheduler start. It is deliberately not the
+        // authority: the same question is asked again inside the commit transaction
+        // below, which is the only place two concurrent admissions are serialized
+        // against each other.
+        HashSet<string> live;
+        lock (_gate)
+        {
+            live = LiveIdentityKeys(_jobs);
+        }
+
+        var skippedPublished = 0;
+        var skippedQueued = 0;
+        var candidates = new List<DownloadJobRecord>();
         foreach (var chapter in chapters)
         {
             var identity = new DownloadJobIdentity(
@@ -121,14 +154,23 @@ public sealed class DownloadQueueFeature : IDisposable
                 title.Identity.TitleHid,
                 chapter.Identity.ChapterId,
                 group.Identity.GroupId);
-            if (_index.IsPublished(identity))
+
+            if (live.Contains(identity.Key))
             {
-                skipped++;
+                skippedQueued++;
                 continue;
             }
 
-            var fileName = BuildFileName(chapter, group);
-            additions.Add(new DownloadJobRecord
+            // On disk, not merely on record: a CBZ the user deleted leaves its index
+            // entry behind, and skipping on the entry alone would refuse a download
+            // the Library no longer has, without ever showing a confirmation.
+            if (!allowPublishedReplacement && _index.IsPublishedOnDisk(identity, root, sanitizedFolder))
+            {
+                skippedPublished++;
+                continue;
+            }
+
+            candidates.Add(new DownloadJobRecord
             {
                 JobId = Guid.NewGuid().ToString("N"),
                 Identity = identity,
@@ -136,28 +178,55 @@ public sealed class DownloadQueueFeature : IDisposable
                 ChapterDisplayName = chapter.DisplayName,
                 GroupDisplayName = group.DisplayName,
                 ChapterNumber = chapter.Identity.ChapterNumber,
-                Target = new DownloadTarget(root, sanitizedFolder, fileName),
+                Target = new DownloadTarget(root, sanitizedFolder, BuildFileName(chapter, group)),
                 State = DownloadJobState.Queued,
                 QueuedUtc = DateTimeOffset.UtcNow,
                 UpdatedUtc = DateTimeOffset.UtcNow,
             });
         }
 
-        if (additions.Count == 0)
+        if (candidates.Count == 0)
         {
-            return new QueueAddResult(0, skipped, null);
+            return new QueueAddResult(0, skippedPublished, skippedQueued, null);
         }
 
+        var appended = new List<DownloadJobRecord>();
         Commit(jobs =>
         {
+            // Decision and append in one transaction. Reserving each identity in the
+            // same set that reports the live ones is what makes this safe under two
+            // concurrent callers, and it also keeps one batch from repeating itself.
+            var taken = LiveIdentityKeys(jobs);
+            foreach (var candidate in candidates)
+            {
+                if (!taken.Add(candidate.Identity.Key))
+                {
+                    skippedQueued++;
+                    continue;
+                }
+
+                appended.Add(candidate);
+            }
+
             // Appended at the end: queue order is stable and a retry never
             // reorders other jobs.
-            jobs.AddRange(additions);
+            jobs.AddRange(appended);
         });
-        queued = additions.Count;
-        EnsureStarted();
-        return new QueueAddResult(queued, skipped, null);
+
+        if (appended.Count > 0) EnsureStarted();
+        return new QueueAddResult(appended.Count, skippedPublished, skippedQueued, null);
     }
+
+    /// <summary>
+    /// The one definition of an identity that is already spoken for: a job that has
+    /// not finished. A replacement permission covers chapters that are already
+    /// published; it never covers work still in flight, which would download one
+    /// chapter twice into one file.
+    /// </summary>
+    private static HashSet<string> LiveIdentityKeys(IEnumerable<DownloadJobRecord> jobs) =>
+        jobs.Where(job => !job.IsTerminal)
+            .Select(job => job.Identity.Key)
+            .ToHashSet(StringComparer.Ordinal);
 
     public void Pause(string jobId) => Transition(jobId, job => job.State switch
     {
@@ -309,6 +378,29 @@ public sealed class DownloadQueueFeature : IDisposable
 
     private DownloadJobRecord ReconcileOnLoad(DownloadJobRecord job)
     {
+        // A persisted target is not trusted input: it is JSON a hand edit or a
+        // damaged file can change, and Path.Combine would follow a rooted or
+        // traversing segment outside the Library. Such a job is failed with the
+        // reason in its own warning — the per-job channel the Download List already
+        // renders — rather than dropped, so the user still sees which chapter it was
+        // and can remove it. A completed job no longer writes, so its record stays
+        // history instead of being rewritten into a failure.
+        if (job.State != DownloadJobState.Completed
+            && !DownloaderPathContainment.TryResolve(
+                job.Target.Root,
+                job.Target.FolderName,
+                job.Target.FileName,
+                out _,
+                out var containment))
+        {
+            return job with
+            {
+                State = DownloadJobState.Failed,
+                Warning = UnsafeTargetMessage(containment),
+                UpdatedUtc = DateTimeOffset.UtcNow,
+            };
+        }
+
         // Nothing resumes automatically after a restart, which includes a job
         // that was only queued. States that already require an explicit user
         // action are left as they are.
@@ -339,6 +431,13 @@ public sealed class DownloadQueueFeature : IDisposable
             UpdatedUtc = DateTimeOffset.UtcNow,
         };
     }
+
+    /// <summary>
+    /// One wording for a target the containment rule refused, so the same unsafe
+    /// state reads the same whether it was caught on load or at the moment of use.
+    /// </summary>
+    private static string UnsafeTargetMessage(string? problem) =>
+        "Target download tidak aman dan tidak dipakai: " + problem;
 
     private void EnsureStarted()
     {
@@ -408,6 +507,21 @@ public sealed class DownloadQueueFeature : IDisposable
 
     private async Task RunJobAsync(DownloadJobRecord job, CancellationToken lifetime)
     {
+        // The one point where a job's target is about to be used for a write. A
+        // target that cannot be contained inside its own root is refused here, so
+        // neither a Retry of a job loaded with unsafe state nor any other route into
+        // the scheduler can reach the publisher with it.
+        if (!DownloaderPathContainment.TryResolve(
+                job.Target.Root,
+                job.Target.FolderName,
+                job.Target.FileName,
+                out _,
+                out var containment))
+        {
+            Fail(job.JobId, UnsafeTargetMessage(containment));
+            return;
+        }
+
         CancellationTokenSource linked;
         lock (_gate)
         {
@@ -731,45 +845,59 @@ public sealed class DownloadQueueFeature : IDisposable
         }
     }
 
-    private void Transition(string jobId, Func<DownloadJobRecord, DownloadJobRecord> map) =>
+    /// <summary>
+    /// Applies one job transition. Cancelling the bounded work a pause interrupts is
+    /// an effect, so it is decided inside the mutation but carried out only after
+    /// <see cref="Commit"/> has returned — that is, once the transition is durable.
+    /// Cancelling first would leave a job whose save failed visibly unchanged while
+    /// its download had already been stopped: state saying <c>Downloading</c> with no
+    /// worker behind it.
+    /// </summary>
+    private void Transition(string jobId, Func<DownloadJobRecord, DownloadJobRecord> map)
+    {
+        var cancelRunning = false;
         Commit(jobs =>
         {
             var index = FindIndex(jobs, jobId);
             if (index < 0) return;
             var mapped = map(jobs[index]);
             if (!ReferenceEquals(mapped, jobs[index])) jobs[index] = mapped;
-            if (mapped.State == DownloadJobState.Pausing
-                && _running.TryGetValue(jobId, out var source))
-            {
-                // Cancel bounded native work; an already-written pyhost command
-                // still reaches its own terminal response.
-                source.Cancel();
-            }
+            cancelRunning = mapped.State == DownloadJobState.Pausing;
         });
 
+        if (!cancelRunning) return;
+
+        lock (_gate)
+        {
+            // Cancel bounded native work; an already-written pyhost command still
+            // reaches its own terminal response. A job that finished in the meantime
+            // has already left the running set, and there is nothing to cancel.
+            if (_running.TryGetValue(jobId, out var source)) source.Cancel();
+        }
+    }
+
     /// <summary>
-    /// Applies one state mutation, persists the whole queue atomically, and
-    /// only then notifies. A persistence failure aborts the transition, so
-    /// on-disk staging is never left ambiguously owned.
+    /// Applies one state mutation, persists the whole queue atomically, and only
+    /// then adopts the result and notifies. The mutation runs on a clone, so a
+    /// <see cref="QueuePersistenceException"/> leaves the in-memory queue exactly
+    /// as it was and raises no change signal: a transition that did not become
+    /// durable must not become visible either, and on-disk staging is never left
+    /// ambiguously owned. The exception still reaches the caller, which reports it.
+    ///
+    /// Saving happens inside the gate. Two commits running concurrently would
+    /// otherwise clone the same base and the second save would silently drop the
+    /// first transition. Notification stays outside it, so a handler that reads a
+    /// snapshot can never wait on the file write.
     /// </summary>
     private void Commit(Action<List<DownloadJobRecord>> mutate)
     {
-        List<DownloadJobRecord> toSave;
+        List<DownloadJobRecord> next;
         lock (_gate)
         {
-            mutate(_jobs);
-            toSave = [.. _jobs];
-        }
-
-        try
-        {
-            _store.Save(toSave);
-        }
-        catch (QueuePersistenceException)
-        {
-            // Re-throw as a visible failure: the caller's transition did not
-            // become durable, and proceeding would make staging ambiguous.
-            throw;
+            next = [.. _jobs];
+            mutate(next);
+            _store.Save(next);
+            _jobs = next;
         }
 
         Notify();

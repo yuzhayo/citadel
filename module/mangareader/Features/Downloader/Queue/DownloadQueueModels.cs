@@ -118,8 +118,25 @@ public sealed record DownloadJobRecord
         ? "—"
         : CompletedPages + "/" + PageCount;
 
-    public string PrimaryActionLabel =>
-        State is DownloadJobState.Paused or DownloadJobState.Failed ? "Resume" : "Pause";
+    /// <summary>
+    /// Whether Pause is a valid action. It stays offered while the pause itself is
+    /// settling — disabled rather than hidden — so the row visibly parks instead
+    /// of losing its action mid-transition.
+    /// </summary>
+    public bool CanPause => State is DownloadJobState.Queued || IsInFlight;
+
+    /// <summary>Whether the resume action is valid for this state.</summary>
+    public bool CanResume => State is DownloadJobState.Paused or DownloadJobState.Failed;
+
+    /// <summary>One action, labelled by what it actually does to this state.</summary>
+    public string ResumeActionLabel => State == DownloadJobState.Failed ? "Retry" : "Resume";
+
+    /// <summary>
+    /// Whether this row's own operation has settled. A pause must wait for the
+    /// already-written bounded command to reach its terminal response before the
+    /// row can claim the job is parked, so its actions are disabled meanwhile.
+    /// </summary>
+    public bool CanActNow => State != DownloadJobState.Pausing;
 
     public bool CanChooseFallback =>
         State == DownloadJobState.AwaitingSourceFallback && FallbackCandidates.Count > 0;

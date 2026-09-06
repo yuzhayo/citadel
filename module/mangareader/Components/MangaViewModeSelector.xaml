@@ -1,0 +1,40 @@
+<UserControl x:Class="Module.Mangareader.Components.MangaViewModeSelector"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:setting="clr-namespace:Citadel.Setting.Components;assembly=Citadel.Setting"
+             Background="{DynamicResource TransparentBrush}"
+             Foreground="{DynamicResource Fg}"
+             UseLayoutRounding="True"
+             SnapsToDevicePixels="True">
+    <!--
+      Shared Grid/List selector: a composition of two existing shared buttons.
+      It receives the current mode and emits the requested one. It owns no
+      persistence, collection, sort, filter, scroll or selection state, and each
+      consumer keeps its own independent mode.
+    -->
+    <StackPanel Orientation="Horizontal">
+        <setting:SettingButton x:Name="GridButton"
+                               Width="38"
+                               Height="32"
+                               Padding="0"
+                               AutomationProperties.Name="Grid view"
+                               Click="GridButton_Click"
+                               ToolTip="Grid view">
+            <TextBlock FontFamily="Segoe MDL2 Assets"
+                       FontSize="14"
+                       Text="&#xE80A;" />
+        </setting:SettingButton>
+        <setting:SettingButton x:Name="ListButton"
+                               Width="38"
+                               Height="32"
+                               Margin="6,0,0,0"
+                               Padding="0"
+                               AutomationProperties.Name="List view"
+                               Click="ListButton_Click"
+                               ToolTip="List view">
+            <TextBlock FontFamily="Segoe MDL2 Assets"
+                       FontSize="14"
+                       Text="&#xE8FD;" />
+        </setting:SettingButton>
+    </StackPanel>
+</UserControl>

@@ -1,6 +1,7 @@
 <UserControl x:Class="Module.Mangareader.ChapterSelectorView"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:components="clr-namespace:Module.Mangareader.Components"
              xmlns:setting="clr-namespace:Citadel.Setting.Components;assembly=Citadel.Setting"
              Background="{DynamicResource Bg}"
              Foreground="{DynamicResource Fg}"
@@ -20,78 +21,51 @@
                 <RowDefinition Height="Auto" />
             </Grid.RowDefinitions>
 
-            <Grid Grid.Row="0">
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="Auto" />
-                    <ColumnDefinition Width="104" />
-                    <ColumnDefinition Width="*" />
-                </Grid.ColumnDefinitions>
-                <setting:SettingButton Width="38"
-                                       Height="38"
-                                       Margin="0,0,12,0"
-                                       ToolTip="Back to Library"
-                                       AutomationProperties.Name="Back to Library"
-                                       Click="BackButton_Click">
-                    <TextBlock Text="&#xE72B;"
-                               FontFamily="Segoe MDL2 Assets"
-                               FontSize="14" />
-                </setting:SettingButton>
-                <Border Grid.Column="1"
-                        Width="92"
-                        Height="126"
-                        Background="{DynamicResource Card}"
-                        BorderBrush="{DynamicResource Border}"
-                        BorderThickness="1"
-                        CornerRadius="{DynamicResource SidebarItemCornerRadius}"
-                        ClipToBounds="True">
-                    <Grid>
-                        <TextBlock Text="&#xE736;"
-                                   FontFamily="Segoe MDL2 Assets"
-                                   FontSize="26"
-                                   Foreground="{DynamicResource Dim}"
-                                   HorizontalAlignment="Center"
-                                   VerticalAlignment="Center" />
-                        <Image Source="{Binding Cover}"
-                               Stretch="UniformToFill"
-                               RenderOptions.BitmapScalingMode="Fant" />
-                    </Grid>
-                </Border>
-                <StackPanel Grid.Column="2" Margin="12,2,0,0">
-                    <TextBlock Text="{Binding Title}"
-                               FontSize="21"
-                               FontWeight="SemiBold"
-                               Foreground="{DynamicResource Fg}"
-                               TextWrapping="Wrap" />
-                    <TextBlock Margin="0,6,0,0"
-                               Text="{Binding ChapterSummary}"
-                               Foreground="{DynamicResource Accent}" />
-                    <TextBlock Margin="0,10,0,0"
-                               Text="{Binding FolderPath}"
-                               FontSize="11"
-                               Foreground="{DynamicResource Dim}"
-                               TextTrimming="CharacterEllipsis"
-                               ToolTip="{Binding FolderPath}" />
-                </StackPanel>
-            </Grid>
+            <!--
+              Shared local title detail, fed by a Library-owned adapter. Its two
+              reserved action regions are assigned in code-behind: Library's
+              Update Checker fills the cover slot and Library's Grouping fills
+              the detail slot. They stay empty until their own feature slice
+              does, so no dead affordance is shown here.
+            -->
+            <components:MangaDetailView x:Name="Detail"
+                                        MaxHeight="300"
+                                        Cover="{Binding Cover}"
+                                        Metadata="{Binding Metadata}"
+                                        Synopsis="{Binding SynopsisText}"
+                                        Title="{Binding Title}">
+                <components:MangaDetailView.HeaderLeadingContent>
+                    <setting:SettingButton Width="38"
+                                           Height="38"
+                                           HorizontalAlignment="Left"
+                                           AutomationProperties.Name="Back to Library"
+                                           Click="BackButton_Click"
+                                           Padding="0"
+                                           ToolTip="Back to Library">
+                        <TextBlock FontFamily="Segoe MDL2 Assets"
+                                   FontSize="14"
+                                   Text="&#xE72B;" />
+                    </setting:SettingButton>
+                </components:MangaDetailView.HeaderLeadingContent>
+            </components:MangaDetailView>
 
             <TextBlock Grid.Row="1"
                        Margin="2,15,2,8"
-                       Text="Choose a chapter"
                        FontSize="14"
-                       FontWeight="SemiBold" />
+                       FontWeight="SemiBold"
+                       Text="Choose a chapter" />
 
             <ListBox x:Name="ChapterList"
                      Grid.Row="2"
-                     ItemsSource="{Binding Manga.Chapters}"
-                     Style="{DynamicResource SettingListStyle}"
                      Background="{DynamicResource Card}"
                      BorderBrush="{DynamicResource Border}"
                      BorderThickness="1"
+                     MouseDoubleClick="ChapterList_MouseDoubleClick"
                      Padding="6"
                      ScrollViewer.HorizontalScrollBarVisibility="Disabled"
                      ScrollViewer.VerticalScrollBarVisibility="Auto"
                      SelectionChanged="ChapterList_SelectionChanged"
-                     MouseDoubleClick="ChapterList_MouseDoubleClick">
+                     Style="{DynamicResource SettingListStyle}">
                 <ListBox.ItemTemplate>
                     <DataTemplate>
                         <Grid>
@@ -99,13 +73,13 @@
                                 <ColumnDefinition Width="*" />
                                 <ColumnDefinition Width="Auto" />
                             </Grid.ColumnDefinitions>
-                            <TextBlock Text="{Binding Title}"
-                                       FontWeight="SemiBold"
+                            <TextBlock FontWeight="SemiBold"
+                                       Text="{Binding Title}"
                                        TextTrimming="CharacterEllipsis" />
                             <TextBlock Grid.Column="1"
                                        Margin="14,0,0,0"
-                                       Text="Open"
-                                       Foreground="{DynamicResource Dim}" />
+                                       Foreground="{DynamicResource Dim}"
+                                       Text="Open" />
                         </Grid>
                     </DataTemplate>
                 </ListBox.ItemTemplate>
@@ -117,8 +91,8 @@
                                    Height="38"
                                    Margin="0,14,0,0"
                                    HorizontalAlignment="Right"
-                                   Content="Open chapter"
-                                   Click="OpenButton_Click" />
+                                   Click="OpenButton_Click"
+                                   Content="Open chapter" />
         </Grid>
     </Border>
 </UserControl>

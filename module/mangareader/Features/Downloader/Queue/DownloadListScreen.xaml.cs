@@ -91,12 +91,6 @@ public partial class DownloadListScreen : UserControl, IDisposable
         });
     }
 
-    private void Retry_Click(object sender, RoutedEventArgs e)
-    {
-        if (Row(sender) is not { } job || _context is null) return;
-        Run(() => _context.Queue.Resume(job.JobId));
-    }
-
     /// <summary>
     /// A cross-group fallback always replaces the whole chapter and always needs
     /// an explicit user confirmation; candidates are offered one at a time.

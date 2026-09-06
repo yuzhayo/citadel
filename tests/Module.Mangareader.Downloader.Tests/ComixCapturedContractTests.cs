@@ -2,7 +2,7 @@ using System.Globalization;
 using System.IO;
 using System.Text.Json.Nodes;
 using Module.Mangareader.Features.Downloader;
-using Module.Mangareader.Features.Downloader.Sources;
+using Module.Mangareader.Sources;
 using Module.Mangareader.Features.Downloader.Sources.Comix;
 
 namespace Module.Mangareader.Downloader.Tests;
@@ -97,6 +97,51 @@ public sealed class ComixCapturedContractTests
         ComixSource.ReadCatalogPage(
             ComixSource.ReadApiResponse(BridgeResponse(json, status), ComixContract.RouteBrowse),
             page);
+
+    /// <summary>
+    /// The captured <c>url</c> is the provider's own title page path. It has to leave
+    /// the adapter already absolute: the consumer that stores it as provenance is
+    /// provider-neutral and may not resolve a Comix route itself, so a relative value
+    /// silently produced an empty canonical url in every binding.
+    /// </summary>
+    [Fact]
+    public void ACapturedTitlePathLeavesTheAdapterAsAnAbsoluteUrl()
+    {
+        var page = Decode("""
+        {
+          "items": [
+            { "id": 3750, "hid": "exnx", "title": "Relative", "url": "/title/exnx-relative" },
+            { "id": 4102, "hid": "60qg", "title": "Absolute", "url": "https://comix.ws/title/60qg-absolute" },
+            { "id": 4103, "hid": "9zzz", "title": "Other scheme", "url": "javascript:alert(1)" },
+            { "id": 4104, "hid": "8yyy", "title": "Missing" },
+            { "id": 4105, "hid": "7xxx", "title": "Protocol relative", "url": "//evil.example/title/7xxx-x" },
+            { "id": 4106, "hid": "6www", "title": "Other path", "url": "/browse/6www" },
+            { "id": 4107, "hid": "5vvv", "title": "Foreign host", "url": "https://evil.example/title/5vvv-v" },
+            { "id": 4108, "hid": "4uuu", "title": "Right host wrong path", "url": "https://comix.ws/browse/4uuu" }
+          ],
+          "meta": { "total": 8, "page": 1, "hasNext": false }
+        }
+        """);
+
+        Assert.Equal(8, page.Items.Count);
+        Assert.Equal("https://comix.ws/title/exnx-relative", page.Items[0].Identity.Slug);
+
+        // A value the provider already supplied as absolute is kept, not re-derived.
+        Assert.Equal("https://comix.ws/title/60qg-absolute", page.Items[1].Identity.Slug);
+
+        // Anything unusable stays empty so the consumer's existing fallback shows
+        // instead of a broken link. That includes the two relative forms that must
+        // not be resolved — a protocol-relative value would become another origin,
+        // and only the captured title page path is this provider's title url — and
+        // the two absolute forms that are well formed but are not this provider's
+        // title page. Being parseable is not evidence of provenance.
+        Assert.Equal(string.Empty, page.Items[2].Identity.Slug);
+        Assert.Equal(string.Empty, page.Items[3].Identity.Slug);
+        Assert.Equal(string.Empty, page.Items[4].Identity.Slug);
+        Assert.Equal(string.Empty, page.Items[5].Identity.Slug);
+        Assert.Equal(string.Empty, page.Items[6].Identity.Slug);
+        Assert.Equal(string.Empty, page.Items[7].Identity.Slug);
+    }
 
     [Fact]
     public void TheDefaultFilterReproducesTheCapturedRequest()
@@ -210,17 +255,72 @@ public sealed class ComixCapturedContractTests
     }
 
     /// <summary>
-    /// Genre/format/author/artist lookups still have no captured endpoint, so
-    /// they say so instead of returning invented options.
+    /// Genre and format lookups still have no captured endpoint, so they are not
+    /// advertised as lookup kinds at all — the filter panel serves both from the
+    /// captured static taxonomy. The refusal stays as the backstop for a caller that
+    /// ignores the capability list: it happens before any browser session is started,
+    /// rather than against a guessed route.
     /// </summary>
-    [Fact]
-    public async Task TheUncapturedLookupRefusesVisibly()
+    [Theory]
+    [InlineData(RemoteLookupKind.Genre)]
+    [InlineData(RemoteLookupKind.Format)]
+    public async Task AnUncapturedLookupRefusesVisibly(RemoteLookupKind kind)
     {
         var staging = Path.Combine(Path.GetTempPath(), "comix-refusals-" + Guid.NewGuid().ToString("N"));
         using var client = new DownloaderPyHostClient(staging);
         var source = new ComixSource(client);
 
-        await Assert.ThrowsAsync<ComixContractException>(
-            () => source.LookupAsync(RemoteLookupKind.Genre, "action", default));
+        var exception = await Assert.ThrowsAsync<ComixContractException>(
+            () => source.LookupAsync(kind, "action", default));
+
+        Assert.Contains("endpoint live", exception.Message, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// The advertised lookups are exactly the two the captured <c>tags/search</c>
+    /// route can answer, so a consumer that builds its controls from the capability
+    /// list never offers one that can only refuse.
+    /// </summary>
+    [Fact]
+    public void TheAdvertisedLookupKindsAreTheCapturedOnes()
+    {
+        var staging = Path.Combine(Path.GetTempPath(), "comix-capabilities-" + Guid.NewGuid().ToString("N"));
+        using var client = new DownloaderPyHostClient(staging);
+
+        Assert.Equal(
+            [RemoteLookupKind.Author, RemoteLookupKind.Artist],
+            new ComixSource(client).Capabilities.LookupKinds);
+    }
+
+    /// <summary>
+    /// Author and artist use the captured <c>tags/search</c> route, whose entries
+    /// carry the same <c>{id, title, slug}</c> triple as every other Comix option
+    /// list. Only the provider id may enter a browse query.
+    /// </summary>
+    [Fact]
+    public void ACapturedTagLookupDecodesIntoProviderIds()
+    {
+        // Parsed, not constructed: the bridge hands C# a parsed payload, and only
+        // a parsed numeric node decodes the way the adapter reads it.
+        var payload = JsonNode.Parse("""
+        {
+          "items": [
+            { "id": 991, "title": "Someone", "slug": "someone" },
+            { "title": "No id" },
+            { "id": 442, "title": "Artist Two", "slug": "artist-two" }
+          ]
+        }
+        """)!.AsObject();
+
+        var options = ComixSource.ReadLookupOptions(payload);
+
+        Assert.Equal(2, options.Count);
+        Assert.Equal("991", options[0].Key);
+        Assert.Equal("Someone", options[0].DisplayName);
+        Assert.Equal("442", options[1].Key);
+
+        // A payload without the captured container is a contract failure.
+        Assert.Throws<ComixContractException>(
+            () => ComixSource.ReadLookupOptions(new JsonObject { ["data"] = new JsonArray() }));
     }
 }

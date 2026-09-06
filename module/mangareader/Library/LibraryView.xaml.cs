@@ -1,10 +1,14 @@
 using System.Collections.ObjectModel;
+using System.ComponentModel;
 using System.IO;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Data;
 using System.Windows.Media.Imaging;
 using Microsoft.Win32;
 using Module.Mangareader.Library;
+using Module.Mangareader.Library.Grouping;
+using Module.Mangareader.Library.UpdateChecker;
 using Module.Mangareader.ShareLogic;
 
 namespace Module.Mangareader;
@@ -14,6 +18,11 @@ public partial class LibraryView : UserControl, IDisposable
     private readonly LibraryScanner _scanner = new();
     private readonly MangaCoverLoader _coverLoader = new();
     private readonly ObservableCollection<MangaTitleCardModel> _cards = new();
+    private readonly GroupingStore _groupingStore = new();
+    private readonly GroupingFeature _grouping;
+    private readonly LibraryViewModeFeature _viewMode = new();
+    private readonly ICollectionView _titlesView;
+    private UpdateCheckerEntry? _updateChecker;
     private LibraryRootContext? _root;
     private CancellationTokenSource? _scanCancellation;
     private bool _autoRestored;
@@ -21,8 +30,30 @@ public partial class LibraryView : UserControl, IDisposable
 
     public LibraryView()
     {
+        _grouping = new GroupingFeature(_groupingStore);
         InitializeComponent();
-        TitleGrid.ItemsSource = _cards;
+
+        // One view over the loaded cards carries the Grouping filter and the
+        // column sort. Both presentations bind that same view, so switching
+        // between them cannot lose a filter, a sort order or a loaded title,
+        // and it never needs a scan.
+        _titlesView = CollectionViewSource.GetDefaultView(_cards);
+        _titlesView.Filter = candidate =>
+            candidate is MangaTitleCardModel card && _grouping.IsVisible(card.Manga.Title);
+        TitleGrid.ItemsSource = _titlesView;
+        TitleTable.ItemsSource = _titlesView;
+
+        Grouping.UseGrouping(_grouping, LoadedTitleFolderNames);
+        Grouping.InstallAddTitleAction(
+            ChapterSelector.DetailActions,
+            () => ChapterSelector.ActiveTitleFolderName);
+        _grouping.Changed += Grouping_Changed;
+
+        ViewModeSelector.Mode = _viewMode.Mode;
+        ViewModeSelector.ModeRequested += ViewModeSelector_ModeRequested;
+        _viewMode.Changed += ViewMode_Changed;
+        ApplyViewMode();
+
         Loaded += LibraryView_Loaded;
     }
 
@@ -39,6 +70,22 @@ public partial class LibraryView : UserControl, IDisposable
         _root = root;
     }
 
+    /// <summary>
+    /// Attaches the Update Checker entry point. The feature owns its action and
+    /// its popup; this screen only offers the reserved cover slot and a pull of
+    /// the active local title, so no matching or checking rule lands here.
+    /// </summary>
+    public void UseUpdateChecker(UpdateCheckerFeature feature)
+    {
+        ArgumentNullException.ThrowIfNull(feature);
+        if (_disposed || _updateChecker is not null) return;
+
+        _updateChecker = new UpdateCheckerEntry(feature);
+        _updateChecker.Install(
+            ChapterSelector.CoverActions,
+            () => ChapterSelector.ActiveTitleFolderName);
+    }
+
     public event EventHandler<OpenChapterRequestedEventArgs>? OpenChapterRequested;
 
     public event EventHandler<LibraryChangedEventArgs>? TitlesChanged;
@@ -51,6 +98,11 @@ public partial class LibraryView : UserControl, IDisposable
     {
         if (_disposed || _autoRestored || _root is null) return;
         _autoRestored = true;
+
+        // Groups are independent of the root: a library path that is missing or
+        // damaged must not cost the user their stored group definitions.
+        _grouping.Restore();
+        _viewMode.Restore();
 
         var loaded = _root.Restore();
         if (loaded.Path is not null)
@@ -137,6 +189,7 @@ public partial class LibraryView : UserControl, IDisposable
             var chapterCount = titles.Sum(title => title.ChapterCount);
             CompleteSuccessfulScan(cancellation, attempt, $"{titles.Count} titles · {chapterCount} chapters");
             SetBusy(false);
+            UpdateGroupFilter();
 
             await LoadCoversAsync(_cards.ToArray(), cancellation);
             if (!_disposed && ReferenceEquals(_scanCancellation, cancellation))
@@ -253,6 +306,86 @@ public partial class LibraryView : UserControl, IDisposable
     private void NotifyTitlesChanged(IReadOnlyList<MangaTitle> titles) =>
         TitlesChanged?.Invoke(this, new LibraryChangedEventArgs(titles));
 
+    private void Grouping_Changed(object? sender, EventArgs e)
+    {
+        if (_disposed) return;
+        if (!Dispatcher.CheckAccess())
+        {
+            Dispatcher.BeginInvoke(UpdateGroupFilter);
+            return;
+        }
+
+        UpdateGroupFilter();
+    }
+
+    /// <summary>
+    /// Re-applies the active group filter to the already loaded titles. A group
+    /// whose recorded titles are all missing from this library is an empty
+    /// result rather than a silent blank grid; the scan's own empty messaging
+    /// still owns the case where nothing was loaded at all.
+    /// </summary>
+    private void UpdateGroupFilter()
+    {
+        if (_disposed) return;
+
+        _titlesView.Refresh();
+        if (_cards.Count == 0) return;
+
+        if (_titlesView.IsEmpty)
+        {
+            ShowEmpty(
+                "No titles in this group",
+                "None of the titles recorded in the selected group are in the current library.");
+            return;
+        }
+
+        EmptyPanel.Visibility = Visibility.Collapsed;
+    }
+
+    /// <summary>
+    /// Pulled by Grouping when it needs the current title list, so the feature
+    /// never caches a Library snapshot and never triggers a scan.
+    /// </summary>
+    private IReadOnlyList<string> LoadedTitleFolderNames() =>
+        _cards.Select(card => card.Manga.Title).ToArray();
+
+    private void ViewModeSelector_ModeRequested(object? sender, MangaViewMode mode) =>
+        _viewMode.Select(mode);
+
+    private void ViewMode_Changed(object? sender, EventArgs e)
+    {
+        if (_disposed) return;
+        if (!Dispatcher.CheckAccess())
+        {
+            Dispatcher.BeginInvoke(ApplyViewMode);
+            return;
+        }
+
+        ApplyViewMode();
+    }
+
+    /// <summary>
+    /// Switches presentation and nothing else. Both panels stay in the tree and
+    /// keep their own scroll position and selection, and both read the same
+    /// collection view, so a switch never rescans, refetches, refilters or
+    /// re-sorts.
+    /// </summary>
+    private void ApplyViewMode()
+    {
+        if (_disposed) return;
+
+        var list = _viewMode.Mode == MangaViewMode.List;
+        ViewModeSelector.Mode = _viewMode.Mode;
+        GridScroll.Visibility = list ? Visibility.Collapsed : Visibility.Visible;
+        TitleTable.Visibility = list ? Visibility.Visible : Visibility.Collapsed;
+    }
+
+    /// <summary>
+    /// The List row action and the Grid card click resolve the same binding tag,
+    /// so both presentations open the same local title identity.
+    /// </summary>
+    private void TitleRow_OpenClick(object sender, RoutedEventArgs e) => TitleCard_Click(sender, e);
+
     private void ShowEmpty(string title, string detail)
     {
         EmptyTitle.Text = title;
@@ -279,6 +412,9 @@ public partial class LibraryView : UserControl, IDisposable
         if (_disposed) return;
         _disposed = true;
         Loaded -= LibraryView_Loaded;
+        _grouping.Changed -= Grouping_Changed;
+        _viewMode.Changed -= ViewMode_Changed;
+        ViewModeSelector.ModeRequested -= ViewModeSelector_ModeRequested;
         _scanCancellation?.Cancel();
         _scanCancellation = null;
         ChapterSelector.Dismiss();

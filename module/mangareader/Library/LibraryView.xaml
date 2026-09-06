@@ -2,12 +2,15 @@
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:local="clr-namespace:Module.Mangareader"
+             xmlns:components="clr-namespace:Module.Mangareader.Components"
+             xmlns:grouping="clr-namespace:Module.Mangareader.Library.Grouping"
              xmlns:setting="clr-namespace:Citadel.Setting.Components;assembly=Citadel.Setting"
              Background="{DynamicResource Bg}"
              Foreground="{DynamicResource Fg}">
     <setting:SettingViewport Mode="Contained">
     <Grid>
         <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
@@ -21,6 +24,9 @@
             </setting:SettingActionCard.Content>
             <setting:SettingActionCard.ActionContent>
                 <StackPanel Orientation="Horizontal">
+                    <components:MangaViewModeSelector x:Name="ViewModeSelector"
+                                                      Margin="0,0,12,0"
+                                                      VerticalAlignment="Center" />
                     <setting:SettingButton x:Name="BrowseButton"
                                            MinWidth="94"
                                            Height="40"
@@ -43,8 +49,11 @@
                    FontSize="13"
                    Text="Choose a library folder to begin." />
 
-        <Grid Grid.Row="2">
-            <ScrollViewer VerticalScrollBarVisibility="Auto"
+        <grouping:GroupingBar x:Name="Grouping" Grid.Row="2" />
+
+        <Grid Grid.Row="3">
+            <ScrollViewer x:Name="GridScroll"
+                          VerticalScrollBarVisibility="Auto"
                           HorizontalScrollBarVisibility="Disabled"
                           PanningMode="VerticalOnly"
                           Style="{DynamicResource SettingScrollViewerStyle}">
@@ -63,6 +72,75 @@
                     </ItemsControl.ItemTemplate>
                 </ItemsControl>
             </ScrollViewer>
+
+            <!--
+              List presentation over the very same collection view, so the
+              Grouping filter, the sort and the loaded titles are shared by both
+              modes instead of being duplicated per presentation. The shared
+              table owns its own scrolling and is never wrapped in another one.
+            -->
+            <setting:SettingTable x:Name="TitleTable"
+                                  AutomationProperties.Name="Library titles"
+                                  CanUserSortColumns="True"
+                                  Visibility="Collapsed">
+                <setting:SettingTable.InteractiveColumns>
+                    <DataGridTemplateColumn CanUserSort="True"
+                                            Header="Title"
+                                            MinWidth="200"
+                                            SortMemberPath="Title">
+                        <DataGridTemplateColumn.CellTemplate>
+                            <DataTemplate>
+                                <TextBlock FontWeight="SemiBold"
+                                           Text="{Binding Title}"
+                                           TextTrimming="CharacterEllipsis"
+                                           ToolTip="{Binding Title}" />
+                            </DataTemplate>
+                        </DataGridTemplateColumn.CellTemplate>
+                    </DataGridTemplateColumn>
+
+                    <DataGridTemplateColumn CanUserSort="True"
+                                            Header="Chapters"
+                                            MinWidth="90"
+                                            SortMemberPath="Manga.ChapterCount">
+                        <DataGridTemplateColumn.CellTemplate>
+                            <DataTemplate>
+                                <TextBlock Text="{Binding ChapterSummary}" />
+                            </DataTemplate>
+                        </DataGridTemplateColumn.CellTemplate>
+                    </DataGridTemplateColumn>
+
+                    <DataGridTemplateColumn CanUserSort="True"
+                                            Header="Latest chapter"
+                                            MinWidth="150"
+                                            SortMemberPath="Manga.LatestChapterTitle">
+                        <DataGridTemplateColumn.CellTemplate>
+                            <DataTemplate>
+                                <TextBlock Text="{Binding Manga.LatestChapterTitle}"
+                                           TextTrimming="CharacterEllipsis"
+                                           ToolTip="{Binding Manga.LatestChapterTitle}" />
+                            </DataTemplate>
+                        </DataGridTemplateColumn.CellTemplate>
+                    </DataGridTemplateColumn>
+
+                    <DataGridTemplateColumn CanUserSort="False"
+                                            Header="Action"
+                                            MinWidth="110">
+                        <DataGridTemplateColumn.CellTemplate>
+                            <DataTemplate>
+                                <setting:SettingTableActions>
+                                    <setting:SettingTableActions.PrimaryContent>
+                                        <setting:SettingButton AutomationProperties.Name="Open this title"
+                                                               Click="TitleRow_OpenClick"
+                                                               Content="Open"
+                                                               MinWidth="76"
+                                                               Tag="{Binding}" />
+                                    </setting:SettingTableActions.PrimaryContent>
+                                </setting:SettingTableActions>
+                            </DataTemplate>
+                        </DataGridTemplateColumn.CellTemplate>
+                    </DataGridTemplateColumn>
+                </setting:SettingTable.InteractiveColumns>
+            </setting:SettingTable>
 
             <Border x:Name="EmptyPanel"
                     Background="{DynamicResource TransparentBrush}">

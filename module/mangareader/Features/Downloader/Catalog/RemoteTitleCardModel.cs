@@ -1,7 +1,7 @@
 using System.ComponentModel;
 using System.Runtime.CompilerServices;
 using System.Windows.Media.Imaging;
-using Module.Mangareader.Features.Downloader.Sources;
+using Module.Mangareader.Sources;
 using Module.Mangareader.ShareLogic;
 
 namespace Module.Mangareader.Features.Downloader.Catalog;

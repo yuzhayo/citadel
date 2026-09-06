@@ -295,6 +295,16 @@ Required behavior:
 Rename group, delete group, and remove-title management are outside the current
 approved scope.
 
+**Recorded deviation (2026-09-06 implementation).** The tab strip carries one
+extra tab, `All titles`, positioned immediately after `Add Group` and before the
+stored groups. It is not in the list above. It exists because the shared tab
+component is a `TabControl`, which always has a selected tab, so without it there
+is no way back to an unfiltered view once a group is selected and the group filter
+becomes one-way. `All titles` is not a group: it stores nothing, has no
+membership, is never persisted, and selecting it only clears the active filter.
+Rename, delete and remove-title management remain out of scope and this tab adds
+none of them.
+
 ## 10. Library and History View Mode
 
 Library and History each have an independent Grid/List view preference.

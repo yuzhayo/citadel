@@ -1,5 +1,7 @@
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Input;
+using Module.Mangareader.Sources;
 using Module.Mangareader.Features.Downloader.Sources;
 
 namespace Module.Mangareader.Features.Downloader.Sources.Comix;
@@ -8,6 +10,11 @@ namespace Module.Mangareader.Features.Downloader.Sources.Comix;
 /// The Comix registration's filter contribution. It owns the panel and hands
 /// Catalog only the generic contract, so the panel never calls the adapter
 /// directly: lookups arrive as an injected delegate from this registration.
+///
+/// <see cref="CreatePanel"/> and <see cref="State"/> deliberately resolve to the
+/// same instance, because the panel the screen hosts is the panel whose draft the
+/// source snapshots at Start. A second instance here would let a user edit
+/// filters that never reach a request.
 /// </summary>
 public sealed class ComixFilterContribution : IRemoteFilterContribution
 {
@@ -18,28 +25,36 @@ public sealed class ComixFilterContribution : IRemoteFilterContribution
         Func<RemoteLookupKind, string, CancellationToken, Task<IReadOnlyList<RemoteLookupOption>>> lookup) =>
         _lookup = lookup ?? throw new ArgumentNullException(nameof(lookup));
 
-    public IRemoteFilterState State => _panel ??= new ComixFilterPanel(_lookup);
+    public IRemoteFilterState State => _panel ??= Create();
 
-    public FrameworkElement CreatePanel()
-    {
-        _panel = new ComixFilterPanel(_lookup);
-        return _panel;
-    }
+    public FrameworkElement CreatePanel() => _panel = Create();
+
+    private ComixFilterPanel Create() => new(_lookup);
 }
 
 /// <summary>
-/// Comix Advanced Filters: input state and local validation, producing one
-/// immutable <see cref="ComixBrowseQuery"/>. Composed only from existing shared
-/// controls; it adds no primitive, style or template, and it never builds a
-/// provider URL or issues a browse request.
+/// Comix filters: the compact bar dropdowns plus the Advanced Filters popover,
+/// one immutable <see cref="ComixBrowseQuery"/> draft, and local validation.
+/// Composed only from existing shared controls and this feature's own checkbox
+/// dropdown; it adds no Citadel primitive, style or template, and it never builds
+/// a provider URL or issues a browse request.
 ///
-/// Editing a field or changing a selection performs no remote request. Only the
-/// explicit Search actions on genre, format, author and artist call the
-/// provider, through the delegate this panel was given.
+/// Editing a dropdown, a field or the match mode changes draft state only. The
+/// only provider calls this panel makes are the explicit author/artist lookups,
+/// on Enter or on their own Search action.
 /// </summary>
 public sealed partial class ComixFilterPanel : UserControl, IRemoteFilterState
 {
+    private const string IdleMessage =
+        "Defaults: latest update, Safe + Suggestive. Every filter value here was captured "
+        + "live from the provider. No request is sent until Start.";
+
     private readonly Func<RemoteLookupKind, string, CancellationToken, Task<IReadOnlyList<RemoteLookupOption>>> _lookup;
+    private readonly List<ComixCheckOption> _types;
+    private readonly List<ComixCheckOption> _statuses;
+    private readonly List<ComixCheckOption> _ratings;
+    private readonly List<ComixCheckOption> _demographics;
+    private readonly List<ComixCheckOption> _genres;
     private ComixGenreMode _genreMode = ComixGenreMode.And;
     private CancellationTokenSource? _lookupCancellation;
 
@@ -49,90 +64,61 @@ public sealed partial class ComixFilterPanel : UserControl, IRemoteFilterState
         _lookup = lookup ?? throw new ArgumentNullException(nameof(lookup));
         InitializeComponent();
 
-        RatingList.ItemsSource = ComixOptions.Ratings;
-        TypeList.ItemsSource = ComixOptions.Types;
-        DemographicList.ItemsSource = ComixOptions.Demographics;
-        StatusList.ItemsSource = ComixOptions.Statuses;
-        SortPicker.ItemsSource = ComixOptions.Sorts;
+        _types = CheckOptions(ComixOptions.Types);
+        _statuses = CheckOptions(ComixOptions.Statuses);
+        _ratings = CheckOptions(ComixOptions.Ratings);
+        _demographics = CheckOptions(ComixOptions.Demographics);
 
-        DisableUncapturedFilters();
+        // One dropdown offers both lists, because the provider serializes genres
+        // and formats through the same genres_in[] key and distinguishes them by
+        // id alone.
+        _genres = [.. CheckOptions(ComixOptions.Genres), .. CheckOptions(ComixOptions.Formats)];
+
+        TypeFilter.Options = _types;
+        StatusFilter.Options = _statuses;
+        RatingFilter.Options = _ratings;
+        DemographicFilter.Options = _demographics;
+        GenreFilter.Options = _genres;
+        SortPicker.ItemsSource = ComixOptions.SortOptions;
+
         Reset();
-    }
-
-    /// <summary>
-    /// Only the filters whose live query key was captured stay usable. The rest
-    /// are visibly disabled with the reason on the panel, so nobody can set a
-    /// filter that the provider would silently ignore or reject.
-    /// </summary>
-    private void DisableUncapturedFilters()
-    {
-        Control[] uncaptured =
-        [
-            GenreSearchField, GenreSearchButton, GenreModeButton, GenreList,
-            FormatSearchField, FormatSearchButton, FormatList,
-            DemographicList, StatusList,
-            MinChapterField, YearFromField, YearToField,
-            AuthorField, AuthorSearchButton, AuthorList,
-            ArtistField, ArtistSearchButton, ArtistList,
-        ];
-
-        foreach (var control in uncaptured)
-        {
-            control.IsEnabled = false;
-        }
     }
 
     public IRemoteBrowseFilter? CurrentFilter => BuildQuery();
 
-    public bool HasBlockingError => BuildQuery().ValidationError is not null;
+    /// <summary>
+    /// Blocking covers both a rejected range and an unparseable numeric field, so
+    /// Start can never silently drop what the user typed.
+    /// </summary>
+    public bool HasBlockingError => ValidationMessage is not null;
 
     public string? ValidationMessage => BuildQuery().ValidationError ?? NumericParseError;
 
     private string? NumericParseError { get; set; }
 
     /// <summary>
-    /// One idle message that states both facts a user needs: the captured
-    /// defaults, and which filters are disabled until their live query keys are
-    /// captured from the site.
+    /// Restores the provider-observed defaults — latest update plus Safe and
+    /// Suggestive — and clears every other draft value. Reset never fetches.
     /// </summary>
-    private const string IdleMessage =
-        "Defaults: latest update, Safe + Suggestive. Genre, format, demographic, status, "
-        + "chapter/year range, author and artist are disabled until their live query keys "
-        + "are captured. No request is sent until Start.";
-
     public void Reset()
     {
-        RatingList.SelectedItems.Clear();
-        foreach (var rating in ComixOptions.Ratings)
-        {
-            if (ComixOptions.DefaultRatingKeys.Contains(rating.Key))
-            {
-                RatingList.SelectedItems.Add(rating);
-            }
-        }
+        SortPicker.SelectedItem = ComixOptions.FindSort(ComixOptions.DefaultSortKey);
+        RatingFilter.SetSelectedKeys(ComixOptions.DefaultRatingKeys);
+        TypeFilter.SetSelectedKeys([]);
+        StatusFilter.SetSelectedKeys([]);
+        DemographicFilter.SetSelectedKeys([]);
+        GenreFilter.SetSelectedKeys([]);
 
-        TypeList.SelectedItems.Clear();
-        DemographicList.SelectedItems.Clear();
-        StatusList.SelectedItems.Clear();
-        GenreList.ItemsSource = null;
-        GenreList.SelectedItems.Clear();
-        FormatList.ItemsSource = null;
-        FormatList.SelectedItems.Clear();
-        AuthorList.ItemsSource = null;
-        ArtistList.ItemsSource = null;
-
-        GenreSearchField.Text = string.Empty;
-        FormatSearchField.Text = string.Empty;
-        AuthorField.Text = string.Empty;
-        ArtistField.Text = string.Empty;
         MinChapterField.Text = string.Empty;
         YearFromField.Text = string.Empty;
         YearToField.Text = string.Empty;
+        AuthorField.Text = string.Empty;
+        ArtistField.Text = string.Empty;
+        AuthorList.ItemsSource = null;
+        ArtistList.ItemsSource = null;
 
         _genreMode = ComixGenreMode.And;
         GenreModeButton.Content = "AND";
-        SortPicker.SelectedItem = ComixOptions.Sorts
-            .FirstOrDefault(option => option.Key == ComixOptions.DefaultSortKey);
 
         NumericParseError = null;
         ValidationText.Text = IdleMessage;
@@ -140,14 +126,13 @@ public sealed partial class ComixFilterPanel : UserControl, IRemoteFilterState
 
     private ComixBrowseQuery BuildQuery() => new()
     {
-        SortKey = (SortPicker.SelectedItem as RemoteOption)?.Key ?? ComixOptions.DefaultSortKey,
-        Ratings = Keys(RatingList),
-        Types = Keys(TypeList),
-        Genres = Keys(GenreList),
-        Formats = Keys(FormatList),
+        SortKey = (SortPicker.SelectedItem as ComixSortOption)?.Key ?? ComixOptions.DefaultSortKey,
+        Ratings = RatingFilter.SelectedKeys,
+        Types = TypeFilter.SelectedKeys,
+        Statuses = StatusFilter.SelectedKeys,
+        Demographics = DemographicFilter.SelectedKeys,
+        Genres = GenreFilter.SelectedKeys,
         GenreMode = _genreMode,
-        Demographics = Keys(DemographicList),
-        Statuses = Keys(StatusList),
         MinimumChapter = ParseNullableInt(MinChapterField.Text),
         YearFrom = ParseNullableInt(YearFromField.Text),
         YearTo = ParseNullableInt(YearToField.Text),
@@ -155,8 +140,8 @@ public sealed partial class ComixFilterPanel : UserControl, IRemoteFilterState
         ArtistKey = (ArtistList.SelectedItem as RemoteLookupOption)?.Key,
     };
 
-    private static IReadOnlyList<string> Keys(ListBox list) =>
-        list.SelectedItems.OfType<RemoteOption>().Select(option => option.Key).ToList();
+    private static List<ComixCheckOption> CheckOptions(IReadOnlyList<RemoteOption> source) =>
+        [.. source.Select(option => new ComixCheckOption(option.Key, option.DisplayName))];
 
     private int? ParseNullableInt(string raw)
     {
@@ -164,9 +149,13 @@ public sealed partial class ComixFilterPanel : UserControl, IRemoteFilterState
         return int.TryParse(raw.Trim(), out var value) ? value : null;
     }
 
-    private void MinChapterField_TextChanged(string text) => ValidateNumeric();
+    private void DraftFilter_Changed(object? sender, EventArgs e) => ValidateNumeric();
 
-    private void YearField_TextChanged(string text) => ValidateNumeric();
+    private void NumericDraft_Changed(string text) => ValidateNumeric();
+
+    private void SortPicker_SelectionChanged(object sender, SelectionChangedEventArgs e) => ValidateNumeric();
+
+    private void ResolvedOption_Changed(object sender, SelectionChangedEventArgs e) => ValidateNumeric();
 
     /// <summary>
     /// Field-local validation only. An unparseable or inverted range blocks
@@ -179,8 +168,7 @@ public sealed partial class ComixFilterPanel : UserControl, IRemoteFilterState
             ("Release year from", YearFromField.Text),
             ("Release year to", YearToField.Text));
 
-        var message = NumericParseError ?? BuildQuery().ValidationError;
-        ValidationText.Text = message ?? IdleMessage;
+        ValidationText.Text = NumericParseError ?? BuildQuery().ValidationError ?? IdleMessage;
     }
 
     private static string? FirstParseError(params (string Label, string Raw)[] fields)
@@ -197,7 +185,8 @@ public sealed partial class ComixFilterPanel : UserControl, IRemoteFilterState
         return null;
     }
 
-    private void SortPicker_SelectionChanged(object sender, SelectionChangedEventArgs e) => ValidateNumeric();
+    private void AdvancedButton_Click(object sender, RoutedEventArgs e) =>
+        AdvancedPopup.IsOpen = !AdvancedPopup.IsOpen;
 
     private void GenreModeButton_Click(object sender, RoutedEventArgs e)
     {
@@ -207,21 +196,31 @@ public sealed partial class ComixFilterPanel : UserControl, IRemoteFilterState
 
     private void ResetButton_Click(object sender, RoutedEventArgs e) => Reset();
 
-    private async void GenreSearchButton_Click(object sender, RoutedEventArgs e) =>
-        await SearchAsync(RemoteLookupKind.Genre, GenreSearchField.Text, GenreSearchButton, GenreList);
-
-    private async void FormatSearchButton_Click(object sender, RoutedEventArgs e) =>
-        await SearchAsync(RemoteLookupKind.Format, FormatSearchField.Text, FormatSearchButton, FormatList);
-
     private async void AuthorSearchButton_Click(object sender, RoutedEventArgs e) =>
         await SearchAsync(RemoteLookupKind.Author, AuthorField.Text, AuthorSearchButton, AuthorList);
 
     private async void ArtistSearchButton_Click(object sender, RoutedEventArgs e) =>
         await SearchAsync(RemoteLookupKind.Artist, ArtistField.Text, ArtistSearchButton, ArtistList);
 
+    /// <summary>An explicit Enter is the same action as the field's Search.</summary>
+    private async void LookupField_KeyDown(object sender, KeyEventArgs e)
+    {
+        if (e.Key != Key.Enter) return;
+        e.Handled = true;
+
+        if (ReferenceEquals(sender, AuthorField))
+        {
+            await SearchAsync(RemoteLookupKind.Author, AuthorField.Text, AuthorSearchButton, AuthorList);
+        }
+        else if (ReferenceEquals(sender, ArtistField))
+        {
+            await SearchAsync(RemoteLookupKind.Artist, ArtistField.Text, ArtistSearchButton, ArtistList);
+        }
+    }
+
     /// <summary>
-    /// One explicit lookup. Free typing is never sent as a provider value: only
-    /// a resolved option key can enter the query.
+    /// One explicit lookup. Free typing is never sent as a provider value: only a
+    /// resolved option key can enter the query.
     /// </summary>
     private async Task SearchAsync(
         RemoteLookupKind kind,
@@ -272,8 +271,4 @@ public sealed partial class ComixFilterPanel : UserControl, IRemoteFilterState
             cancellation.Dispose();
         }
     }
-
-    private void AuthorList_SelectionChanged(object sender, SelectionChangedEventArgs e) => ValidateNumeric();
-
-    private void ArtistList_SelectionChanged(object sender, SelectionChangedEventArgs e) => ValidateNumeric();
 }

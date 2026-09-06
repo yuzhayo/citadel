@@ -1,5 +1,5 @@
 using System.Text.Json.Nodes;
-using Module.Mangareader.Features.Downloader.Sources;
+using Module.Mangareader.Sources;
 using Module.Mangareader.Features.Downloader.Sources.Comix;
 
 namespace Module.Mangareader.Downloader.Tests;

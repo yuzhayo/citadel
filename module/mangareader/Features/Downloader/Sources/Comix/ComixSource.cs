@@ -2,18 +2,34 @@ using System.Globalization;
 using System.IO;
 using System.Text;
 using System.Text.Json.Nodes;
+using Module.Mangareader.Sources;
 
 namespace Module.Mangareader.Features.Downloader.Sources.Comix;
 
 /// <summary>
 /// The whole Comix wire contract in one place: routes, query keys and response
-/// field names. Frozen from one captured live request that answered 200
-/// (2026-09-05, `GET https://comix.ws/api/v1/manga`). Anything not captured is
-/// listed in <see cref="UncapturedFilterKeys"/> and is refused visibly rather
-/// than sent under an invented name.
+/// field names. Every entry is captured evidence, never an inference.
+///
+/// 2026-09-05 captured the browse route, its response shape and the
+/// <c>order</c>/<c>content_rating[]</c>/<c>types[]</c>/<c>keyword</c>/<c>page</c>/
+/// <c>limit</c> keys from one live request that answered 200. 2026-09-06 captured
+/// the remaining browse keys, the 13 sorts with their order columns, the
+/// <c>tags/search</c> author/artist lookup, and the full option taxonomy —
+/// 4 demographics, 4 types, 5 statuses, 31 genres and 9 formats — read from the
+/// taxonomy the browse page renders into its own document.
+///
+/// Anything without an entry here is refused visibly rather than sent under an
+/// invented name or value.
 /// </summary>
 public static class ComixContract
 {
+    /// <summary>
+    /// Feeds the chapter manifest hash, so it identifies the page and manifest
+    /// contract and deliberately does not track the browse query contract above.
+    /// Raising it for a new query key would invalidate staged resume data and the
+    /// provenance embedded in already published archives while changing no
+    /// behavior, so it moves only when the manifest or page contract moves.
+    /// </summary>
     public const int Version = 2;
 
     public const string SourceId = "comix";
@@ -24,6 +40,14 @@ public static class ComixContract
 
     /// <summary>Referer required by image downloads.</summary>
     public const string ImageReferer = "https://comix.ws/";
+
+    /// <summary>
+    /// Captured: the shape of the title page path the provider reports in
+    /// <c>url</c>, <c>/title/{hid}-{slug}</c>. Only this shape is resolved against
+    /// <see cref="BaseUrl"/>, so a tampered payload cannot aim a canonical url at
+    /// another origin through a protocol-relative or unrelated relative value.
+    /// </summary>
+    public const string TitlePagePathPrefix = "/title/";
 
     /// <summary>Captured: the browse list the Catalog Start button drives.</summary>
     public const string RouteBrowse = "/api/v1/manga";
@@ -58,9 +82,41 @@ public static class ComixContract
     public const string KeyTypes = "types[]";
     public const string KeyKeyword = "keyword";
 
+    /// <summary>
+    /// Browse query keys captured live on 2026-09-06 through the page client.
+    /// Every one of these is provider evidence; a filter with no key here is
+    /// refused visibly rather than sent under an invented name.
+    /// </summary>
+    public const string KeyStatuses = "statuses[]";
+    public const string KeyDemographics = "demographics[]";
+    public const string KeyGenresIn = "genres_in[]";
+    public const string KeyGenresMode = "genres_mode";
+    public const string KeyMinimumChapter = "min_chap";
+    public const string KeyYearFrom = "year_from";
+    public const string KeyYearTo = "year_to";
+    public const string KeyAuthors = "authors[]";
+    public const string KeyArtists = "artists[]";
+
+    /// <summary>The two captured genre-matching modes.</summary>
+    public const string GenresModeAnd = "and";
+    public const string GenresModeOr = "or";
+
+    /// <summary>
+    /// Captured author/artist lookup route and its query keys. Only the author
+    /// and artist tag types were captured; a genre or format lookup has no
+    /// recorded endpoint and is refused instead of guessed.
+    /// </summary>
+    public const string RouteTagsSearch = "/api/v1/tags/search";
+    public const string KeyTagType = "type";
+    public const string KeyQuery = "q";
+    public const string TagTypeAuthor = "author";
+    public const string TagTypeArtist = "artist";
+    public const int LookupLimit = 20;
+
     /// <summary>The captured order column for "latest update".</summary>
     public const string OrderLatestColumn = "chapter_updated_at";
     public const string OrderDescending = "desc";
+    public const string OrderAscending = "asc";
 
     /// <summary>The captured chapter order column and page size.</summary>
     public const string OrderNumberColumn = "number";
@@ -159,8 +215,6 @@ public sealed record ComixBrowseQuery : IRemoteBrowseFilter
 
     public IReadOnlyList<string> Genres { get; init; } = [];
 
-    public IReadOnlyList<string> Formats { get; init; } = [];
-
     public ComixGenreMode GenreMode { get; init; } = ComixGenreMode.And;
 
     public IReadOnlyList<string> Demographics { get; init; } = [];
@@ -178,10 +232,13 @@ public sealed record ComixBrowseQuery : IRemoteBrowseFilter
     public string? ArtistKey { get; init; }
 
     /// <summary>
-    /// Local validation only. An invalid range blocks Start; it never reaches
-    /// the provider and never produces a silent default. A filter whose live
-    /// query key was never captured also blocks Start, because sending it under
-    /// a guessed name is how this contract drifted before.
+    /// Local validation only. An invalid range blocks Start; it never reaches the
+    /// provider and never produces a silent default. An unrecognized sort is
+    /// refused for the same reason: its order column would have to be guessed.
+    ///
+    /// Every filter value this query can carry was captured live, so there is no
+    /// longer an "uncaptured" class to refuse. A new filter must arrive with its
+    /// own captured evidence before it is added here.
     /// </summary>
     public string? ValidationError
     {
@@ -207,55 +264,57 @@ public sealed record ComixBrowseQuery : IRemoteBrowseFilter
                 return "The 'from' release year cannot be later than the 'to' year.";
             }
 
-            var uncaptured = UncapturedFilters();
-            if (uncaptured.Count > 0)
+            if (ComixOptions.FindSort(SortKey) is null)
             {
-                return "Filter ini belum punya key live yang terbukti: "
-                    + string.Join(", ", uncaptured)
-                    + ". Kosongkan dulu, atau tangkap kontraknya dari web Comix.";
+                return $"Sort '{SortKey}' tidak ada di tabel sort yang ditangkap dari Comix.";
             }
 
             return null;
         }
     }
 
-    /// <summary>Which chosen filters have no captured live query key.</summary>
-    public IReadOnlyList<string> UncapturedFilters()
-    {
-        var chosen = new List<string>();
-        if (Genres.Count > 0) chosen.Add("genre");
-        if (Formats.Count > 0) chosen.Add("format");
-        if (Demographics.Count > 0) chosen.Add("demographic");
-        if (Statuses.Count > 0) chosen.Add("status");
-        if (MinimumChapter is not null) chosen.Add("minimum chapter");
-        if (YearFrom is not null || YearTo is not null) chosen.Add("release year");
-        if (!string.IsNullOrWhiteSpace(AuthorKey)) chosen.Add("author");
-        if (!string.IsNullOrWhiteSpace(ArtistKey)) chosen.Add("artist");
-        return chosen;
-    }
-
     /// <summary>
-    /// The captured browse wire form: <c>order[chapter_updated_at]=desc</c> plus
-    /// one repeated <c>content_rating[]</c> per rating and <c>types[]</c> per
-    /// type. Page, limit and keyword are request-level and added by the adapter.
+    /// The captured browse wire form: one <c>order[&lt;captured field&gt;]=asc|desc</c>
+    /// for the chosen sort, then one repeated key per multi-value filter, the
+    /// numeric ranges, and the resolved author/artist ids. Genres and formats
+    /// share <c>genres_in[]</c>, and <c>genres_mode</c> is only sent when at least
+    /// one of them is chosen. Page, limit and keyword are request-level and added
+    /// by the adapter.
     /// </summary>
     public string ToQueryString()
     {
+        var sort = ComixOptions.FindSort(SortKey);
         var query = new StringBuilder();
         Append(
             query,
-            string.Format(CultureInfo.InvariantCulture, ComixContract.KeyOrder, OrderColumn),
-            ComixContract.OrderDescending);
+            string.Format(
+                CultureInfo.InvariantCulture,
+                ComixContract.KeyOrder,
+                sort?.OrderField ?? ComixContract.OrderLatestColumn),
+            sort?.Direction ?? ComixContract.OrderDescending);
+
         AppendMany(query, ComixContract.KeyContentRating, Ratings);
         AppendMany(query, ComixContract.KeyTypes, Types);
+        AppendMany(query, ComixContract.KeyStatuses, Statuses);
+        AppendMany(query, ComixContract.KeyDemographics, Demographics);
+        AppendMany(query, ComixContract.KeyGenresIn, Genres);
+        if (Genres.Count > 0)
+        {
+            Append(
+                query,
+                ComixContract.KeyGenresMode,
+                GenreMode == ComixGenreMode.Or
+                    ? ComixContract.GenresModeOr
+                    : ComixContract.GenresModeAnd);
+        }
+
+        Append(query, ComixContract.KeyMinimumChapter, MinimumChapter?.ToString(CultureInfo.InvariantCulture));
+        Append(query, ComixContract.KeyYearFrom, YearFrom?.ToString(CultureInfo.InvariantCulture));
+        Append(query, ComixContract.KeyYearTo, YearTo?.ToString(CultureInfo.InvariantCulture));
+        Append(query, ComixContract.KeyAuthors, AuthorKey);
+        Append(query, ComixContract.KeyArtists, ArtistKey);
         return query.ToString();
     }
-
-    /// <summary>
-    /// Only the captured order column is offered, so the sort picker cannot
-    /// produce a key the site has never been seen accepting.
-    /// </summary>
-    private string OrderColumn => ComixContract.OrderLatestColumn;
 
     private static void Append(StringBuilder query, string key, string? value)
     {
@@ -276,6 +335,16 @@ public sealed record ComixBrowseQuery : IRemoteBrowseFilter
 }
 
 /// <summary>
+/// One captured sort choice: the label the user picks, the exact order column the
+/// site accepted, and its direction. All thirteen were recorded from the live
+/// provider; none is derived from its own label.
+/// </summary>
+public sealed record ComixSortOption(string Key, string DisplayName, string OrderField, string Direction)
+{
+    public override string ToString() => DisplayName;
+}
+
+/// <summary>
 /// Provider option catalogs. Only values with recorded evidence are listed;
 /// display titles are always non-empty so an object-backed list never falls
 /// back to a record's ToString for its accessible name. Options that the
@@ -284,17 +353,38 @@ public sealed record ComixBrowseQuery : IRemoteBrowseFilter
 /// </summary>
 public static class ComixOptions
 {
-    /// <summary>
-    /// The provider exposes more sort choices than research captured. Only the
-    /// observed default is listed here; the remaining options must be captured
-    /// live and added to this table rather than invented.
-    /// </summary>
     public const string DefaultSortKey = "latest";
 
-    public static readonly IReadOnlyList<RemoteOption> Sorts =
+    /// <summary>The thirteen captured sorts and their exact order fields.</summary>
+    public static readonly IReadOnlyList<ComixSortOption> SortOptions =
     [
-        new(DefaultSortKey, "Latest update"),
+        new("best_match", "Best match", "relevance", ComixContract.OrderDescending),
+        new(DefaultSortKey, "Latest update", ComixContract.OrderLatestColumn, ComixContract.OrderDescending),
+        new("recently_added", "Recently added", "created_at", ComixContract.OrderDescending),
+        new("title_asc", "Title (A-Z)", "title", ComixContract.OrderAscending),
+        new("title_desc", "Title (Z-A)", "title", ComixContract.OrderDescending),
+        new("year_desc", "Year (newest)", "year", ComixContract.OrderDescending),
+        new("year_asc", "Year (oldest)", "year", ComixContract.OrderAscending),
+        new("score", "Highest rated", "score", ComixContract.OrderDescending),
+        new("views_7d", "Most viewed 7 days", "views_7d", ComixContract.OrderDescending),
+        new("views_30d", "Most viewed 30 days", "views_30d", ComixContract.OrderDescending),
+        new("views_90d", "Most viewed 90 days", "views_90d", ComixContract.OrderDescending),
+        new("views_total", "Most viewed all time", "views_total", ComixContract.OrderDescending),
+        new("follows_total", "Most followed", "follows_total", ComixContract.OrderDescending),
     ];
+
+    /// <summary>
+    /// The picker-facing projection of the same captured table, so the order
+    /// field a sort serializes can never drift from the label a user picks.
+    /// </summary>
+    public static readonly IReadOnlyList<RemoteOption> Sorts =
+        SortOptions
+            .Select(option => new RemoteOption(option.Key, option.DisplayName))
+            .ToArray();
+
+    public static ComixSortOption? FindSort(string? key) =>
+        SortOptions.FirstOrDefault(option =>
+            string.Equals(option.Key, key, StringComparison.Ordinal));
 
     public static readonly IReadOnlyList<RemoteOption> Ratings =
     [
@@ -318,12 +408,20 @@ public static class ComixOptions
         new("other", "Other"),
     ];
 
+    /// <summary>
+    /// Captured live on 2026-09-06 from the taxonomy the browse page renders into
+    /// its own document (<c>https://comix.ws/browse</c>), not inferred from the
+    /// display labels. Demographic ids are integers, and they are not in label
+    /// order: Josei is 3, Seinen is 4, Shoujo is 1, Shounen is 2. The lowercase
+    /// slugs an earlier revision sent were a guess and the provider does not use
+    /// them as <c>demographics[]</c> values.
+    /// </summary>
     public static readonly IReadOnlyList<RemoteOption> Demographics =
     [
-        new("josei", "Josei"),
-        new("seinen", "Seinen"),
-        new("shoujo", "Shoujo"),
-        new("shounen", "Shounen"),
+        new("3", "Josei"),
+        new("4", "Seinen"),
+        new("1", "Shoujo"),
+        new("2", "Shounen"),
     ];
 
     public static readonly IReadOnlyList<RemoteOption> Statuses =
@@ -333,6 +431,65 @@ public static class ComixOptions
         new("on_hiatus", "On hiatus"),
         new("discontinued", "Discontinued"),
         new("not_yet_released", "Not yet released"),
+    ];
+
+    /// <summary>
+    /// The 31 genres captured live on 2026-09-06 from the same rendered taxonomy.
+    /// <c>Adult</c>, <c>Ecchi</c>, <c>Hentai</c>, <c>Mature</c> and <c>Smut</c> are
+    /// genres here, which is why none of them may be invented as a separate
+    /// "uncensored" filter.
+    /// </summary>
+    public static readonly IReadOnlyList<RemoteOption> Genres =
+    [
+        new("6", "Action"),
+        new("87264", "Adult"),
+        new("7", "Adventure"),
+        new("8", "Boys Love"),
+        new("9", "Comedy"),
+        new("10", "Crime"),
+        new("11", "Drama"),
+        new("87265", "Ecchi"),
+        new("12", "Fantasy"),
+        new("13", "Girls Love"),
+        new("40", "Harem"),
+        new("87266", "Hentai"),
+        new("14", "Historical"),
+        new("15", "Horror"),
+        new("16", "Isekai"),
+        new("17", "Magical Girls"),
+        new("87267", "Mature"),
+        new("18", "Mecha"),
+        new("19", "Medical"),
+        new("20", "Mystery"),
+        new("21", "Philosophical"),
+        new("22", "Psychological"),
+        new("23", "Romance"),
+        new("24", "Sci-Fi"),
+        new("25", "Slice of Life"),
+        new("87268", "Smut"),
+        new("26", "Sports"),
+        new("27", "Superhero"),
+        new("28", "Thriller"),
+        new("29", "Tragedy"),
+        new("30", "Wuxia"),
+    ];
+
+    /// <summary>
+    /// The 9 formats captured live on 2026-09-06 from the same rendered taxonomy.
+    /// Formats share the <c>genres_in[]</c> key with genres, so one dropdown offers
+    /// both and the provider distinguishes them by id alone.
+    /// </summary>
+    public static readonly IReadOnlyList<RemoteOption> Formats =
+    [
+        new("93164", "4-Koma"),
+        new("93167", "Adaptation"),
+        new("93165", "Anthology"),
+        new("93166", "Award Winning"),
+        new("93168", "Doujinshi"),
+        new("93172", "Full Color"),
+        new("93170", "Long Strip"),
+        new("93169", "Oneshot"),
+        new("93171", "Web Comic"),
     ];
 }
 
@@ -355,6 +512,12 @@ public sealed class ComixSource(DownloaderPyHostClient client) : IMangaSource
 
     public string DisplayName => ComixContract.DisplayName;
 
+    /// <summary>
+    /// Only the lookups this adapter can actually answer. Genre and format are not
+    /// here: Comix has no captured endpoint for either, and the filter panel serves
+    /// them from the captured static taxonomy instead. Advertising a kind that could
+    /// only refuse would offer a control that cannot work.
+    /// </summary>
     public MangaSourceCapabilities Capabilities { get; } = new(
         SupportsSearch: true,
         SupportsAdvancedFilters: true,
@@ -362,8 +525,6 @@ public sealed class ComixSource(DownloaderPyHostClient client) : IMangaSource
         [
             RemoteLookupKind.Author,
             RemoteLookupKind.Artist,
-            RemoteLookupKind.Genre,
-            RemoteLookupKind.Format,
         ],
         TransformsPages: true);
 
@@ -420,18 +581,66 @@ public sealed class ComixSource(DownloaderPyHostClient client) : IMangaSource
         return new RemoteCatalogPage(summaries, total, page, HasMore: HasNextPage(result));
     }
 
-    public Task<IReadOnlyList<RemoteLookupOption>> LookupAsync(
+    /// <summary>
+    /// One captured tag lookup. Author and artist use the recorded
+    /// <c>tags/search</c> route with <c>type=author|artist</c>. Genre and format
+    /// have no captured endpoint, so they refuse visibly before any browser
+    /// session is started rather than being sent to a guessed route.
+    /// </summary>
+    public async Task<IReadOnlyList<RemoteLookupOption>> LookupAsync(
         RemoteLookupKind kind,
         string query,
         CancellationToken cancellationToken)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(query);
 
-        // No lookup endpoint was captured live, and every one of these filters is
-        // listed as uncaptured. Inventing a route or an option array here is how
-        // the previous contract drifted, so the panel shows a real refusal.
-        throw new ComixContractException(
-            $"Lookup '{kind}' belum punya endpoint live yang ditangkap dari web Comix.");
+        var tagType = kind switch
+        {
+            RemoteLookupKind.Author => ComixContract.TagTypeAuthor,
+            RemoteLookupKind.Artist => ComixContract.TagTypeArtist,
+            _ => throw new ComixContractException(
+                $"Lookup '{kind}' belum punya endpoint live yang ditangkap dari web Comix."),
+        };
+
+        var queryString = new StringBuilder();
+        AppendKey(queryString, ComixContract.KeyTagType, tagType);
+        AppendKey(queryString, ComixContract.KeyQuery, query.Trim());
+        AppendKey(
+            queryString,
+            ComixContract.KeyLimit,
+            ComixContract.LookupLimit.ToString(CultureInfo.InvariantCulture));
+
+        var result = await GetResultAsync(
+            ComixContract.RouteTagsSearch,
+            queryString.ToString(),
+            cancellationToken).ConfigureAwait(false);
+        return ReadLookupOptions(result);
+    }
+
+    /// <summary>
+    /// Decodes the captured option triple. Every Comix option list entry carries
+    /// the same <c>{id, title, slug}</c> shape, and the id is what may enter a
+    /// browse query — a translated display label never does.
+    /// </summary>
+    internal static IReadOnlyList<RemoteLookupOption> ReadLookupOptions(JsonObject result)
+    {
+        if (result[ComixContract.FieldItems] is not JsonArray items)
+        {
+            throw Missing(ComixContract.FieldItems);
+        }
+
+        var options = new List<RemoteLookupOption>();
+        foreach (var item in items)
+        {
+            if (item is not JsonObject entry) continue;
+            var key = ReadString(entry, ComixContract.OptionId)
+                ?? ReadString(entry, ComixContract.OptionSlug);
+            var name = ReadString(entry, ComixContract.OptionTitle);
+            if (key is null || name is null) continue;
+            options.Add(new RemoteLookupOption(key, name));
+        }
+
+        return options;
     }
 
     public async Task<RemoteTitleDetail> GetTitleAsync(
@@ -786,12 +995,13 @@ public sealed class ComixSource(DownloaderPyHostClient client) : IMangaSource
         var id = ReadLong(entry, ComixContract.FieldId)?.ToString(CultureInfo.InvariantCulture) ?? hid;
 
         // The captured url is the provider's own title page path,
-        // /title/{hid}-{slug}; it is kept as-is rather than re-derived.
+        // /title/{hid}-{slug}. It leaves this adapter already canonical, because
+        // only the adapter knows the origin it belongs to.
         var resolved = identity ?? new RemoteTitleIdentity(
             ComixContract.SourceId,
             id,
             hid,
-            ReadString(entry, ComixContract.FieldUrl) ?? string.Empty);
+            CanonicalTitleUrl(ReadString(entry, ComixContract.FieldUrl)));
 
         var poster = entry[ComixContract.FieldPoster] as JsonObject;
         var cover = poster is null
@@ -805,6 +1015,51 @@ public sealed class ComixSource(DownloaderPyHostClient client) : IMangaSource
             cover,
             latest is > 0 ? "Ch. " + latest.Value.ToString(CultureInfo.InvariantCulture) : null);
     }
+
+    /// <summary>The origin every canonical title url must belong to, parsed once.</summary>
+    private static readonly Uri ComixOrigin = new(ComixContract.BaseUrl);
+
+    /// <summary>
+    /// The provider's own title URL, made absolute. Comix reports <c>url</c> as the
+    /// page path <c>/title/{hid}-{slug}</c>, and the origin it belongs to is this
+    /// adapter's <see cref="ComixContract.BaseUrl"/> — resolving it anywhere else
+    /// would mean a consumer guessing a provider route.
+    ///
+    /// A relative value is resolved only when it has the captured title page shape;
+    /// the prefix check also rejects the protocol-relative <c>//host/…</c> form, which
+    /// is the one relative value <see cref="Uri"/> would otherwise turn into a
+    /// different host. An already absolute value is not trusted merely for being well
+    /// formed either — see <see cref="ComixTitleUrl"/>. Anything unusable stays empty,
+    /// so the consumer's existing fallback shows instead of a broken link. Pure string
+    /// normalization: no request, no invented route.
+    /// </summary>
+    internal static string CanonicalTitleUrl(string? providerUrl)
+    {
+        if (string.IsNullOrWhiteSpace(providerUrl)) return string.Empty;
+
+        if (!Uri.TryCreate(providerUrl, UriKind.Absolute, out var absolute))
+        {
+            return providerUrl.StartsWith(ComixContract.TitlePagePathPrefix, StringComparison.Ordinal)
+                && Uri.TryCreate(ComixOrigin, providerUrl, out var resolved)
+                    ? ComixTitleUrl(resolved)
+                    : string.Empty;
+        }
+
+        return ComixTitleUrl(absolute);
+    }
+
+    /// <summary>
+    /// One origin and one path shape. This field is provenance for a Comix title, so a
+    /// well-formed url from anywhere else is refused rather than stored: only http(s),
+    /// this adapter's own authority — port included, so a look-alike on another port
+    /// does not pass — and the captured title page path are accepted.
+    /// </summary>
+    private static string ComixTitleUrl(Uri url) =>
+        url.Scheme is "http" or "https"
+        && url.Authority.Equals(ComixOrigin.Authority, StringComparison.OrdinalIgnoreCase)
+        && url.AbsolutePath.StartsWith(ComixContract.TitlePagePathPrefix, StringComparison.Ordinal)
+            ? url.AbsoluteUri
+            : string.Empty;
 
     /// <summary>The provider's own pagination verdict, never a recomputed guess.</summary>
     private static bool HasNextPage(JsonObject result) =>

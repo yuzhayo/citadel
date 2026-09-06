@@ -3,7 +3,7 @@ using System.IO.Compression;
 using System.Windows.Media.Imaging;
 using Module.Mangareader.Archive;
 using Module.Mangareader.Features.Downloader.Queue;
-using Module.Mangareader.Features.Downloader.Sources;
+using Module.Mangareader.Sources;
 
 namespace Module.Mangareader.Downloader.Tests;
 

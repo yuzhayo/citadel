@@ -1,6 +1,6 @@
 using System.IO;
 using Module.Mangareader.Features.Downloader.Queue;
-using Module.Mangareader.Features.Downloader.Sources;
+using Module.Mangareader.Sources;
 
 namespace Module.Mangareader.Features.Downloader;
 
@@ -94,9 +94,39 @@ public sealed class DownloadSourceIndex
             && string.Equals(candidate.TitleId, identity.TitleId, StringComparison.Ordinal));
         if (mapping is null) return null;
 
-        return Directory.Exists(Path.Combine(libraryRoot, mapping.FolderName))
-            ? mapping
-            : null;
+        // A persisted folder name is not trusted input: containing it here means an
+        // unsafe value makes the mapping unusable instead of pointing a later write
+        // outside the Library, and the caller falls back to confirming a target
+        // again — the same path it already takes for a folder that disappeared.
+        if (!DownloaderPathContainment.TryResolve(
+                libraryRoot,
+                mapping.FolderName,
+                fileName: null,
+                out var folderPath,
+                out _))
+        {
+            return null;
+        }
+
+        return Directory.Exists(folderPath) ? mapping : null;
+    }
+
+    /// <summary>
+    /// The deterministic folder for one remote title: an existing usable confirmed
+    /// mapping when there is one, otherwise the sanitized display name. A queue
+    /// target, a Lister probe and an Auto Cover destination all resolve through
+    /// this, so the three always name the same folder for the same title.
+    ///
+    /// It never prompts. Choosing to claim an unrelated same-named folder is an
+    /// interactive decision that belongs to queueing alone.
+    /// </summary>
+    public string DeterministicFolderName(string libraryRoot, RemoteTitleSummary title)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(libraryRoot);
+        ArgumentNullException.ThrowIfNull(title);
+
+        var existing = FindUsableMapping(libraryRoot, title.Identity);
+        return existing?.FolderName ?? DownloadQueueFeature.SanitizeFolder(title.DisplayName);
     }
 
     public void ConfirmMapping(SourceTitleMapping mapping)
@@ -115,15 +145,44 @@ public sealed class DownloadSourceIndex
         }
     }
 
-    public bool IsPublished(DownloadJobIdentity identity)
+    /// <summary>The recorded publication for one chapter identity, or null.</summary>
+    public PublishedChapterRecord? FindPublished(DownloadJobIdentity identity)
     {
         ArgumentNullException.ThrowIfNull(identity);
         var loaded = Load();
-        return loaded.Published.Any(candidate =>
+        return loaded.Published.FirstOrDefault(candidate =>
             string.Equals(candidate.SourceId, identity.SourceId, StringComparison.Ordinal)
             && string.Equals(candidate.TitleHid, identity.TitleHid, StringComparison.Ordinal)
             && string.Equals(candidate.ChapterId, identity.ChapterId, StringComparison.Ordinal)
             && string.Equals(candidate.GroupId, identity.GroupId, StringComparison.Ordinal));
+    }
+
+    /// <summary>
+    /// Whether one chapter is still published. The record alone is not enough: a CBZ
+    /// the user deleted leaves its entry behind, and trusting that entry would refuse
+    /// a download the Library no longer has — silently, because the local probe
+    /// correctly reports the chapter as absent and so no confirmation is ever shown.
+    /// The recorded file therefore has to still exist inside the title's own folder,
+    /// resolved through the same containment rule every other destination uses.
+    /// </summary>
+    public bool IsPublishedOnDisk(
+        DownloadJobIdentity identity,
+        string libraryRoot,
+        string folderName)
+    {
+        var record = FindPublished(identity);
+        if (record is null) return false;
+        if (!DownloaderPathContainment.TryResolve(
+                libraryRoot,
+                folderName,
+                record.FileName,
+                out var path,
+                out _))
+        {
+            return false;
+        }
+
+        return File.Exists(path);
     }
 
     /// <summary>

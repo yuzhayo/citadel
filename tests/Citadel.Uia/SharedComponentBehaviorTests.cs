@@ -95,6 +95,28 @@ public class SharedComponentBehaviorTests
     }
 
     [Fact]
+    public void Table_InternalScrollBarUsesSharedStyle()
+    {
+        Sta.Run(() =>
+        {
+            var table = WithResources(new SettingTable { Width = 640, Height = 180 });
+            table.SetColumns(["Chapter"]);
+            table.SetRows(Enumerable.Range(1, 20).Select(number => new[] { $"Chapter {number}" }));
+            Arrange(table);
+
+            var grid = Descendant<DataGrid>(table);
+            var viewer = Descendant<ScrollViewer>(grid);
+            var vertical = Descendants<ScrollBar>(grid)
+                .Single(bar => bar.Orientation == Orientation.Vertical);
+            var shared = Assert.IsType<Style>(table.FindResource("SettingScrollBarStyle"));
+
+            Assert.Same(shared, vertical.Style.BasedOn);
+            viewer.RaiseEvent(new RoutedEventArgs(FrameworkElement.LoadedEvent));
+            Assert.True(ScrollBarAutoFade.HasActiveSession(viewer));
+        });
+    }
+
+    [Fact]
     public void Table_InteractiveHeaderSortsAscendingThenDescending()
     {
         Sta.Run(() =>

@@ -2,7 +2,7 @@ using System.IO;
 using System.Security.Cryptography;
 using Module.Mangareader.Features.Downloader;
 using Module.Mangareader.Features.Downloader.Queue;
-using Module.Mangareader.Features.Downloader.Sources;
+using Module.Mangareader.Sources;
 
 namespace Module.Mangareader.Downloader.Tests;
 

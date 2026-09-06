@@ -1,4 +1,4 @@
-using Module.Mangareader.Features.Downloader.Sources;
+using Module.Mangareader.Sources;
 using Module.Mangareader.Features.Downloader.Sources.Comix;
 
 namespace Module.Mangareader.Downloader.Tests;
@@ -14,13 +14,28 @@ public sealed class FilterOptionContractTests
     public static TheoryData<string, RemoteOption> EveryOption()
     {
         var data = new TheoryData<string, RemoteOption>();
-        Add(data, "sort", ComixOptions.Sorts);
-        Add(data, "rating", ComixOptions.Ratings);
-        Add(data, "type", ComixOptions.Types);
-        Add(data, "demographic", ComixOptions.Demographics);
-        Add(data, "status", ComixOptions.Statuses);
+        foreach (var list in AllLists)
+        {
+            Add(data, list, OptionsFor(list));
+        }
+
         return data;
     }
+
+    private static readonly string[] AllLists =
+        ["sort", "rating", "type", "demographic", "status", "genre", "format"];
+
+    private static IReadOnlyList<RemoteOption> OptionsFor(string list) => list switch
+    {
+        "sort" => ComixOptions.Sorts,
+        "rating" => ComixOptions.Ratings,
+        "type" => ComixOptions.Types,
+        "demographic" => ComixOptions.Demographics,
+        "status" => ComixOptions.Statuses,
+        "genre" => ComixOptions.Genres,
+        "format" => ComixOptions.Formats,
+        _ => throw new ArgumentOutOfRangeException(nameof(list), list, "unknown option list"),
+    };
 
     private static void Add(TheoryData<string, RemoteOption> data, string list, IEnumerable<RemoteOption> options)
     {
@@ -57,16 +72,11 @@ public sealed class FilterOptionContractTests
     [InlineData("type")]
     [InlineData("demographic")]
     [InlineData("status")]
+    [InlineData("genre")]
+    [InlineData("format")]
     public void OptionKeysAreUniqueWithinTheirList(string list)
     {
-        var options = list switch
-        {
-            "sort" => ComixOptions.Sorts,
-            "rating" => ComixOptions.Ratings,
-            "type" => ComixOptions.Types,
-            "demographic" => ComixOptions.Demographics,
-            _ => ComixOptions.Statuses,
-        };
+        var options = OptionsFor(list);
 
         Assert.NotEmpty(options);
         Assert.Equal(options.Count, options.Select(option => option.Key).Distinct(StringComparer.Ordinal).Count());

@@ -34,10 +34,18 @@
              Link="Downloader\Sources\Comix\ComixFilterPanel.xaml.cs">
       <DependentUpon>ComixFilterPanel.xaml</DependentUpon>
     </Compile>
+    <Page Include="..\..\module\mangareader\Features\Downloader\Sources\Comix\ComixMultiSelectDropDown.xaml"
+          Link="Downloader\Sources\Comix\ComixMultiSelectDropDown.xaml" />
+    <Compile Include="..\..\module\mangareader\Features\Downloader\Sources\Comix\ComixMultiSelectDropDown.xaml.cs"
+             Link="Downloader\Sources\Comix\ComixMultiSelectDropDown.xaml.cs">
+      <DependentUpon>ComixMultiSelectDropDown.xaml</DependentUpon>
+    </Compile>
     <Compile Include="..\..\module\mangareader\Features\Downloader\Catalog\CatalogFeature.cs"
              Link="Downloader\Catalog\CatalogFeature.cs" />
     <Compile Include="..\..\module\mangareader\Features\Downloader\DownloadSourceIndex.cs"
              Link="Downloader\DownloadSourceIndex.cs" />
+    <Compile Include="..\..\module\mangareader\Features\Downloader\DownloaderPathContainment.cs"
+             Link="Downloader\DownloaderPathContainment.cs" />
     <Compile Include="..\..\module\mangareader\Features\Downloader\DownloaderPyHostClient.cs"
              Link="Downloader\DownloaderPyHostClient.cs" />
     <Compile Include="..\..\module\mangareader\Features\Downloader\Queue\DownloadQueueModels.cs"
@@ -52,8 +60,8 @@
              Link="Downloader\Queue\ChapterDownloadPipeline.cs" />
     <Compile Include="..\..\module\mangareader\Features\Downloader\Queue\CbzChapterPublisher.cs"
              Link="Downloader\Queue\CbzChapterPublisher.cs" />
-    <Compile Include="..\..\module\mangareader\Features\Downloader\Sources\MangaSourceContracts.cs"
-             Link="Downloader\Sources\MangaSourceContracts.cs" />
+    <Compile Include="..\..\module\mangareader\shareLogic\Sources\MangaSourceContracts.cs"
+             Link="Sources\MangaSourceContracts.cs" />
     <Compile Include="..\..\module\mangareader\Features\Downloader\Sources\MangaSourceRegistry.cs"
              Link="Downloader\Sources\MangaSourceRegistry.cs" />
     <Compile Include="..\..\module\mangareader\Features\Downloader\Sources\Comix\ComixSource.cs"
@@ -76,6 +84,14 @@
              Link="CoverBuilder\CoverBuilderService.cs" />
     <Compile Include="..\..\module\mangareader\shareLogic\MangaLibrary.cs"
              Link="ShareLogic\MangaLibrary.cs" />
+    <Compile Include="..\..\module\mangareader\shareLogic\LocalTitleProbe.cs"
+             Link="ShareLogic\LocalTitleProbe.cs" />
+    <Compile Include="..\..\module\mangareader\shareLogic\ChapterNumberText.cs"
+             Link="ShareLogic\ChapterNumberText.cs" />
+    <Compile Include="..\..\module\mangareader\Features\Downloader\Lister\ListerFeature.cs"
+             Link="Downloader\Lister\ListerFeature.cs" />
+    <Compile Include="..\..\module\mangareader\Features\Downloader\AutoCover\AutoCoverFeature.cs"
+             Link="Downloader\AutoCover\AutoCoverFeature.cs" />
     <Compile Include="..\..\module\mangareader\shareLogic\NaturalStringComparer.cs"
              Link="ShareLogic\NaturalStringComparer.cs" />
     <Compile Include="..\..\module\mangareader\shareLogic\Archive\*.cs"

@@ -1,3 +1,4 @@
+using Module.Mangareader.Sources;
 using Module.Mangareader.Features.Downloader.Sources;
 
 namespace Module.Mangareader.Features.Downloader.Catalog;
@@ -11,7 +12,19 @@ public sealed record CatalogState
 
     public string? SelectedSourceName { get; init; }
 
-    public bool IsBusy { get; init; }
+    /// <summary>Whether a Browse or its Load more is in flight.</summary>
+    public bool IsBrowseBusy { get; init; }
+
+    /// <summary>Whether a detail action — open title, change group — is in flight.</summary>
+    public bool IsActionBusy { get; init; }
+
+    /// <summary>
+    /// The union, and what the presentation disables input on. Keeping the two halves
+    /// apart is what lets a Stop end only the Browse: with one shared flag, stopping a
+    /// Browse reported the whole screen idle while a detail was still being fetched,
+    /// which re-enabled the provider picker and the search field mid-action.
+    /// </summary>
+    public bool IsBusy => IsBrowseBusy || IsActionBusy;
 
     public bool IsDetailOpen { get; init; }
 
@@ -67,7 +80,16 @@ public sealed class CatalogFeature
 
     private IRemoteFilterContribution? _filters;
     private RemoteBrowseRequest? _activeRequest;
-    private int _generation;
+
+    /// <summary>
+    /// Two independent staleness counters. Browse and its Load more share one,
+    /// because a later page request really does supersede the earlier one; detail
+    /// actions share the other. Keeping them apart is what lets a Stop invalidate
+    /// only the Browse it stops — one shared counter made abandoning a Browse throw
+    /// away an unrelated title or group result that was still in flight.
+    /// </summary>
+    private int _browseGeneration;
+    private int _actionGeneration;
     private CatalogState _state = new();
 
     public CatalogFeature(MangaSourceRegistry sources, Func<bool> hasLibraryRoot)
@@ -110,6 +132,15 @@ public sealed class CatalogFeature
     public void SelectSource(string sourceId)
     {
         var registration = _sources.Find(sourceId);
+
+        // Latest navigation wins, in both directions: an old Browse may not paint the
+        // previous provider's results into this screen, and an old detail may not
+        // re-open over it. Both busy halves are released for the same reason — the
+        // operations they tracked are now stale and return early without touching
+        // state, so nothing else would ever clear those flags.
+        NextBrowseGeneration();
+        NextActionGeneration();
+
         Mutate(state =>
         {
             if (registration is null)
@@ -118,6 +149,8 @@ public sealed class CatalogFeature
                 {
                     SelectedSourceId = null,
                     SelectedSourceName = null,
+                    IsBrowseBusy = false,
+                    IsActionBusy = false,
                     ErrorMessage = $"Source '{sourceId}' tidak terdaftar.",
                 };
             }
@@ -138,6 +171,8 @@ public sealed class CatalogFeature
                 SelectedGroup = null,
                 Chapters = [],
                 SelectedChapterIds = [],
+                IsBrowseBusy = false,
+                IsActionBusy = false,
                 ErrorMessage = null,
                 StatusMessage = null,
                 HasLibraryRoot = _hasLibraryRoot(),
@@ -166,7 +201,7 @@ public sealed class CatalogFeature
             Mutate(state => state with
             {
                 ErrorMessage = filterState.ValidationMessage,
-                IsBusy = false,
+                IsBrowseBusy = false,
             });
             return;
         }
@@ -176,11 +211,18 @@ public sealed class CatalogFeature
             Page: 1,
             filterState?.CurrentFilter);
         _activeRequest = request;
-        var generation = NextGeneration();
+        var generation = NextBrowseGeneration();
+
+        // Latest navigation wins: a detail still in flight from before this Browse is
+        // dropped rather than allowed to re-open over the fresh result page. Its busy
+        // half is released here because the abandoned action returns early without
+        // touching state, so nothing else would ever clear it.
+        NextActionGeneration();
 
         Mutate(state => state with
         {
-            IsBusy = true,
+            IsBrowseBusy = true,
+            IsActionBusy = false,
             ErrorMessage = null,
             StatusMessage = "Mengambil katalog…",
             HasLibraryRoot = _hasLibraryRoot(),
@@ -189,7 +231,17 @@ public sealed class CatalogFeature
         try
         {
             var page = await source.BrowseAsync(request, cancellationToken).ConfigureAwait(false);
-            if (IsStale(generation)) return;
+            if (IsBrowseStale(generation)) return;
+
+            if (cancellationToken.IsCancellationRequested)
+            {
+                // Only a superseding Browse or the screen's disposal cancels this
+                // token — a logical Stop leaves the transport alone. Either way the
+                // bounded inline command may still answer afterwards, and that late
+                // response must not replace results, count, error or pagination.
+                Mutate(state => state with { IsBrowseBusy = false, StatusMessage = null });
+                return;
+            }
 
             Mutate(state => state with
             {
@@ -200,27 +252,52 @@ public sealed class CatalogFeature
                 IsDetailOpen = false,
                 Detail = null,
                 StatusMessage = Describe(page),
-                IsBusy = false,
+                IsBrowseBusy = false,
             });
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
-            if (!IsStale(generation))
+            if (!IsBrowseStale(generation))
             {
-                Mutate(state => state with { IsBusy = false, StatusMessage = null });
+                Mutate(state => state with { IsBrowseBusy = false, StatusMessage = null });
             }
         }
         catch (Exception exception)
         {
-            if (IsStale(generation)) return;
+            if (IsBrowseStale(generation)) return;
             Mutate(state => state with
             {
                 // The previous successful result set stays visible.
                 ErrorMessage = exception.GetBaseException().Message,
-                IsBusy = false,
+                IsBrowseBusy = false,
                 StatusMessage = null,
             });
         }
+    }
+
+    /// <summary>
+    /// Logically abandons the in-flight Browse without touching its transport.
+    ///
+    /// Cancelling the caller's token would not stop the Python work: the inline
+    /// pyhost command links that token to its own bounded timeout, so a cancel
+    /// completes the pending call at once with a TIMEOUT while Python is still
+    /// busy. That surfaces a fake provider error, returns the bar to a terminal
+    /// presentation too early, and lets a following Start be written before the old
+    /// command has settled.
+    ///
+    /// So the request is only marked stale, which is what suppresses its late
+    /// result, and the busy state is released. The transport token is cancelled
+    /// solely by the screen's disposal — a real end of lifetime, not a Stop.
+    ///
+    /// Staleness here is the Browse counter alone. An <see cref="OpenTitleAsync"/>
+    /// or <see cref="SelectGroupAsync"/> that is still in flight advances the
+    /// separate action counter, so stopping a Browse never discards a detail result
+    /// the user is waiting for.
+    /// </summary>
+    public void AbandonActiveBrowse()
+    {
+        NextBrowseGeneration();
+        Mutate(state => state with { IsBrowseBusy = false, StatusMessage = null });
     }
 
     /// <summary>Appends the next page for the current query snapshot only.</summary>
@@ -231,13 +308,19 @@ public sealed class CatalogFeature
         if (source is null || request is null) return;
 
         var next = request with { Page = request.Page + 1 };
-        var generation = NextGeneration();
-        Mutate(state => state with { IsBusy = true, ErrorMessage = null });
+        var generation = NextBrowseGeneration();
+        Mutate(state => state with { IsBrowseBusy = true, ErrorMessage = null });
 
         try
         {
             var page = await source.BrowseAsync(next, cancellationToken).ConfigureAwait(false);
-            if (IsStale(generation)) return;
+            if (IsBrowseStale(generation)) return;
+
+            if (cancellationToken.IsCancellationRequested)
+            {
+                Mutate(state => state with { IsBrowseBusy = false });
+                return;
+            }
 
             _activeRequest = next;
             Mutate(state =>
@@ -258,24 +341,24 @@ public sealed class CatalogFeature
                     Page = next.Page,
                     CanLoadMore = page.HasMore,
                     StatusMessage = Describe(page),
-                    IsBusy = false,
+                    IsBrowseBusy = false,
                 };
             });
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
-            if (!IsStale(generation))
+            if (!IsBrowseStale(generation))
             {
-                Mutate(state => state with { IsBusy = false });
+                Mutate(state => state with { IsBrowseBusy = false });
             }
         }
         catch (Exception exception)
         {
-            if (IsStale(generation)) return;
+            if (IsBrowseStale(generation)) return;
             Mutate(state => state with
             {
                 ErrorMessage = exception.GetBaseException().Message,
-                IsBusy = false,
+                IsBrowseBusy = false,
             });
         }
     }
@@ -291,8 +374,8 @@ public sealed class CatalogFeature
         var source = CurrentSource();
         if (source is null) return;
 
-        var generation = NextGeneration();
-        Mutate(state => state with { IsBusy = true, ErrorMessage = null });
+        var generation = NextActionGeneration();
+        Mutate(state => state with { IsActionBusy = true, ErrorMessage = null });
 
         try
         {
@@ -300,13 +383,13 @@ public sealed class CatalogFeature
                 .ConfigureAwait(false);
             var groups = await source.GetGroupsAsync(summary.Identity, cancellationToken)
                 .ConfigureAwait(false);
-            if (IsStale(generation)) return;
+            if (IsActionStale(generation)) return;
 
             if (groups.Count == 0)
             {
                 Mutate(state => state with
                 {
-                    IsBusy = false,
+                    IsActionBusy = false,
                     ErrorMessage = "Title ini tidak punya group chapter yang tersedia.",
                 });
                 return;
@@ -320,7 +403,7 @@ public sealed class CatalogFeature
                 SelectedGroup = groups[0].Identity,
                 Chapters = [],
                 SelectedChapterIds = [],
-                IsBusy = false,
+                IsActionBusy = false,
                 HasLibraryRoot = _hasLibraryRoot(),
             });
 
@@ -329,15 +412,15 @@ public sealed class CatalogFeature
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
-            if (!IsStale(generation)) Mutate(state => state with { IsBusy = false });
+            if (!IsActionStale(generation)) Mutate(state => state with { IsActionBusy = false });
         }
         catch (Exception exception)
         {
-            if (IsStale(generation)) return;
+            if (IsActionStale(generation)) return;
             Mutate(state => state with
             {
                 ErrorMessage = exception.GetBaseException().Message,
-                IsBusy = false,
+                IsActionBusy = false,
             });
         }
     }
@@ -350,13 +433,13 @@ public sealed class CatalogFeature
         var source = CurrentSource();
         if (source is null) return;
 
-        var generation = NextGeneration();
+        var generation = NextActionGeneration();
         Mutate(state => state with
         {
             SelectedGroup = group.Identity,
             Chapters = [],
             SelectedChapterIds = [],
-            IsBusy = true,
+            IsActionBusy = true,
             ErrorMessage = null,
         });
         await LoadChaptersAsync(source, title, group.Identity, generation, cancellationToken)
@@ -365,32 +448,56 @@ public sealed class CatalogFeature
 
     /// <summary>
     /// Returns to the exact prior grid and scroll anchor without a new fetch.
+    ///
+    /// Leaving the detail is a navigation like any other, so it wins over a detail
+    /// action still in flight — reachable in practice by changing group and pressing
+    /// Back before the chapters land. Without this the abandoned chapter load would
+    /// repopulate <see cref="CatalogState.Chapters"/> for a detail that is already
+    /// closed. The action busy half is released for the same reason a new Browse
+    /// releases it: the abandoned action returns early without touching state.
     /// </summary>
-    public void Back() => Mutate(state => state with
+    public void Back()
     {
-        IsDetailOpen = false,
-        Detail = null,
-        Groups = [],
-        SelectedGroup = null,
-        Chapters = [],
-        SelectedChapterIds = [],
-        ErrorMessage = null,
-        HasLibraryRoot = _hasLibraryRoot(),
-    });
-
-    public void ToggleChapter(RemoteChapterSummary chapter)
-    {
-        ArgumentNullException.ThrowIfNull(chapter);
-        Mutate(state =>
+        NextActionGeneration();
+        Mutate(state => state with
         {
-            var selected = new List<string>(state.SelectedChapterIds);
-            if (!selected.Remove(chapter.Identity.ChapterId))
+            IsDetailOpen = false,
+            Detail = null,
+            Groups = [],
+            SelectedGroup = null,
+            Chapters = [],
+            SelectedChapterIds = [],
+            IsActionBusy = false,
+            ErrorMessage = null,
+            HasLibraryRoot = _hasLibraryRoot(),
+        });
+    }
+
+    /// <summary>
+    /// Replaces the selection with exactly these chapter identities. The
+    /// presentation supplies the visible set, because only it knows what a sort
+    /// left on screen; this feature remains the owner of the selection the queue
+    /// receives, and stores an immutable copy so a later UI change cannot mutate
+    /// a snapshot already handed off.
+    ///
+    /// An unchanged selection is a no-op, so a checkbox click cannot start a
+    /// render loop.
+    /// </summary>
+    public void SetSelectedChapterIds(IReadOnlyList<string> chapterIds)
+    {
+        ArgumentNullException.ThrowIfNull(chapterIds);
+
+        lock (_gate)
+        {
+            if (_state.SelectedChapterIds.SequenceEqual(chapterIds, StringComparer.Ordinal))
             {
-                selected.Add(chapter.Identity.ChapterId);
+                return;
             }
 
-            return state with { SelectedChapterIds = selected };
-        });
+            _state = _state with { SelectedChapterIds = [.. chapterIds] };
+        }
+
+        StateChanged?.Invoke(this, EventArgs.Empty);
     }
 
     public void ClearSelection() =>
@@ -400,7 +507,7 @@ public sealed class CatalogFeature
         IMangaSource source,
         RemoteTitleIdentity title,
         RemoteGroupIdentity group,
-        int generation,
+        int actionGeneration,
         CancellationToken cancellationToken)
     {
         try
@@ -408,21 +515,21 @@ public sealed class CatalogFeature
             var chapters = await source
                 .GetChaptersAsync(title, group, cancellationToken)
                 .ConfigureAwait(false);
-            if (IsStale(generation)) return;
+            if (IsActionStale(actionGeneration)) return;
 
-            Mutate(state => state with { Chapters = chapters, IsBusy = false });
+            Mutate(state => state with { Chapters = chapters, IsActionBusy = false });
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
-            if (!IsStale(generation)) Mutate(state => state with { IsBusy = false });
+            if (!IsActionStale(actionGeneration)) Mutate(state => state with { IsActionBusy = false });
         }
         catch (Exception exception)
         {
-            if (IsStale(generation)) return;
+            if (IsActionStale(actionGeneration)) return;
             Mutate(state => state with
             {
                 ErrorMessage = exception.GetBaseException().Message,
-                IsBusy = false,
+                IsActionBusy = false,
             });
         }
     }
@@ -447,9 +554,15 @@ public sealed class CatalogFeature
         return _sources.Require(sourceId).Source;
     }
 
-    private int NextGeneration() => Interlocked.Increment(ref _generation);
+    private int NextBrowseGeneration() => Interlocked.Increment(ref _browseGeneration);
 
-    private bool IsStale(int generation) => Volatile.Read(ref _generation) != generation;
+    private bool IsBrowseStale(int generation) =>
+        Volatile.Read(ref _browseGeneration) != generation;
+
+    private int NextActionGeneration() => Interlocked.Increment(ref _actionGeneration);
+
+    private bool IsActionStale(int generation) =>
+        Volatile.Read(ref _actionGeneration) != generation;
 
     private void Mutate(Func<CatalogState, CatalogState> map)
     {

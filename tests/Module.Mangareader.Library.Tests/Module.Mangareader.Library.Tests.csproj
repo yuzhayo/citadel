@@ -12,15 +12,44 @@
   </ItemGroup>
 
   <!--
-    The MangaReader citizen is never a normal solution dependency: only the
-    two pure Library persistence sources are linked, exactly as the citizen
-    compiles them. They carry no WPF or MangaTitle dependency.
+    The MangaReader citizen is never a normal solution dependency: only the pure
+    Library sources are linked, exactly as the citizen compiles them. They carry
+    no WPF or MangaTitle dependency, so the Grouping view is deliberately not
+    linked — only its store and feature are.
   -->
   <ItemGroup>
     <Compile Include="..\..\module\mangareader\Library\LibraryPathStore.cs"
              Link="Library\LibraryPathStore.cs" />
     <Compile Include="..\..\module\mangareader\Library\LibraryScanPersistence.cs"
              Link="Library\LibraryScanPersistence.cs" />
+    <Compile Include="..\..\module\mangareader\Library\Grouping\GroupingStore.cs"
+             Link="Library\Grouping\GroupingStore.cs" />
+    <Compile Include="..\..\module\mangareader\Library\Grouping\GroupingFeature.cs"
+             Link="Library\Grouping\GroupingFeature.cs" />
+    <Compile Include="..\..\module\mangareader\Library\LibraryViewModeFeature.cs"
+             Link="Library\LibraryViewModeFeature.cs" />
+    <Compile Include="..\..\module\mangareader\shareLogic\MangaViewMode.cs"
+             Link="ShareLogic\MangaViewMode.cs" />
+    <Compile Include="..\..\module\mangareader\shareLogic\ViewModePreferenceStore.cs"
+             Link="ShareLogic\ViewModePreferenceStore.cs" />
+    <Compile Include="..\..\module\mangareader\shareLogic\LocalTitleProbe.cs"
+             Link="ShareLogic\LocalTitleProbe.cs" />
+    <Compile Include="..\..\module\mangareader\shareLogic\NaturalStringComparer.cs"
+             Link="ShareLogic\NaturalStringComparer.cs" />
+    <Compile Include="..\..\module\mangareader\shareLogic\ChapterNumberText.cs"
+             Link="ShareLogic\ChapterNumberText.cs" />
+    <Compile Include="..\..\module\mangareader\shareLogic\Archive\ArchiveFormat.cs"
+             Link="Archive\ArchiveFormat.cs" />
+    <Compile Include="..\..\module\mangareader\shareLogic\Archive\ArchiveSignatureDetector.cs"
+             Link="Archive\ArchiveSignatureDetector.cs" />
+    <Compile Include="..\..\module\mangareader\shareLogic\Sources\MangaSourceContracts.cs"
+             Link="Sources\MangaSourceContracts.cs" />
+    <Compile Include="..\..\module\mangareader\Library\UpdateChecker\SourceBindingStore.cs"
+             Link="Library\UpdateChecker\SourceBindingStore.cs" />
+    <Compile Include="..\..\module\mangareader\Library\UpdateChecker\UpdateMatcher.cs"
+             Link="Library\UpdateChecker\UpdateMatcher.cs" />
+    <Compile Include="..\..\module\mangareader\Library\UpdateChecker\UpdateCheckerFeature.cs"
+             Link="Library\UpdateChecker\UpdateCheckerFeature.cs" />
   </ItemGroup>
 
   <ItemGroup>

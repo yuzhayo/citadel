@@ -1,0 +1,149 @@
+<setting:SettingDialog x:Class="Module.Mangareader.Library.UpdateChecker.UpdateCheckerDialog"
+                       xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                       xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                       xmlns:setting="clr-namespace:Citadel.Setting.Components;assembly=Citadel.Setting"
+                       Title="Check updates"
+                       Width="760"
+                       MaxHeight="640"
+                       Background="{DynamicResource Bg}"
+                       Foreground="{DynamicResource Fg}"
+                       UseLayoutRounding="True"
+                       SnapsToDevicePixels="True">
+    <!--
+      Update Checker's own surface. It renders the feature's state and forwards
+      two commands — confirm one candidate and hand the selected chapters to the
+      download queue route. It owns no matching rule, no provider call and no
+      persistence, and it never refreshes the Library or fetches a cover.
+    -->
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <TextBlock x:Name="TitleText"
+                   FontSize="16"
+                   FontWeight="SemiBold"
+                   TextWrapping="Wrap" />
+
+        <TextBlock x:Name="StatusText"
+                   Grid.Row="1"
+                   Margin="0,8,0,0"
+                   AutomationProperties.LiveSetting="Polite"
+                   FontSize="12"
+                   Foreground="{DynamicResource Body}"
+                   TextWrapping="Wrap" />
+
+        <ListBox x:Name="CandidateList"
+                 Grid.Row="2"
+                 MaxHeight="170"
+                 Margin="0,12,0,0"
+                 AutomationProperties.Name="Matching candidates"
+                 Style="{DynamicResource SettingListStyle}"
+                 Visibility="Collapsed">
+            <ListBox.ItemTemplate>
+                <DataTemplate>
+                    <Grid Margin="0,2">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock VerticalAlignment="Center"
+                                   Text="{Binding Description}"
+                                   TextTrimming="CharacterEllipsis"
+                                   ToolTip="{Binding Description}" />
+                        <setting:SettingButton Grid.Column="1"
+                                               MinWidth="88"
+                                               Margin="12,0,0,0"
+                                               AutomationProperties.Name="Confirm this match"
+                                               Click="Candidate_ConfirmClick"
+                                               Content="Use this"
+                                               Tag="{Binding}" />
+                    </Grid>
+                </DataTemplate>
+            </ListBox.ItemTemplate>
+        </ListBox>
+
+        <setting:SettingTable x:Name="ChapterTable"
+                              Grid.Row="3"
+                              MaxHeight="300"
+                              Margin="0,12,0,0"
+                              AutomationProperties.Name="Missing chapters"
+                              CanUserSortColumns="True"
+                              Visibility="Collapsed">
+            <setting:SettingTable.InteractiveColumns>
+                <DataGridTemplateColumn CanUserSort="False"
+                                        MinWidth="48">
+                    <DataGridTemplateColumn.Header>
+                        <CheckBox AutomationProperties.Name="Select all missing chapters"
+                                  HorizontalAlignment="Center"
+                                  IsThreeState="True"
+                                  VerticalAlignment="Center" />
+                    </DataGridTemplateColumn.Header>
+                    <DataGridTemplateColumn.CellTemplate>
+                        <DataTemplate>
+                            <CheckBox AutomationProperties.Name="{Binding DisplayName}"
+                                      HorizontalAlignment="Center"
+                                      IsChecked="{Binding IsSelected, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                      VerticalAlignment="Center" />
+                        </DataTemplate>
+                    </DataGridTemplateColumn.CellTemplate>
+                </DataGridTemplateColumn>
+
+                <DataGridTemplateColumn CanUserSort="True"
+                                        Header="Chapter"
+                                        MinWidth="260"
+                                        SortMemberPath="DisplayName">
+                    <DataGridTemplateColumn.CellTemplate>
+                        <DataTemplate>
+                            <TextBlock Text="{Binding DisplayName}"
+                                       TextTrimming="CharacterEllipsis"
+                                       ToolTip="{Binding DisplayName}" />
+                        </DataTemplate>
+                    </DataGridTemplateColumn.CellTemplate>
+                </DataGridTemplateColumn>
+
+                <DataGridTemplateColumn CanUserSort="True"
+                                        Header="Number"
+                                        MinWidth="90"
+                                        SortMemberPath="ChapterNumber">
+                    <DataGridTemplateColumn.CellTemplate>
+                        <DataTemplate>
+                            <TextBlock Text="{Binding ChapterNumber}" />
+                        </DataTemplate>
+                    </DataGridTemplateColumn.CellTemplate>
+                </DataGridTemplateColumn>
+            </setting:SettingTable.InteractiveColumns>
+        </setting:SettingTable>
+
+        <Grid Grid.Row="4" Margin="0,14,0,0">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <TextBlock x:Name="ResultText"
+                       VerticalAlignment="Center"
+                       AutomationProperties.LiveSetting="Polite"
+                       FontSize="12"
+                       Foreground="{DynamicResource Dim}"
+                       TextWrapping="Wrap" />
+            <StackPanel Grid.Column="1" Orientation="Horizontal">
+                <setting:SettingButton x:Name="DownloadButton"
+                                       MinWidth="150"
+                                       AutomationProperties.Name="Download selected chapters"
+                                       Click="DownloadButton_Click"
+                                       Content="Download selected"
+                                       IsEnabled="False" />
+                <setting:SettingButton x:Name="CloseButton"
+                                       MinWidth="88"
+                                       Margin="8,0,0,0"
+                                       AutomationProperties.Name="Close update checker"
+                                       Click="CloseButton_Click"
+                                       Content="Close" />
+            </StackPanel>
+        </Grid>
+    </Grid>
+</setting:SettingDialog>

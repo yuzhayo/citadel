@@ -1,5 +1,6 @@
 using System.Windows;
 using System.Windows.Controls;
+using Module.Mangareader.Features.Downloader.AutoCover;
 
 namespace Module.Mangareader.Features.Downloader;
 
@@ -11,6 +12,15 @@ namespace Module.Mangareader.Features.Downloader;
 public partial class DownloaderView : UserControl, IDisposable
 {
     private DownloaderContext? _context;
+
+    /// <summary>
+    /// The lifetime of this route host, and the only token the automatic cover
+    /// invocation gets. Without it an automatic fetch kept running after the
+    /// Downloader was closed, with no owner left and nothing to stop it writing.
+    /// The manual Fetch Cover below the remote cover owns its own cancellation in
+    /// the screen that hosts the button.
+    /// </summary>
+    private CancellationTokenSource? _lifetime = new();
     private bool _disposed;
 
     public DownloaderView() => InitializeComponent();
@@ -28,6 +38,7 @@ public partial class DownloaderView : UserControl, IDisposable
         CatalogScreen.UseContext(context);
         DownloadListScreen.UseContext(context);
         CatalogScreen.OpenDownloadList += CatalogScreen_OpenDownloadList;
+        CatalogScreen.CoverCandidateAvailable += CatalogScreen_CoverCandidateAvailable;
         DownloadListScreen.BackRequested += DownloadListScreen_BackRequested;
         Navigate(DownloaderRoute.Catalog);
     }
@@ -36,6 +47,40 @@ public partial class DownloaderView : UserControl, IDisposable
 
     private void CatalogScreen_OpenDownloadList(object? sender, EventArgs e) =>
         Navigate(DownloaderRoute.DownloadList);
+
+    /// <summary>
+    /// Relays one immutable cover candidate to Auto Cover. This host decides
+    /// nothing: Auto Cover owns whether a cover is written, and the queue never
+    /// waits for it. A failure stays here and can never change a chapter job.
+    /// </summary>
+    private async void CatalogScreen_CoverCandidateAvailable(object? sender, CoverCandidate candidate)
+    {
+        if (_disposed || _context is null || _lifetime is null) return;
+
+        // Snapshotted before the first await, so a disposal during the fetch cannot
+        // leave this handler reading a field its host already cleared.
+        var autoCover = _context.AutoCover;
+        var lifetime = _lifetime;
+
+        try
+        {
+            await autoCover.SaveCoverAsync(
+                candidate,
+                AutoCoverTrigger.Automatic,
+                confirmOverwrite: null,
+                lifetime.Token);
+        }
+        catch (OperationCanceledException)
+        {
+            // This host's lifetime ended while the cover was in flight. That is a
+            // normal shutdown and there is no surface left to report it to.
+        }
+        catch (Exception)
+        {
+            // Auto Cover is advisory. Losing one cover must not surface as a
+            // routing failure or touch the queue.
+        }
+    }
 
     private void DownloadListScreen_BackRequested(object? sender, EventArgs e) =>
         Navigate(DownloaderRoute.Catalog);
@@ -58,7 +103,17 @@ public partial class DownloaderView : UserControl, IDisposable
         _disposed = true;
 
         CatalogScreen.OpenDownloadList -= CatalogScreen_OpenDownloadList;
+        CatalogScreen.CoverCandidateAvailable -= CatalogScreen_CoverCandidateAvailable;
         DownloadListScreen.BackRequested -= DownloadListScreen_BackRequested;
+
+        // Take the field, clear it, then cancel and dispose: an automatic cover
+        // still in flight must stop with its host, and nothing afterwards can hand
+        // out a token from a disposed source.
+        var lifetime = _lifetime;
+        _lifetime = null;
+        lifetime?.Cancel();
+        lifetime?.Dispose();
+
         CatalogScreen.Dispose();
         DownloadListScreen.Dispose();
         _context = null;

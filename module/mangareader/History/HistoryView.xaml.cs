@@ -8,20 +8,41 @@ using Module.Mangareader.ShareLogic;
 
 namespace Module.Mangareader;
 
+/// <summary>
+/// History presentation. It hosts the shared action bar and both presentations
+/// over one collection, and forwards every command to the feature that owns it.
+/// No clear, pin, retention, ordering or persistence rule lives here.
+/// </summary>
 public partial class HistoryView : UserControl, IDisposable
 {
     private readonly ObservableCollection<HistoryCardModel> _history = new();
     private readonly MangaCoverLoader _coverLoader = new();
     private readonly ChapterRenderCache _renderCache = new();
+    private readonly HistoryViewModeFeature _viewMode = new();
     private IReadOnlyList<MangaTitle> _titles = [];
     private ReadingHistory? _readingHistory;
+    private ClearHistoryFeature? _clearHistory;
+    private PinnedHistoryFeature? _pinnedHistory;
     private CancellationTokenSource? _coverCancellation;
+    private bool _restored;
     private bool _disposed;
 
     public HistoryView()
     {
         InitializeComponent();
+
+        // One collection feeds both presentations, so switching between them
+        // cannot lose data, order or pin state and never mutates history.
         HistoryGrid.ItemsSource = _history;
+        HistoryTable.ItemsSource = _history;
+
+        ViewModeSelector.Mode = _viewMode.Mode;
+        ViewModeSelector.ModeRequested += ViewModeSelector_ModeRequested;
+        _viewMode.Changed += ViewMode_Changed;
+        ApplyViewMode();
+        UpdateActionBar();
+
+        Loaded += HistoryView_Loaded;
     }
 
     public event EventHandler<OpenChapterRequestedEventArgs>? OpenChapterRequested;
@@ -29,7 +50,8 @@ public partial class HistoryView : UserControl, IDisposable
     /// <summary>
     /// Attaches the History feature's recording owner. The composition root
     /// holds it, so chapter events are recorded without routing through this
-    /// screen and history is written even before this tab is opened.
+    /// screen and history is written even before this tab is opened. Clear and
+    /// Pin are built here because they mutate through that same single owner.
     /// </summary>
     public void UseHistory(ReadingHistory history)
     {
@@ -43,6 +65,9 @@ public partial class HistoryView : UserControl, IDisposable
 
         _readingHistory = history;
         _readingHistory.Changed += ReadingHistory_Changed;
+        _clearHistory = new ClearHistoryFeature(history);
+        _pinnedHistory = new PinnedHistoryFeature(history);
+        UpdateActionBar();
     }
 
     public void SetLibrary(IReadOnlyList<MangaTitle> titles)
@@ -72,7 +97,7 @@ public partial class HistoryView : UserControl, IDisposable
                     StringComparison.OrdinalIgnoreCase));
                 if (chapter is null) continue;
 
-                var card = new HistoryCardModel(title, chapter, entry.LastOpenedUtc);
+                var card = new HistoryCardModel(title, chapter, entry.LastOpenedUtc, entry.Pinned);
                 var coverKey = CoverKey(title);
                 if (coverKey is not null && reusableCovers.TryGetValue(coverKey, out var cover))
                 {
@@ -87,10 +112,23 @@ public partial class HistoryView : UserControl, IDisposable
             ? Visibility.Visible
             : Visibility.Collapsed;
 
+        UpdateActionBar();
         LoadMissingCovers();
     }
 
-    private void HistoryCard_Click(object sender, RoutedEventArgs e)
+    private void HistoryView_Loaded(object sender, RoutedEventArgs e)
+    {
+        if (_disposed || _restored) return;
+        _restored = true;
+        _viewMode.Restore();
+    }
+
+    private void HistoryCard_Click(object sender, RoutedEventArgs e) => OpenCard(sender);
+
+    /// <summary>The List row action opens the same entry as the Grid card.</summary>
+    private void HistoryRow_OpenClick(object sender, RoutedEventArgs e) => OpenCard(sender);
+
+    private void OpenCard(object sender)
     {
         if (sender is not FrameworkElement { Tag: HistoryCardModel card }) return;
         OpenChapterRequested?.Invoke(
@@ -98,10 +136,84 @@ public partial class HistoryView : UserControl, IDisposable
             new OpenChapterRequestedEventArgs(card.Manga, card.Chapter));
     }
 
+    private void PinButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (_disposed || _pinnedHistory is null) return;
+        if (sender is not FrameworkElement { Tag: HistoryCardModel card }) return;
+
+        var result = _pinnedHistory.Toggle(card.Manga.FolderPath);
+        if (result.Succeeded)
+        {
+            SetStatus(null);
+            return;
+        }
+
+        // The failure stays inside History; the durable file is untouched.
+        SetStatus(result.Error);
+    }
+
+    private void ClearHistoryButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (_disposed || _clearHistory is null) return;
+
+        var result = _clearHistory.Clear();
+        SetStatus(result.Succeeded
+            ? $"{result.Removed} history dihapus. Entri yang di-pin dipertahankan."
+            : result.Error);
+        UpdateActionBar();
+    }
+
+    private void ViewModeSelector_ModeRequested(object? sender, MangaViewMode mode) =>
+        _viewMode.Select(mode);
+
+    private void ViewMode_Changed(object? sender, EventArgs e)
+    {
+        if (_disposed) return;
+        if (!Dispatcher.CheckAccess())
+        {
+            Dispatcher.BeginInvoke(ApplyViewMode);
+            return;
+        }
+
+        ApplyViewMode();
+    }
+
+    /// <summary>
+    /// Switches presentation only. Both panels stay in the tree over the same
+    /// collection, so data, order, pin state and scroll position survive.
+    /// </summary>
+    private void ApplyViewMode()
+    {
+        if (_disposed) return;
+
+        var list = _viewMode.Mode == MangaViewMode.List;
+        ViewModeSelector.Mode = _viewMode.Mode;
+        GridScroll.Visibility = list ? Visibility.Collapsed : Visibility.Visible;
+        HistoryTable.Visibility = list ? Visibility.Visible : Visibility.Collapsed;
+    }
+
+    private void UpdateActionBar()
+    {
+        if (_disposed) return;
+        ClearHistoryButton.IsEnabled = _clearHistory?.CanClear == true;
+    }
+
+    private void SetStatus(string? message)
+    {
+        StatusText.Text = message ?? string.Empty;
+        StatusText.Visibility = string.IsNullOrWhiteSpace(message)
+            ? Visibility.Collapsed
+            : Visibility.Visible;
+    }
+
     public void Dispose()
     {
         if (_disposed) return;
         _disposed = true;
+
+        Loaded -= HistoryView_Loaded;
+        _viewMode.Changed -= ViewMode_Changed;
+        ViewModeSelector.ModeRequested -= ViewModeSelector_ModeRequested;
 
         if (_readingHistory is not null)
         {

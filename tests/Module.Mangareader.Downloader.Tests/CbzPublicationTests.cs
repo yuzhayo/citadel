@@ -5,7 +5,7 @@ using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using Module.Mangareader.Archive;
 using Module.Mangareader.Features.Downloader.Queue;
-using Module.Mangareader.Features.Downloader.Sources;
+using Module.Mangareader.Sources;
 using Module.Mangareader.Library;
 using Module.Mangareader.ShareLogic;
 

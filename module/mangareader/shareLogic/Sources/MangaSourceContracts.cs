@@ -1,4 +1,14 @@
-namespace Module.Mangareader.Features.Downloader.Sources;
+namespace Module.Mangareader.Sources;
+
+// The neutral remote-source contract: what one provider can do, the immutable
+// values it exchanges, and the read surface used to resolve one. It lives at
+// module level rather than inside the Downloader because Library's Update Checker
+// is a second real consumer, and a Library feature must not have to import a
+// Downloader namespace in order to talk to a provider.
+//
+// Deliberately still owned by the Downloader: the explicit registration list, the
+// UI-flavored filter contribution, and every concrete adapter such as Comix. This
+// file declares the contract; it never interprets provider behavior.
 
 /// <summary>
 /// What one registered source can actually do. Catalog reads this to decide
@@ -153,6 +163,19 @@ public sealed record RemoteAlternateChapter(
 
 /// <summary>Decoded page bytes plus the format actually detected from them.</summary>
 public sealed record RemotePageImage(byte[] Bytes, string Format);
+
+/// <summary>
+/// The neutral read surface over the one explicit source registry. A consumer
+/// that only needs to resolve a provider depends on this instead of on the
+/// registry type, so it never has to import a filter contribution, a queue or a
+/// screen. It resolves sources; it does not interpret what they return.
+/// </summary>
+public interface IMangaSourceDirectory
+{
+    IReadOnlyList<IMangaSource> AvailableSources { get; }
+
+    IMangaSource? FindSource(string? sourceId);
+}
 
 /// <summary>
 /// One remote manga source. UI-free and queue-free: the adapter owns routes,

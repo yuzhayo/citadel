@@ -6,6 +6,9 @@
              Foreground="{DynamicResource Fg}"
              UseLayoutRounding="True"
              SnapsToDevicePixels="True">
+    <UserControl.Resources>
+        <BooleanToVisibilityConverter x:Key="BoolToVisibility" />
+    </UserControl.Resources>
     <setting:SettingViewport Mode="Contained">
         <Grid>
             <Grid.RowDefinitions>
@@ -125,42 +128,54 @@
 
                             <DataGridTemplateColumn Header="Action"
                                                     CanUserSort="False"
-                                                    MinWidth="240">
+                                                    MinWidth="200">
                                 <DataGridTemplateColumn.CellTemplate>
                                     <DataTemplate>
+                                        <!--
+                                          Exactly one of the four state actions is
+                                          valid for any job state, so the column can
+                                          never stack overlapping controls. Row
+                                          actions stay owned by the queue; this cell
+                                          only offers them.
+                                        -->
                                         <setting:SettingTableActions>
                                             <setting:SettingTableActions.PrimaryContent>
-                                                <StackPanel Orientation="Horizontal">
-                                                    <setting:SettingButton Content="{Binding PrimaryActionLabel}"
-                                                                           Tag="{Binding}"
+                                                <Grid>
+                                                    <setting:SettingButton MinWidth="88"
+                                                                           AutomationProperties.Name="Pause job"
                                                                            Click="PauseResume_Click"
-                                                                           AutomationProperties.Name="{Binding PrimaryActionLabel}" />
-                                                    <setting:SettingButton Content="Retry"
-                                                                           Margin="8,0,0,0"
+                                                                           Content="Pause"
+                                                                           IsEnabled="{Binding CanActNow}"
                                                                            Tag="{Binding}"
-                                                                           Click="Retry_Click"
-                                                                           AutomationProperties.Name="Retry job" />
-                                                </StackPanel>
+                                                                           Visibility="{Binding CanPause, Converter={StaticResource BoolToVisibility}}" />
+                                                    <setting:SettingButton MinWidth="88"
+                                                                           AutomationProperties.Name="{Binding ResumeActionLabel}"
+                                                                           Click="PauseResume_Click"
+                                                                           Content="{Binding ResumeActionLabel}"
+                                                                           IsEnabled="{Binding CanActNow}"
+                                                                           Tag="{Binding}"
+                                                                           Visibility="{Binding CanResume, Converter={StaticResource BoolToVisibility}}" />
+                                                    <setting:SettingButton MinWidth="118"
+                                                                           AutomationProperties.Name="Choose fallback source group"
+                                                                           Click="ChooseSource_Click"
+                                                                           Content="Choose source"
+                                                                           IsEnabled="{Binding CanActNow}"
+                                                                           Tag="{Binding}"
+                                                                           Visibility="{Binding CanChooseFallback, Converter={StaticResource BoolToVisibility}}" />
+                                                    <setting:SettingButton MinWidth="104"
+                                                                           AutomationProperties.Name="Open published folder"
+                                                                           Click="OpenFolder_Click"
+                                                                           Content="Open folder"
+                                                                           Tag="{Binding}"
+                                                                           Visibility="{Binding CanOpenFolder, Converter={StaticResource BoolToVisibility}}" />
+                                                </Grid>
                                             </setting:SettingTableActions.PrimaryContent>
                                             <setting:SettingTableActions.SecondaryContent>
-                                                <StackPanel Orientation="Horizontal">
-                                                    <setting:SettingButton Content="Choose source"
-                                                                           Tag="{Binding}"
-                                                                           IsEnabled="{Binding CanChooseFallback}"
-                                                                           Click="ChooseSource_Click"
-                                                                           AutomationProperties.Name="Choose fallback source group" />
-                                                    <setting:SettingButton Content="Open folder"
-                                                                           Margin="8,0,0,0"
-                                                                           Tag="{Binding}"
-                                                                           IsEnabled="{Binding CanOpenFolder}"
-                                                                           Click="OpenFolder_Click"
-                                                                           AutomationProperties.Name="Open published folder" />
-                                                    <setting:SettingButton Content="Remove"
-                                                                           Margin="8,0,0,0"
-                                                                           Tag="{Binding}"
-                                                                           Click="Remove_Click"
-                                                                           AutomationProperties.Name="Remove job" />
-                                                </StackPanel>
+                                                <setting:SettingButton MinWidth="80"
+                                                                       AutomationProperties.Name="Remove job"
+                                                                       Click="Remove_Click"
+                                                                       Content="Remove"
+                                                                       Tag="{Binding}" />
                                             </setting:SettingTableActions.SecondaryContent>
                                         </setting:SettingTableActions>
                                     </DataTemplate>

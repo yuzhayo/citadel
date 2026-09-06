@@ -1,4 +1,5 @@
 using System.Windows;
+using Module.Mangareader.Sources;
 
 namespace Module.Mangareader.Features.Downloader.Sources;
 
@@ -17,6 +18,9 @@ public interface IRemoteFilterContribution
 /// <summary>
 /// Filter input state and local validation, owned by the provider feature.
 /// <see cref="CurrentFilter"/> is an immutable snapshot taken at Start.
+///
+/// Reset is deliberately not part of this contract: it belongs to the provider's
+/// own Advanced Filters surface, and no host invokes it.
 /// </summary>
 public interface IRemoteFilterState
 {
@@ -25,9 +29,6 @@ public interface IRemoteFilterState
     bool HasBlockingError { get; }
 
     string? ValidationMessage { get; }
-
-    /// <summary>Restores provider defaults. Must not trigger a request.</summary>
-    void Reset();
 }
 
 /// <summary>
@@ -49,9 +50,10 @@ public sealed record MangaSourceRegistration(
 /// An explicit, closed list of sources. No reflection, no filesystem scan, no
 /// runtime discovery: this is an application seam, not a plugin framework.
 /// </summary>
-public sealed class MangaSourceRegistry
+public sealed class MangaSourceRegistry : IMangaSourceDirectory
 {
     private readonly Dictionary<string, MangaSourceRegistration> _byId;
+    private readonly IReadOnlyList<IMangaSource> _directory;
 
     public MangaSourceRegistry(IReadOnlyList<MangaSourceRegistration> registrations)
     {
@@ -69,9 +71,18 @@ public sealed class MangaSourceRegistry
         }
 
         Sources = registrations;
+        _directory = registrations.Select(registration => registration.Source).ToArray();
     }
 
     public IReadOnlyList<MangaSourceRegistration> Sources { get; }
+
+    /// <summary>
+    /// The neutral projection a non-Downloader consumer resolves providers
+    /// through. Same registrations, no filter contribution and no screen type.
+    /// </summary>
+    IReadOnlyList<IMangaSource> IMangaSourceDirectory.AvailableSources => _directory;
+
+    IMangaSource? IMangaSourceDirectory.FindSource(string? sourceId) => Find(sourceId)?.Source;
 
     /// <summary>
     /// The one explicit registration point. Adding a provider means adding its

@@ -3,7 +3,7 @@ using System.Windows;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using Module.Mangareader.Features.Downloader.Queue;
-using Module.Mangareader.Features.Downloader.Sources;
+using Module.Mangareader.Sources;
 using Module.Mangareader.Features.Downloader.Sources.Comix;
 
 namespace Module.Mangareader.Downloader.Tests;
@@ -28,36 +28,155 @@ public sealed class ComixContractTests
     }
 
     /// <summary>
-    /// The filters whose live query key was never captured must block Start with
-    /// a message naming them. The previous contract sent guessed keys for these,
-    /// every test passed, and the provider rejected every real request.
+    /// The 2026-09-06 live capture proved these keys, so they serialize exactly as
+    /// recorded and no longer block Start. Repeated values stay repeated: one key
+    /// per chosen option, never a joined list.
     /// </summary>
     [Fact]
-    public void UncapturedFiltersBlockStartInsteadOfBeingGuessed()
+    public void CapturedFiltersSerializeTheirRecordedRepeatedKeys()
     {
         var query = ComixBrowseQuery.Default with
         {
-            Genres = ["action"],
-            Statuses = ["releasing"],
+            SortKey = "views_7d",
+            Types = ["manhwa", "manga"],
+            Statuses = ["releasing", "on_hiatus"],
+            Demographics = ["3", "4"],
+            MinimumChapter = 10,
             YearFrom = 2010,
-            AuthorKey = "someone",
+            YearTo = 2020,
+            AuthorKey = "991",
+            ArtistKey = "442",
         };
 
-        var validation = query.ValidationError;
-
-        Assert.NotNull(validation);
-        Assert.Contains("genre", validation, StringComparison.Ordinal);
-        Assert.Contains("status", validation, StringComparison.Ordinal);
-        Assert.Contains("release year", validation, StringComparison.Ordinal);
-        Assert.Contains("author", validation, StringComparison.Ordinal);
+        Assert.Null(query.ValidationError);
 
         var text = query.ToQueryString();
-        Assert.DoesNotContain("genre=", text, StringComparison.Ordinal);
-        Assert.DoesNotContain("status=", text, StringComparison.Ordinal);
-        Assert.DoesNotContain("year_from=", text, StringComparison.Ordinal);
-        Assert.DoesNotContain("author=", text, StringComparison.Ordinal);
-        Assert.DoesNotContain("mode=", text, StringComparison.Ordinal);
+        Assert.Contains("order%5Bviews_7d%5D=desc", text, StringComparison.Ordinal);
+        Assert.Contains("content_rating%5B%5D=safe", text, StringComparison.Ordinal);
+        Assert.Contains("content_rating%5B%5D=suggestive", text, StringComparison.Ordinal);
+        Assert.Contains("types%5B%5D=manhwa", text, StringComparison.Ordinal);
+        Assert.Contains("types%5B%5D=manga", text, StringComparison.Ordinal);
+        Assert.Contains("statuses%5B%5D=releasing", text, StringComparison.Ordinal);
+        Assert.Contains("statuses%5B%5D=on_hiatus", text, StringComparison.Ordinal);
+        Assert.Contains("demographics%5B%5D=3", text, StringComparison.Ordinal);
+        Assert.Contains("demographics%5B%5D=4", text, StringComparison.Ordinal);
+        Assert.Contains("min_chap=10", text, StringComparison.Ordinal);
+        Assert.Contains("year_from=2010", text, StringComparison.Ordinal);
+        Assert.Contains("year_to=2020", text, StringComparison.Ordinal);
+        Assert.Contains("authors%5B%5D=991", text, StringComparison.Ordinal);
+        Assert.Contains("artists%5B%5D=442", text, StringComparison.Ordinal);
     }
+
+    /// <summary>
+    /// All thirteen captured sorts, each serializing its own recorded order column
+    /// and direction. A label is never translated into a column name.
+    /// </summary>
+    [Fact]
+    public void EveryCapturedSortSerializesItsExactOrderField()
+    {
+        (string Key, string Field, string Direction)[] expected =
+        [
+            ("best_match", "relevance", "desc"),
+            ("latest", "chapter_updated_at", "desc"),
+            ("recently_added", "created_at", "desc"),
+            ("title_asc", "title", "asc"),
+            ("title_desc", "title", "desc"),
+            ("year_desc", "year", "desc"),
+            ("year_asc", "year", "asc"),
+            ("score", "score", "desc"),
+            ("views_7d", "views_7d", "desc"),
+            ("views_30d", "views_30d", "desc"),
+            ("views_90d", "views_90d", "desc"),
+            ("views_total", "views_total", "desc"),
+            ("follows_total", "follows_total", "desc"),
+        ];
+
+        Assert.Equal(expected.Length, ComixOptions.SortOptions.Count);
+
+        foreach (var sort in expected)
+        {
+            var option = ComixOptions.FindSort(sort.Key);
+            Assert.NotNull(option);
+            Assert.Equal(sort.Field, option!.OrderField);
+            Assert.Equal(sort.Direction, option.Direction);
+
+            var text = (ComixBrowseQuery.Default with { SortKey = sort.Key }).ToQueryString();
+            Assert.Contains(
+                $"order%5B{sort.Field}%5D={sort.Direction}",
+                text,
+                StringComparison.Ordinal);
+        }
+    }
+
+    /// <summary>
+    /// Genres and formats share one captured key and one dropdown, and their
+    /// provider ids were captured live on 2026-09-06 from the taxonomy the browse
+    /// page renders. Choosing them is therefore a normal query, not a refusal.
+    /// </summary>
+    [Fact]
+    public void GenresAndFormatsSerializeTheirCapturedIdsThroughOneKey()
+    {
+        var query = ComixBrowseQuery.Default with
+        {
+            // Action and Smut are genres; 4-Koma is a format. All three are ids.
+            Genres = ["6", "87268", "93164"],
+            GenreMode = ComixGenreMode.Or,
+        };
+
+        Assert.Null(query.ValidationError);
+
+        var text = query.ToQueryString();
+        Assert.Contains("genres_in%5B%5D=6", text, StringComparison.Ordinal);
+        Assert.Contains("genres_in%5B%5D=87268", text, StringComparison.Ordinal);
+        Assert.Contains("genres_in%5B%5D=93164", text, StringComparison.Ordinal);
+        Assert.Contains("genres_mode=or", text, StringComparison.Ordinal);
+
+        // The match mode is only meaningful with a selection, so it is omitted
+        // rather than sent as a stray default.
+        Assert.DoesNotContain(
+            "genres_mode",
+            ComixBrowseQuery.Default.ToQueryString(),
+            StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// Pins the values captured live from the provider's own rendered taxonomy.
+    /// Demographic ids are integers and are not in label order, which is exactly
+    /// what an inference from the labels got wrong.
+    /// </summary>
+    [Fact]
+    public void TheCapturedOptionIdsMatchTheLiveProviderTaxonomy()
+    {
+        Assert.Equal(
+            [("3", "Josei"), ("4", "Seinen"), ("1", "Shoujo"), ("2", "Shounen")],
+            ComixOptions.Demographics.Select(option => (option.Key, option.DisplayName)));
+
+        Assert.Equal(31, ComixOptions.Genres.Count);
+        Assert.Equal(9, ComixOptions.Formats.Count);
+
+        Assert.Equal("6", IdOf(ComixOptions.Genres, "Action"));
+        Assert.Equal("87264", IdOf(ComixOptions.Genres, "Adult"));
+        Assert.Equal("87266", IdOf(ComixOptions.Genres, "Hentai"));
+        Assert.Equal("87267", IdOf(ComixOptions.Genres, "Mature"));
+        Assert.Equal("87268", IdOf(ComixOptions.Genres, "Smut"));
+        Assert.Equal("40", IdOf(ComixOptions.Genres, "Harem"));
+        Assert.Equal("30", IdOf(ComixOptions.Genres, "Wuxia"));
+
+        Assert.Equal("93164", IdOf(ComixOptions.Formats, "4-Koma"));
+        Assert.Equal("93172", IdOf(ComixOptions.Formats, "Full Color"));
+        Assert.Equal("93171", IdOf(ComixOptions.Formats, "Web Comic"));
+
+        // Genres and formats feed one key, so their ids must not collide.
+        var genreIds = ComixOptions.Genres.Select(option => option.Key);
+        var formatIds = ComixOptions.Formats.Select(option => option.Key);
+        Assert.Empty(genreIds.Intersect(formatIds, StringComparer.Ordinal));
+
+        // A sort outside the captured table is still refused, never defaulted.
+        Assert.NotNull((ComixBrowseQuery.Default with { SortKey = "invented" }).ValidationError);
+    }
+
+    private static string IdOf(IReadOnlyList<RemoteOption> options, string label) =>
+        options.Single(option => option.DisplayName == label).Key;
 
     [Theory]
     [InlineData(-1, null, null)]

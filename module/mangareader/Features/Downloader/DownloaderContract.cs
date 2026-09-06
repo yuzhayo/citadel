@@ -1,3 +1,5 @@
+using Module.Mangareader.Features.Downloader.AutoCover;
+using Module.Mangareader.Features.Downloader.Lister;
 using Module.Mangareader.Features.Downloader.Queue;
 using Module.Mangareader.Features.Downloader.Sources;
 using Module.Mangareader.Library;
@@ -16,9 +18,10 @@ public enum DownloaderRoute
 
 /// <summary>
 /// The narrow context both children receive. It exposes only what they actually
-/// consume: the source registry, the queue contract, the Library root snapshot
-/// and the mapping index. Route commands stay on the screens themselves, and no
-/// child reaches into a sibling's mutable state through this.
+/// consume: the source registry, the queue contract, the Library root snapshot,
+/// the mapping index and the Auto Cover command. Route commands stay on the
+/// screens themselves, and no child reaches into a sibling's mutable state
+/// through this.
 /// </summary>
 public sealed class DownloaderContext
 {
@@ -26,12 +29,16 @@ public sealed class DownloaderContext
         MangaSourceRegistry sources,
         DownloadQueueFeature queue,
         LibraryRootContext libraryRoot,
-        DownloadSourceIndex index)
+        DownloadSourceIndex index,
+        ListerFeature lister,
+        AutoCoverFeature autoCover)
     {
         Sources = sources;
         Queue = queue;
         LibraryRoot = libraryRoot;
         Index = index;
+        Lister = lister;
+        AutoCover = autoCover;
     }
 
     public MangaSourceRegistry Sources { get; }
@@ -41,4 +48,8 @@ public sealed class DownloaderContext
     public LibraryRootContext LibraryRoot { get; }
 
     public DownloadSourceIndex Index { get; }
+
+    public ListerFeature Lister { get; }
+
+    public AutoCoverFeature AutoCover { get; }
 }

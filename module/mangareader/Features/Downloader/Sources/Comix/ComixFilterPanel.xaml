@@ -1,11 +1,12 @@
 <UserControl x:Class="Module.Mangareader.Features.Downloader.Sources.Comix.ComixFilterPanel"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:comix="clr-namespace:Module.Mangareader.Features.Downloader.Sources.Comix"
              xmlns:setting="clr-namespace:Citadel.Setting.Components;assembly=Citadel.Setting"
              Foreground="{DynamicResource Fg}">
     <UserControl.Resources>
-        <!-- Every option list here is object-backed, so each derives from the
-             shared item style and adds only the accessible-name binding. The
+        <!-- Resolved author/artist options are object-backed, so each derives from
+             the shared item style and adds only the accessible-name binding. The
              shared template and its hover/selected/focus behavior stay owned by
              setting/ and are not copied here. -->
         <Style x:Key="ComixOptionItemStyle"
@@ -15,281 +16,229 @@
         </Style>
     </UserControl.Resources>
 
-    <!-- Provider-owned Advanced Filters, composed only from existing shared
-         controls. Nothing here knows about the queue, and no shared control
-         learns anything about Comix. -->
-    <Border Style="{DynamicResource SettingCardStyle}">
-        <StackPanel>
-            <Grid>
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="*" />
-                    <ColumnDefinition Width="*" />
-                    <ColumnDefinition Width="*" />
-                    <ColumnDefinition Width="*" />
-                </Grid.ColumnDefinitions>
+    <!--
+      The provider's whole filter contribution to the Catalog action bar: the
+      compact direct dropdowns first, then Advanced Filters as a popover that
+      never pushes the result grid. Composed only from existing shared controls
+      plus this feature's own checkbox dropdown; no Citadel primitive, style or
+      template is added or copied.
 
-                <StackPanel Margin="0,0,12,0">
-                    <TextBlock Text="Content rating"
-                               FontSize="12"
-                               Foreground="{DynamicResource Dim}" />
-                    <ListBox x:Name="RatingList"
-                             Margin="0,5,0,0"
-                             MaxHeight="120"
-                             Style="{DynamicResource SettingListStyle}"
-                             ItemContainerStyle="{StaticResource ComixOptionItemStyle}"
-                             SelectionMode="Extended"
-                             AutomationProperties.Name="Content rating" />
-                </StackPanel>
+      Every edit here changes draft state only. Nothing in this file issues a
+      Browse request — Start snapshots the draft.
+    -->
+    <WrapPanel Orientation="Horizontal">
+        <ComboBox x:Name="SortPicker"
+                  MinWidth="150"
+                  Height="34"
+                  Margin="0,0,8,8"
+                  AutomationProperties.Name="Sort order"
+                  DisplayMemberPath="DisplayName"
+                  SelectionChanged="SortPicker_SelectionChanged"
+                  Style="{DynamicResource SettingComboBoxStyle}" />
 
-                <StackPanel Grid.Column="1" Margin="0,0,12,0">
-                    <TextBlock Text="Type"
-                               FontSize="12"
-                               Foreground="{DynamicResource Dim}" />
-                    <ListBox x:Name="TypeList"
-                             Margin="0,5,0,0"
-                             MaxHeight="120"
-                             Style="{DynamicResource SettingListStyle}"
-                             ItemContainerStyle="{StaticResource ComixOptionItemStyle}"
-                             SelectionMode="Extended"
-                             AutomationProperties.Name="Type" />
-                </StackPanel>
+        <comix:ComixMultiSelectDropDown x:Name="TypeFilter"
+                                        Margin="0,0,8,8"
+                                        Header="Type"
+                                        SelectionChanged="DraftFilter_Changed" />
 
-                <StackPanel Grid.Column="2" Margin="0,0,12,0">
-                    <TextBlock Text="Demographic"
-                               FontSize="12"
-                               Foreground="{DynamicResource Dim}" />
-                    <ListBox x:Name="DemographicList"
-                             Margin="0,5,0,0"
-                             MaxHeight="120"
-                             Style="{DynamicResource SettingListStyle}"
-                             ItemContainerStyle="{StaticResource ComixOptionItemStyle}"
-                             SelectionMode="Extended"
-                             AutomationProperties.Name="Demographic" />
-                </StackPanel>
+        <comix:ComixMultiSelectDropDown x:Name="StatusFilter"
+                                        Margin="0,0,8,8"
+                                        Header="Status"
+                                        SelectionChanged="DraftFilter_Changed" />
 
-                <StackPanel Grid.Column="3">
-                    <TextBlock Text="Release status"
-                               FontSize="12"
-                               Foreground="{DynamicResource Dim}" />
-                    <ListBox x:Name="StatusList"
-                             Margin="0,5,0,0"
-                             MaxHeight="120"
-                             Style="{DynamicResource SettingListStyle}"
-                             ItemContainerStyle="{StaticResource ComixOptionItemStyle}"
-                             SelectionMode="Extended"
-                             AutomationProperties.Name="Release status" />
-                </StackPanel>
-            </Grid>
+        <comix:ComixMultiSelectDropDown x:Name="RatingFilter"
+                                        Margin="0,0,8,8"
+                                        Header="Rating"
+                                        SelectionChanged="DraftFilter_Changed" />
 
-            <Grid Margin="0,14,0,0">
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="*" />
-                    <ColumnDefinition Width="*" />
-                </Grid.ColumnDefinitions>
+        <comix:ComixMultiSelectDropDown x:Name="GenreFilter"
+                                        Margin="0,0,8,8"
+                                        Header="Genres"
+                                        SelectionChanged="DraftFilter_Changed" />
 
-                <StackPanel Margin="0,0,12,0">
-                    <Grid>
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="*" />
-                            <ColumnDefinition Width="Auto" />
-                            <ColumnDefinition Width="Auto" />
-                        </Grid.ColumnDefinitions>
-                        <setting:SettingField x:Name="GenreSearchField"
-                                              Height="38"
-                                              Margin="0,0,8,0"
-                                              Placeholder="Search genres, then press Search"
-                                              AutomationProperties.Name="Search genres" />
-                        <setting:SettingButton x:Name="GenreSearchButton"
-                                               Grid.Column="1"
-                                               MinWidth="80"
-                                               Height="38"
-                                               Margin="0,0,8,0"
-                                               Content="Search"
-                                               Click="GenreSearchButton_Click"
-                                               AutomationProperties.Name="Search genres" />
-                        <setting:SettingButton x:Name="GenreModeButton"
-                                               Grid.Column="2"
-                                               MinWidth="80"
-                                               Height="38"
-                                               Content="AND"
-                                               Click="GenreModeButton_Click"
-                                               AutomationProperties.Name="Genre match mode" />
-                    </Grid>
-                    <ListBox x:Name="GenreList"
-                             Margin="0,8,0,0"
-                             MaxHeight="140"
-                             Style="{DynamicResource SettingListStyle}"
-                             ItemContainerStyle="{StaticResource ComixOptionItemStyle}"
-                             SelectionMode="Extended"
-                             AutomationProperties.Name="Resolved genres" />
-                </StackPanel>
+        <setting:SettingButton x:Name="AdvancedButton"
+                               MinWidth="140"
+                               Height="34"
+                               Margin="0,0,0,8"
+                               AutomationProperties.Name="Advanced Filters"
+                               Click="AdvancedButton_Click"
+                               Content="Advanced Filters" />
 
-                <StackPanel Grid.Column="1">
-                    <Grid>
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="*" />
-                            <ColumnDefinition Width="Auto" />
-                        </Grid.ColumnDefinitions>
-                        <setting:SettingField x:Name="FormatSearchField"
-                                              Height="38"
-                                              Margin="0,0,8,0"
-                                              Placeholder="Search formats, then press Search"
-                                              AutomationProperties.Name="Search formats" />
-                        <setting:SettingButton x:Name="FormatSearchButton"
-                                               Grid.Column="1"
-                                               MinWidth="80"
-                                               Height="38"
-                                               Content="Search"
-                                               Click="FormatSearchButton_Click"
-                                               AutomationProperties.Name="Search formats" />
-                    </Grid>
-                    <ListBox x:Name="FormatList"
-                             Margin="0,8,0,0"
-                             MaxHeight="140"
-                             Style="{DynamicResource SettingListStyle}"
-                             ItemContainerStyle="{StaticResource ComixOptionItemStyle}"
-                             SelectionMode="Extended"
-                             AutomationProperties.Name="Resolved formats" />
-                </StackPanel>
-            </Grid>
+        <Popup x:Name="AdvancedPopup"
+               AllowsTransparency="True"
+               Placement="Bottom"
+               PlacementTarget="{Binding ElementName=AdvancedButton}"
+               PopupAnimation="Fade"
+               StaysOpen="False">
+            <Border Width="480"
+                    Margin="0,4,0,0"
+                    Padding="14,12"
+                    Background="{DynamicResource Bg}"
+                    BorderBrush="{DynamicResource Border}"
+                    BorderThickness="1"
+                    CornerRadius="{DynamicResource SidebarItemCornerRadius}">
+                <ScrollViewer HorizontalScrollBarVisibility="Disabled"
+                              MaxHeight="420"
+                              Style="{DynamicResource SettingScrollViewerStyle}"
+                              VerticalScrollBarVisibility="Auto">
+                    <StackPanel>
+                        <comix:ComixMultiSelectDropDown x:Name="DemographicFilter"
+                                                        Margin="0,0,0,10"
+                                                        HorizontalAlignment="Left"
+                                                        Header="Demographic"
+                                                        SelectionChanged="DraftFilter_Changed" />
 
-            <Grid Margin="0,14,0,0">
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="*" />
-                    <ColumnDefinition Width="*" />
-                    <ColumnDefinition Width="*" />
-                    <ColumnDefinition Width="*" />
-                </Grid.ColumnDefinitions>
+                        <Grid Margin="0,0,0,10">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
 
-                <StackPanel Margin="0,0,12,0">
-                    <TextBlock Text="Minimum chapter"
-                               FontSize="12"
-                               Foreground="{DynamicResource Dim}" />
-                    <setting:SettingField x:Name="MinChapterField"
-                                          Height="38"
-                                          Margin="0,5,0,0"
-                                          Placeholder="Any"
-                                          AutomationProperties.Name="Minimum chapter"
-                                          TextChanged="MinChapterField_TextChanged" />
-                </StackPanel>
+                            <StackPanel Margin="0,0,10,0">
+                                <TextBlock FontSize="12"
+                                           Foreground="{DynamicResource Dim}"
+                                           Text="Minimum chapter" />
+                                <setting:SettingField x:Name="MinChapterField"
+                                                      Height="34"
+                                                      Margin="0,4,0,0"
+                                                      AutomationProperties.Name="Minimum chapter"
+                                                      Placeholder="Any"
+                                                      TextChanged="NumericDraft_Changed" />
+                            </StackPanel>
 
-                <StackPanel Grid.Column="1" Margin="0,0,12,0">
-                    <TextBlock Text="Release year from"
-                               FontSize="12"
-                               Foreground="{DynamicResource Dim}" />
-                    <setting:SettingField x:Name="YearFromField"
-                                          Height="38"
-                                          Margin="0,5,0,0"
-                                          Placeholder="Any"
-                                          AutomationProperties.Name="Release year from"
-                                          TextChanged="YearField_TextChanged" />
-                </StackPanel>
+                            <StackPanel Grid.Column="1" Margin="0,0,10,0">
+                                <TextBlock FontSize="12"
+                                           Foreground="{DynamicResource Dim}"
+                                           Text="Release year from" />
+                                <setting:SettingField x:Name="YearFromField"
+                                                      Height="34"
+                                                      Margin="0,4,0,0"
+                                                      AutomationProperties.Name="Release year from"
+                                                      Placeholder="Any"
+                                                      TextChanged="NumericDraft_Changed" />
+                            </StackPanel>
 
-                <StackPanel Grid.Column="2" Margin="0,0,12,0">
-                    <TextBlock Text="Release year to"
-                               FontSize="12"
-                               Foreground="{DynamicResource Dim}" />
-                    <setting:SettingField x:Name="YearToField"
-                                          Height="38"
-                                          Margin="0,5,0,0"
-                                          Placeholder="Any"
-                                          AutomationProperties.Name="Release year to"
-                                          TextChanged="YearField_TextChanged" />
-                </StackPanel>
+                            <StackPanel Grid.Column="2">
+                                <TextBlock FontSize="12"
+                                           Foreground="{DynamicResource Dim}"
+                                           Text="Release year to" />
+                                <setting:SettingField x:Name="YearToField"
+                                                      Height="34"
+                                                      Margin="0,4,0,0"
+                                                      AutomationProperties.Name="Release year to"
+                                                      Placeholder="Any"
+                                                      TextChanged="NumericDraft_Changed" />
+                            </StackPanel>
+                        </Grid>
 
-                <StackPanel Grid.Column="3">
-                    <TextBlock Text="Sort"
-                               FontSize="12"
-                               Foreground="{DynamicResource Dim}" />
-                    <ComboBox x:Name="SortPicker"
-                              Height="38"
-                              Margin="0,5,0,0"
-                              Style="{DynamicResource SettingComboBoxStyle}"
-                              DisplayMemberPath="DisplayName"
-                              AutomationProperties.Name="Sort order"
-                              SelectionChanged="SortPicker_SelectionChanged" />
-                </StackPanel>
-            </Grid>
+                        <Grid Margin="0,0,0,10">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
 
-            <Grid Margin="0,14,0,0">
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="*" />
-                    <ColumnDefinition Width="*" />
-                </Grid.ColumnDefinitions>
+                            <StackPanel Margin="0,0,10,0">
+                                <TextBlock FontSize="12"
+                                           Foreground="{DynamicResource Dim}"
+                                           Text="Author" />
+                                <Grid Margin="0,4,0,0">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <setting:SettingField x:Name="AuthorField"
+                                                          Height="34"
+                                                          Margin="0,0,8,0"
+                                                          AutomationProperties.Name="Author"
+                                                          KeyDown="LookupField_KeyDown"
+                                                          Placeholder="Author, then Enter" />
+                                    <setting:SettingButton x:Name="AuthorSearchButton"
+                                                           Grid.Column="1"
+                                                           MinWidth="70"
+                                                           Height="34"
+                                                           AutomationProperties.Name="Search authors"
+                                                           Click="AuthorSearchButton_Click"
+                                                           Content="Search" />
+                                </Grid>
+                                <ListBox x:Name="AuthorList"
+                                         MaxHeight="104"
+                                         Margin="0,6,0,0"
+                                         AutomationProperties.Name="Resolved authors"
+                                         ItemContainerStyle="{StaticResource ComixOptionItemStyle}"
+                                         SelectionChanged="ResolvedOption_Changed"
+                                         Style="{DynamicResource SettingListStyle}" />
+                            </StackPanel>
 
-                <StackPanel Margin="0,0,12,0">
-                    <Grid>
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="*" />
-                            <ColumnDefinition Width="Auto" />
-                        </Grid.ColumnDefinitions>
-                        <setting:SettingField x:Name="AuthorField"
-                                              Height="38"
-                                              Margin="0,0,8,0"
-                                              Placeholder="Author, then press Search"
-                                              AutomationProperties.Name="Author" />
-                        <setting:SettingButton x:Name="AuthorSearchButton"
-                                               Grid.Column="1"
-                                               MinWidth="80"
-                                               Height="38"
-                                               Content="Search"
-                                               Click="AuthorSearchButton_Click"
-                                               AutomationProperties.Name="Search authors" />
-                    </Grid>
-                    <ListBox x:Name="AuthorList"
-                             Margin="0,8,0,0"
-                             MaxHeight="110"
-                             Style="{DynamicResource SettingListStyle}"
-                             ItemContainerStyle="{StaticResource ComixOptionItemStyle}"
-                             AutomationProperties.Name="Resolved authors"
-                             SelectionChanged="AuthorList_SelectionChanged" />
-                </StackPanel>
+                            <StackPanel Grid.Column="1">
+                                <TextBlock FontSize="12"
+                                           Foreground="{DynamicResource Dim}"
+                                           Text="Artist" />
+                                <Grid Margin="0,4,0,0">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <setting:SettingField x:Name="ArtistField"
+                                                          Height="34"
+                                                          Margin="0,0,8,0"
+                                                          AutomationProperties.Name="Artist"
+                                                          KeyDown="LookupField_KeyDown"
+                                                          Placeholder="Artist, then Enter" />
+                                    <setting:SettingButton x:Name="ArtistSearchButton"
+                                                           Grid.Column="1"
+                                                           MinWidth="70"
+                                                           Height="34"
+                                                           AutomationProperties.Name="Search artists"
+                                                           Click="ArtistSearchButton_Click"
+                                                           Content="Search" />
+                                </Grid>
+                                <ListBox x:Name="ArtistList"
+                                         MaxHeight="104"
+                                         Margin="0,6,0,0"
+                                         AutomationProperties.Name="Resolved artists"
+                                         ItemContainerStyle="{StaticResource ComixOptionItemStyle}"
+                                         SelectionChanged="ResolvedOption_Changed"
+                                         Style="{DynamicResource SettingListStyle}" />
+                            </StackPanel>
+                        </Grid>
 
-                <StackPanel Grid.Column="1">
-                    <Grid>
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="*" />
-                            <ColumnDefinition Width="Auto" />
-                        </Grid.ColumnDefinitions>
-                        <setting:SettingField x:Name="ArtistField"
-                                              Height="38"
-                                              Margin="0,0,8,0"
-                                              Placeholder="Artist, then press Search"
-                                              AutomationProperties.Name="Artist" />
-                        <setting:SettingButton x:Name="ArtistSearchButton"
-                                               Grid.Column="1"
-                                               MinWidth="80"
-                                               Height="38"
-                                               Content="Search"
-                                               Click="ArtistSearchButton_Click"
-                                               AutomationProperties.Name="Search artists" />
-                    </Grid>
-                    <ListBox x:Name="ArtistList"
-                             Margin="0,8,0,0"
-                             MaxHeight="110"
-                             Style="{DynamicResource SettingListStyle}"
-                             ItemContainerStyle="{StaticResource ComixOptionItemStyle}"
-                             AutomationProperties.Name="Resolved artists"
-                             SelectionChanged="ArtistList_SelectionChanged" />
-                </StackPanel>
-            </Grid>
+                        <Grid Margin="0,0,0,4">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <setting:SettingButton x:Name="GenreModeButton"
+                                                   MinWidth="96"
+                                                   Height="34"
+                                                   AutomationProperties.Name="Genre match mode"
+                                                   Click="GenreModeButton_Click"
+                                                   Content="AND" />
+                            <TextBlock Grid.Column="1"
+                                       Margin="10,0"
+                                       FontSize="12"
+                                       Foreground="{DynamicResource Dim}"
+                                       Text="Genre/format match mode"
+                                       TextWrapping="Wrap"
+                                       VerticalAlignment="Center" />
+                            <setting:SettingButton x:Name="ResetButton"
+                                                   Grid.Column="2"
+                                                   MinWidth="80"
+                                                   Height="34"
+                                                   AutomationProperties.Name="Reset filters to provider defaults"
+                                                   Click="ResetButton_Click"
+                                                   Content="Reset" />
+                        </Grid>
 
-            <Grid Margin="0,14,0,0">
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="*" />
-                    <ColumnDefinition Width="Auto" />
-                </Grid.ColumnDefinitions>
-                <TextBlock x:Name="ValidationText"
-                           VerticalAlignment="Center"
-                           TextWrapping="Wrap"
-                           Foreground="{DynamicResource Dim}" />
-                <setting:SettingButton x:Name="ResetButton"
-                                       Grid.Column="1"
-                                       MinWidth="92"
-                                       Content="Reset"
-                                       Click="ResetButton_Click"
-                                       AutomationProperties.Name="Reset filters to provider defaults" />
-            </Grid>
-        </StackPanel>
-    </Border>
+                        <TextBlock x:Name="ValidationText"
+                                   Margin="0,8,0,0"
+                                   FontSize="12"
+                                   Foreground="{DynamicResource Dim}"
+                                   TextWrapping="Wrap" />
+                    </StackPanel>
+                </ScrollViewer>
+            </Border>
+        </Popup>
+    </WrapPanel>
 </UserControl>

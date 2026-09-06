@@ -1,13 +1,22 @@
 using System.Collections.ObjectModel;
+using System.ComponentModel;
+using System.Globalization;
 using System.IO;
 using System.Net.Http;
+using System.Runtime.CompilerServices;
 using System.Windows;
+using System.Windows.Automation;
 using System.Windows.Controls;
 using System.Windows.Input;
+using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using Citadel.Setting.Components;
+using Module.Mangareader.Features.Downloader.AutoCover;
+using Module.Mangareader.Features.Downloader.Lister;
 using Module.Mangareader.Features.Downloader.Queue;
+using Module.Mangareader.Sources;
 using Module.Mangareader.Features.Downloader.Sources;
+using Module.Mangareader.ShareLogic;
 
 namespace Module.Mangareader.Features.Downloader.Catalog;
 
@@ -34,25 +43,64 @@ public partial class CatalogScreen : UserControl, IDisposable
 
     private readonly ObservableCollection<RemoteTitleCardModel> _cards = [];
     private readonly Dictionary<string, RemoteTitleCardModel> _cardsByIdentity = new(StringComparer.Ordinal);
+    private readonly ObservableCollection<ChapterRow> _chapterRows = [];
+    private readonly StackPanel _detailCoverActions = new();
+    private string? _chapterSetKey;
+    private bool _syncingSelection;
+    private RemoteTitleDetailAdapter? _detailAdapter;
+    private string? _detailKey;
+    private ImageSource? _detailCover;
+    private string? _detailCoverKey;
+    private ListerFeature? _lister;
+    private ListerResult? _listerResult;
     private DownloaderContext? _context;
     private CatalogFeature? _catalog;
     private CancellationTokenSource? _actionCancellation;
+    private CancellationTokenSource? _browseCancellation;
+    private CancellationTokenSource? _coverFetchCancellation;
     private CancellationTokenSource? _coverCancellation;
     private CancellationTokenSource? _coverBatch;
     private int _coverGeneration;
     private bool _settingSource;
     private bool _settingGroup;
-    private bool _settingChapters;
+    private bool _browseActive;
+    private bool _stopping;
     private bool _disposed;
 
     public CatalogScreen()
     {
         InitializeComponent();
         ResultsList.ItemsSource = _cards;
+        Detail.CoverActions = _detailCoverActions;
+        ChapterTable.ItemsSource = _chapterRows;
+        if (ChapterHeaderCheck is { } headerCheck) headerCheck.Click += ChapterHeaderCheck_Click;
+        IsVisibleChanged += CatalogScreen_IsVisibleChanged;
     }
+
+    private CheckBox? ChapterHeaderCheck =>
+        ChapterTable.InteractiveColumns
+            .OfType<DataGridTemplateColumn>()
+            .FirstOrDefault()?.Header as CheckBox;
+
+    /// <summary>
+    /// Reserved region below the remote cover. The feature that owns a cover
+    /// action places it here; this screen places nothing speculatively.
+    /// </summary>
+    internal Panel DetailCoverActions => _detailCoverActions;
+
+    /// <summary>Whether the open detail's probed folder already holds this chapter.</summary>
+    internal bool IsLocallyAvailable(RemoteChapterIdentity chapter) =>
+        _listerResult is { } result && ListerFeature.IsLocallyAvailable(result, chapter);
 
     /// <summary>The only entry point to Download List.</summary>
     public event EventHandler? OpenDownloadList;
+
+    /// <summary>
+    /// Announces that a queue item was added for this title, carrying one
+    /// immutable cover candidate. This screen applies no cover rule and the route
+    /// host only relays: deciding whether a cover is written belongs to Auto Cover.
+    /// </summary>
+    public event EventHandler<CoverCandidate>? CoverCandidateAvailable;
 
     public void UseContext(DownloaderContext context)
     {
@@ -62,7 +110,9 @@ public partial class CatalogScreen : UserControl, IDisposable
         _context = context;
         _catalog = new CatalogFeature(context.Sources, () => context.LibraryRoot.CurrentRoot is not null);
         _catalog.StateChanged += Catalog_StateChanged;
+        _lister = context.Lister;
         context.Queue.QueueSummaryChanged += Queue_QueueSummaryChanged;
+        InstallFetchCoverAction();
 
         _settingSource = true;
         try
@@ -78,6 +128,7 @@ public partial class CatalogScreen : UserControl, IDisposable
         if (SourcePicker.SelectedItem is MangaSourceRegistration selected)
         {
             _catalog.SelectSource(selected.Id);
+            HostFilterPanel();
         }
 
         Render(_catalog.State);
@@ -91,24 +142,19 @@ public partial class CatalogScreen : UserControl, IDisposable
 
         // Selecting a provider performs no remote request and starts no browser.
         _catalog.SelectSource(registration.Id);
-        HostFilterPanel(registration);
+        HostFilterPanel();
     }
 
-    private void HostFilterPanel(MangaSourceRegistration registration)
+    /// <summary>
+    /// Hosts the panel of the contribution the feature actually snapshots at
+    /// Start. Asking the registration for a second contribution would let the
+    /// user edit filters that never reach a request, so the hosted panel and the
+    /// query draft are always the same instance.
+    /// </summary>
+    private void HostFilterPanel()
     {
-        var composition = registration.CreateFilters();
-        FilterHost.Content = composition.CreatePanel();
-        FilterHost.Visibility = FiltersToggle.IsChecked == true
-            ? Visibility.Visible
-            : Visibility.Collapsed;
-    }
-
-    private void FiltersToggle_Changed(object sender, RoutedEventArgs e)
-    {
-        if (_disposed) return;
-        FilterHost.Visibility = FiltersToggle.IsChecked == true
-            ? Visibility.Visible
-            : Visibility.Collapsed;
+        if (_disposed || _catalog is null) return;
+        FilterHost.Content = _catalog.Filters?.CreatePanel();
     }
 
     private void SearchField_KeyDown(object sender, KeyEventArgs e)
@@ -124,7 +170,41 @@ public partial class CatalogScreen : UserControl, IDisposable
     private async void StartButton_Click(object sender, RoutedEventArgs e)
     {
         if (_disposed || _catalog is null) return;
-        await RunActionAsync(token => _catalog.StartAsync(SearchField.Text, token));
+
+        // The button is the Browse control only. Opening a title, changing group
+        // and Load more own their own lifecycle and are never stopped from here.
+        if (_browseActive)
+        {
+            Stop();
+            return;
+        }
+
+        // Enforced here and not only by the disabled button: Enter in the search
+        // field reaches this handler directly, so the refusal has to live where the
+        // Browse is actually started.
+        if (_catalog.State.IsActionBusy) return;
+
+        await RunBrowseAsync(token => _catalog.StartAsync(SearchField.Text, token));
+    }
+
+    /// <summary>
+    /// Logically stops the active Browse and nothing else. The transport token is
+    /// deliberately left alone: cancelling it reaches the inline pyhost command,
+    /// which completes at once with a TIMEOUT while Python is still busy — a fake
+    /// provider error, a button that snaps back to Start too early, and a following
+    /// Start written before the old command settled.
+    ///
+    /// The feature marks the request stale instead, so its late result cannot
+    /// commit, and this screen stays parked at <c>Stopping…</c> until the awaited
+    /// Browse is genuinely terminal. Only <see cref="Dispose"/> cancels the
+    /// transport, which is a real end of lifetime rather than a user's Stop.
+    /// </summary>
+    private void Stop()
+    {
+        if (_stopping || _catalog is null) return;
+
+        _stopping = true;
+        _catalog.AbandonActiveBrowse();
     }
 
     private async void LoadMoreButton_Click(object sender, RoutedEventArgs e)
@@ -144,6 +224,7 @@ public partial class CatalogScreen : UserControl, IDisposable
         await RunActionAsync(async token =>
         {
             await _catalog.OpenTitleAsync(card.Summary, token);
+            await RefreshListerAsync(token);
             await LoadDetailCoverAsync(card.Summary, token);
         });
     }
@@ -153,6 +234,22 @@ public partial class CatalogScreen : UserControl, IDisposable
         if (_catalog is null) return;
         var anchor = _catalog.State.ResultsScrollOffset;
         _catalog.Back();
+
+        // The detail and its cover belong to the title being left; releasing them
+        // here means a later title can never inherit this one's cover.
+        _detailAdapter = null;
+        _detailKey = null;
+        _detailCover = null;
+        _detailCoverKey = null;
+        Detail.DataContext = null;
+        _listerResult = null;
+
+        foreach (var row in _chapterRows) row.SelectionChanged -= Row_SelectionChanged;
+        _chapterRows.Clear();
+        _chapterSetKey = null;
+
+        RenderLocalAvailability();
+
         Dispatcher.BeginInvoke(() => ResultsScroll.ScrollToVerticalOffset(anchor));
     }
 
@@ -162,26 +259,11 @@ public partial class CatalogScreen : UserControl, IDisposable
         var state = _catalog.State;
         if (state.Detail is null || GroupPicker.SelectedItem is not RemoteSourceGroup group) return;
 
-        await RunActionAsync(token =>
-            _catalog.SelectGroupAsync(state.Detail.Summary.Identity, group, token));
-    }
-
-    private void ChapterList_SelectionChanged(object sender, SelectionChangedEventArgs e)
-    {
-        if (_disposed || _settingChapters || _catalog is null) return;
-
-        // The feature owns the selection; this handler only reports what the
-        // shared list control now holds.
-        var selected = ChapterList.SelectedItems
-            .OfType<RemoteChapterSummary>()
-            .Select(chapter => chapter.Identity.ChapterId)
-            .ToList();
-        foreach (var chapter in _catalog.State.Chapters)
+        await RunActionAsync(async token =>
         {
-            var shouldBeSelected = selected.Contains(chapter.Identity.ChapterId);
-            var isSelected = _catalog.State.SelectedChapterIds.Contains(chapter.Identity.ChapterId);
-            if (shouldBeSelected && !isSelected) _catalog.ToggleChapter(chapter);
-        }
+            await _catalog.SelectGroupAsync(state.Detail.Summary.Identity, group, token);
+            await RefreshListerAsync(token);
+        });
     }
 
     private void DownloadListButton_Click(object sender, RoutedEventArgs e) =>
@@ -209,13 +291,37 @@ public partial class CatalogScreen : UserControl, IDisposable
             .ToList();
         if (chapters.Count == 0) return;
 
+        // One confirmation for the whole batch, never one dialog per row. The
+        // answer is the replacement permission the queue needs: without it the
+        // queue keeps skipping every already published chapter, so this promise
+        // of an atomic replacement would queue nothing at all.
+        var alreadyLocal = chapters.Count(chapter => IsLocallyAvailable(chapter.Identity));
+        var replacePublished = false;
+        if (alreadyLocal > 0)
+        {
+            replacePublished = SettingDialog.Confirm(
+                Window.GetWindow(this),
+                "Downloader",
+                $"{alreadyLocal} dari {chapters.Count} chapter yang dipilih sudah ada di folder lokal.\n\n"
+                + "Mengunduh ulang dari source/group yang sama menggantikan arsipnya secara atomik. "
+                + "Chapter dari source/group lain tetap menjadi file tersendiri dan tidak ditimpa.\n\n"
+                + "Lanjutkan?",
+                "Download again");
+            if (!replacePublished) return;
+        }
+
         var folder = ResolveTargetFolder(state.Detail.Summary, root);
         if (folder is null) return;
 
         QueueAddResult result;
         try
         {
-            result = _context.Queue.QueueChapters(state.Detail.Summary, group, chapters, folder);
+            result = _context.Queue.QueueChapters(
+                state.Detail.Summary,
+                group,
+                chapters,
+                folder,
+                replacePublished);
         }
         catch (QueuePersistenceException exception)
         {
@@ -231,11 +337,36 @@ public partial class CatalogScreen : UserControl, IDisposable
         }
 
         _catalog.ClearSelection();
+
+        // The two skips are reported apart: one is a finished download the user may
+        // choose to replace, the other is work still in flight that no confirmation
+        // would queue a second time.
+        var skips = new List<string>(2);
+        if (result.SkippedAlreadyQueued > 0)
+        {
+            skips.Add($"{result.SkippedAlreadyQueued} masih berjalan di queue");
+        }
+
+        if (result.SkippedAlreadyPublished > 0)
+        {
+            skips.Add($"{result.SkippedAlreadyPublished} sudah pernah dipublikasikan");
+        }
+
         SetStatus(
-            result.SkippedAlreadyPublished > 0
-                ? $"{result.Queued} chapter di-queue; {result.SkippedAlreadyPublished} sudah pernah dipublikasikan."
-                : $"{result.Queued} chapter di-queue ke '{folder}'.",
+            skips.Count == 0
+                ? $"{result.Queued} chapter di-queue ke '{folder}'."
+                : $"{result.Queued} chapter di-queue ke '{folder}'; " + string.Join(", ", skips) + ".",
             isError: false);
+
+        // A queue item was added, so the candidate is relayed. Whether a cover is
+        // written is Auto Cover's decision, not this screen's and not the queue's.
+        if (result.Queued > 0)
+        {
+            CoverCandidateAvailable?.Invoke(
+                this,
+                new CoverCandidate(state.Detail.Summary, root, folder));
+        }
+
         OpenDownloadList?.Invoke(this, EventArgs.Empty);
     }
 
@@ -303,17 +434,10 @@ public partial class CatalogScreen : UserControl, IDisposable
 
     private void Render(CatalogState state)
     {
-        StartButton.IsEnabled = !state.IsBusy && state.SelectedSourceId is not null;
-        LoadMoreButton.IsEnabled = !state.IsBusy && state.CanLoadMore;
+        RenderRequestButton(state);
+        LoadMoreButton.IsEnabled = !state.IsBusy && !_stopping && state.CanLoadMore;
         SourcePicker.IsEnabled = !state.IsBusy;
         SearchField.IsEnabled = !state.IsBusy;
-        FiltersToggle.IsEnabled = !state.IsBusy;
-
-        RemoteStateText.Text = state.IsBusy
-            ? "Requesting…"
-            : state.Results.Count > 0 || state.IsDetailOpen
-                ? "Idle — no request"
-                : "Idle — no request";
 
         ResultsPanel.Visibility = state.IsDetailOpen ? Visibility.Collapsed : Visibility.Visible;
         DetailPanel.Visibility = state.IsDetailOpen ? Visibility.Visible : Visibility.Collapsed;
@@ -337,27 +461,46 @@ public partial class CatalogScreen : UserControl, IDisposable
             isError: state.ErrorMessage is not null);
     }
 
+    /// <summary>
+    /// The request button is the Browse activity indicator and nothing else, so an
+    /// open title, a group change or a Load more never turns it into Stop. A
+    /// terminal Browse reads Start, an active Browse reads Stop, the bounded inline
+    /// command settling after a Stop reads a disabled Stopping, and a detail action
+    /// in flight reads a disabled Start — same label, but not offered, because a
+    /// Browse must not cut into it. Provider errors and validation stay in the status
+    /// line below the bar and are not hidden merely because the button returned to
+    /// Start.
+    /// </summary>
+    private void RenderRequestButton(CatalogState state)
+    {
+        if (_stopping)
+        {
+            StartButton.Content = "Stopping…";
+            StartButton.IsEnabled = false;
+            return;
+        }
+
+        if (_browseActive)
+        {
+            StartButton.Content = "Stop";
+            StartButton.IsEnabled = true;
+            return;
+        }
+
+        StartButton.Content = "Start";
+
+        // A detail or group action in flight is not something Start may cut into. The
+        // button stays the Browse activity indicator — an action never turns it into
+        // Stop — but it is not offered while one runs, matching the picker and the
+        // search field, which already lock on the union of both busy halves.
+        StartButton.IsEnabled = state.SelectedSourceId is not null && !state.IsActionBusy;
+    }
+
     private void RenderDetail(CatalogState state)
     {
         if (state.Detail is null) return;
 
-        DetailHeader.Children.Clear();
-        DetailHeader.Children.Add(Heading(state.Detail.Summary.DisplayName));
-        if (!string.IsNullOrWhiteSpace(state.Detail.Description))
-        {
-            DetailHeader.Children.Add(Body(state.Detail.Description!));
-        }
-
-        if (state.Detail.Genres.Count > 0)
-        {
-            DetailHeader.Children.Add(Body(
-                "Genres: " + string.Join(", ", state.Detail.Genres.Select(genre => genre.DisplayName))));
-        }
-
-        foreach (var metadata in state.Detail.Metadata)
-        {
-            DetailHeader.Children.Add(Body(metadata.DisplayName + ": " + metadata.Key));
-        }
+        BindDetail(state.Detail);
 
         _settingGroup = true;
         try
@@ -371,25 +514,326 @@ public partial class CatalogScreen : UserControl, IDisposable
             _settingGroup = false;
         }
 
-        _settingChapters = true;
+        RenderChapters(state);
+
+        QueueButton.IsEnabled = state.HasSelection && state.HasLibraryRoot && !state.IsBusy;
+    }
+
+    /// <summary>
+    /// Keeps one row instance per chapter for as long as the same title and group
+    /// are open. Selection and availability then update rows in place, so a
+    /// checkbox click cannot rebuild the table, drop keyboard focus or reset the
+    /// scroll position — all of which are session-only presentation state.
+    /// </summary>
+    private void RenderChapters(CatalogState state)
+    {
+        var key = state.Detail is null
+            ? null
+            : state.Detail.Summary.Identity.TitleHid
+              + "|"
+              + state.SelectedGroup?.GroupId
+              + "|"
+              + string.Join('|', state.Chapters.Select(chapter => chapter.Identity.ChapterId));
+
+        if (string.Equals(_chapterSetKey, key, StringComparison.Ordinal))
+        {
+            ReconcileSelection(state);
+        }
+        else
+        {
+            _chapterSetKey = key;
+            RebuildChapterRows(state);
+        }
+
+        UpdateChapterAvailability();
+        UpdateSelectionUi();
+    }
+
+    private void RebuildChapterRows(CatalogState state)
+    {
+        foreach (var row in _chapterRows) row.SelectionChanged -= Row_SelectionChanged;
+        _chapterRows.Clear();
+
+        _syncingSelection = true;
         try
         {
-            ChapterList.ItemsSource = state.Chapters;
-            ChapterList.SelectedItems.Clear();
             foreach (var chapter in state.Chapters)
             {
-                if (state.SelectedChapterIds.Contains(chapter.Identity.ChapterId))
+                var row = new ChapterRow(chapter)
                 {
-                    ChapterList.SelectedItems.Add(chapter);
-                }
+                    IsSelected = state.SelectedChapterIds.Contains(chapter.Identity.ChapterId),
+                };
+                row.SelectionChanged += Row_SelectionChanged;
+                _chapterRows.Add(row);
             }
         }
         finally
         {
-            _settingChapters = false;
+            _syncingSelection = false;
+        }
+    }
+
+    private void ReconcileSelection(CatalogState state)
+    {
+        _syncingSelection = true;
+        try
+        {
+            foreach (var row in _chapterRows)
+            {
+                row.IsSelected = state.SelectedChapterIds.Contains(row.Chapter.Identity.ChapterId);
+            }
+        }
+        finally
+        {
+            _syncingSelection = false;
+        }
+    }
+
+    /// <summary>
+    /// Re-reads availability from Lister's last filesystem verdict, so a chapter
+    /// published or deleted since the detail opened is dimmed or undimmed without
+    /// a Library scan and without a new provider request.
+    /// </summary>
+    private void UpdateChapterAvailability()
+    {
+        foreach (var row in _chapterRows)
+        {
+            row.IsLocallyAvailable = _listerResult is { } result
+                && ListerFeature.IsLocallyAvailable(result, row.Chapter.Identity);
+        }
+    }
+
+    private void Row_SelectionChanged(object? sender, EventArgs e)
+    {
+        if (_disposed || _syncingSelection || _catalog is null) return;
+        _catalog.SetSelectedChapterIds(SelectedChapterIds());
+    }
+
+    /// <summary>
+    /// The header checkbox reaches exactly the rows the table currently holds, so
+    /// a sort that reordered them cannot change which chapters Select All selects.
+    /// </summary>
+    private void ChapterHeaderCheck_Click(object sender, RoutedEventArgs e)
+    {
+        if (_disposed || sender is not CheckBox box) return;
+
+        var select = box.IsChecked == true;
+        _syncingSelection = true;
+        try
+        {
+            foreach (var row in _chapterRows) row.IsSelected = select;
+        }
+        finally
+        {
+            _syncingSelection = false;
         }
 
-        QueueButton.IsEnabled = state.HasSelection && state.HasLibraryRoot && !state.IsBusy;
+        _catalog?.SetSelectedChapterIds(SelectedChapterIds());
+        UpdateSelectionUi();
+    }
+
+    private IReadOnlyList<string> SelectedChapterIds() =>
+        _chapterRows
+            .Where(row => row.IsSelected)
+            .Select(row => row.Chapter.Identity.ChapterId)
+            .ToList();
+
+    private void UpdateSelectionUi()
+    {
+        if (_disposed || ChapterHeaderCheck is not { } box) return;
+
+        var selected = _chapterRows.Count(row => row.IsSelected);
+        box.IsChecked = selected == 0
+            ? false
+            : selected == _chapterRows.Count
+                ? true
+                : null;
+    }
+
+    /// <summary>
+    /// Binds the shared detail composition through a Catalog-owned adapter. One
+    /// adapter instance per remote identity survives a re-render, so a cover that
+    /// already decoded is never discarded by a later state change and a stale
+    /// cover can never paint a different title.
+    /// </summary>
+    private void BindDetail(RemoteTitleDetail detail)
+    {
+        var key = IdentityKey(detail.Summary.Identity);
+        if (_detailAdapter is null || !string.Equals(_detailKey, key, StringComparison.Ordinal))
+        {
+            _detailKey = key;
+            _detailAdapter = new RemoteTitleDetailAdapter(detail);
+            Detail.DataContext = _detailAdapter.Presentation;
+        }
+
+        ApplyDetailCover();
+    }
+
+    /// <summary>
+    /// Paints a decoded cover only onto the identity it was fetched for. Cover
+    /// loading is cosmetic: a failure leaves the placeholder and cannot remove the
+    /// title, the synopsis or the metadata rows.
+    /// </summary>
+    private void ApplyDetailCover()
+    {
+        if (_detailAdapter is null || _detailCover is null) return;
+        if (!string.Equals(_detailKey, _detailCoverKey, StringComparison.Ordinal)) return;
+
+        _detailAdapter.Presentation.Cover = _detailCover;
+    }
+
+    private static string IdentityKey(RemoteTitleIdentity identity) =>
+        identity.SourceId + "|" + identity.TitleId + "|" + identity.TitleHid;
+
+    /// <summary>
+    /// The deterministic folder for one remote title, resolved through the rule
+    /// the mapping index owns so a queue target, a Lister probe and a cover
+    /// destination always name the same folder.
+    /// </summary>
+    private string ResolveDeterministicFolder(RemoteTitleSummary title)
+    {
+        var root = _context?.LibraryRoot.CurrentRoot;
+        return root is null || _context is null
+            ? DownloadQueueFeature.SanitizeFolder(title.DisplayName)
+            : _context.Index.DeterministicFolderName(root, title);
+    }
+
+    /// <summary>
+    /// Places Auto Cover's own manual action below the remote cover. This screen
+    /// owns no cover rule: it invokes the same single command the automatic
+    /// trigger uses, and supplies only the overwrite question.
+    /// </summary>
+    private void InstallFetchCoverAction()
+    {
+        var button = new SettingButton
+        {
+            Content = "Fetch Cover",
+            MinWidth = 124,
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+        };
+        AutomationProperties.SetName(button, "Fetch this title's cover into its download folder");
+        button.Click += FetchCoverButton_Click;
+        _detailCoverActions.Children.Add(button);
+    }
+
+    private async void FetchCoverButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (_disposed || _context is null || _catalog is null) return;
+        if (sender is not SettingButton button) return;
+
+        var detail = _catalog.State.Detail;
+        var root = _context.LibraryRoot.CurrentRoot;
+        if (detail is null) return;
+        if (string.IsNullOrWhiteSpace(root))
+        {
+            SetStatus("Library root belum diatur; pilih folder di tab Library lebih dulu.", isError: true);
+            return;
+        }
+
+        var candidate = new CoverCandidate(detail.Summary, root, ResolveDeterministicFolder(detail.Summary));
+
+        // Owned here and cancelled on dispose: a fetch still in flight when this
+        // screen goes away must not keep running or report into a disposed surface.
+        var previous = _coverFetchCancellation;
+        var cancellation = new CancellationTokenSource();
+        _coverFetchCancellation = cancellation;
+        previous?.Cancel();
+
+        button.IsEnabled = false;
+        try
+        {
+            var outcome = await _context.AutoCover.SaveCoverAsync(
+                candidate,
+                AutoCoverTrigger.Manual,
+                path => SettingDialog.Confirm(
+                    Window.GetWindow(this),
+                    "Downloader",
+                    $"Cover sudah ada di:\n{path}\n\nTimpa dengan cover dari provider?",
+                    "Overwrite"),
+                cancellation.Token);
+
+            if (_disposed) return;
+            SetStatus(
+                outcome.Succeeded
+                    ? outcome.Kind == AutoCoverOutcomeKind.Published
+                        ? $"Cover disimpan ke '{outcome.Path}'."
+                        : outcome.Message
+                    : outcome.Message,
+                isError: !outcome.Succeeded);
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        finally
+        {
+            if (ReferenceEquals(_coverFetchCancellation, cancellation))
+            {
+                _coverFetchCancellation = null;
+            }
+
+            cancellation.Dispose();
+            if (!_disposed) button.IsEnabled = true;
+        }
+    }
+
+    /// <summary>
+    /// Re-probes local storage for the open title. Bounded and read-only: one
+    /// folder, only on an explicit trigger, never on a timer, and never the whole
+    /// Library. A failure leaves availability unknown rather than failing the
+    /// detail, because availability is advisory and the queue re-checks its own
+    /// target when it publishes.
+    /// </summary>
+    private async Task RefreshListerAsync(CancellationToken cancellationToken)
+    {
+        if (_disposed || _lister is null || _catalog is null) return;
+        var detail = _catalog.State.Detail;
+        if (detail is null) return;
+
+        try
+        {
+            var result = await _lister.ListAsync(detail.Summary, cancellationToken).ConfigureAwait(true);
+            if (_disposed) return;
+            _listerResult = result;
+        }
+        catch (OperationCanceledException)
+        {
+            return;
+        }
+        catch (Exception)
+        {
+            if (_disposed) return;
+            _listerResult = ListerResult.Absent(_listerResult?.LocalFolderName ?? string.Empty);
+        }
+
+        RenderLocalAvailability();
+    }
+
+    private void RenderLocalAvailability()
+    {
+        var result = _listerResult;
+        if (_disposed || _catalog?.State.Detail is null || result is null)
+        {
+            LocalAvailabilityText.Visibility = Visibility.Collapsed;
+            return;
+        }
+
+        LocalAvailabilityText.Text = result.TitleExists
+            ? $"{result.ChapterCount} chapter sudah ada di folder lokal '{result.LocalFolderName}'."
+            : $"Title ini belum ada di Library. Folder target: '{result.LocalFolderName}'.";
+        LocalAvailabilityText.Visibility = Visibility.Visible;
+        UpdateChapterAvailability();
+    }
+
+    /// <summary>
+    /// Returning to this screen with a detail open re-probes, because files may
+    /// have been added or removed while the Download List was showing.
+    /// </summary>
+    private async void CatalogScreen_IsVisibleChanged(
+        object sender,
+        DependencyPropertyChangedEventArgs e)
+    {
+        if (_disposed || e.NewValue is not true) return;
+        await RefreshListerAsync(CancellationToken.None);
     }
 
     /// <summary>
@@ -403,7 +847,7 @@ public partial class CatalogScreen : UserControl, IDisposable
         foreach (var summary in results)
         {
             var identity = summary.Identity;
-            var key = identity.SourceId + "|" + identity.TitleId + "|" + identity.TitleHid;
+            var key = IdentityKey(identity);
             if (_cardsByIdentity.TryGetValue(key, out var card))
             {
                 card.Summary = summary;
@@ -555,16 +999,10 @@ public partial class CatalogScreen : UserControl, IDisposable
             image.Freeze();
 
             if (generation != Volatile.Read(ref _coverGeneration)) return;
-            var cover = new Image
-            {
-                Source = image,
-                Width = 132,
-                Height = 180,
-                Stretch = System.Windows.Media.Stretch.UniformToFill,
-                HorizontalAlignment = HorizontalAlignment.Left,
-                Margin = new Thickness(0, 0, 0, 10),
-            };
-            DetailHeader.Children.Insert(0, cover);
+
+            _detailCover = image;
+            _detailCoverKey = IdentityKey(title.Identity);
+            ApplyDetailCover();
         }
         catch (OperationCanceledException)
         {
@@ -583,30 +1021,45 @@ public partial class CatalogScreen : UserControl, IDisposable
         }
     }
 
-    private static TextBlock Heading(string text)
+    /// <summary>
+    /// Runs one Browse under its own cancellation source. Only this lifecycle is
+    /// reachable from Stop, and only it drives the request button's activity state.
+    /// A later Browse supersedes the previous one, which is also what the feature's
+    /// latest-request-wins generation guard expects.
+    /// </summary>
+    private async Task RunBrowseAsync(Func<CancellationToken, Task> browse)
     {
-        var block = new TextBlock
-        {
-            Text = text,
-            FontSize = 19,
-            FontWeight = FontWeights.SemiBold,
-            TextWrapping = TextWrapping.Wrap,
-        };
-        block.SetResourceReference(TextBlock.ForegroundProperty, "Fg");
-        return block;
-    }
+        var previous = _browseCancellation;
+        var cancellation = new CancellationTokenSource();
+        _browseCancellation = cancellation;
+        previous?.Cancel();
 
-    private static TextBlock Body(string text)
-    {
-        var block = new TextBlock
+        _browseActive = true;
+        if (_catalog is not null) Render(_catalog.State);
+
+        try
         {
-            Text = text,
-            Margin = new Thickness(0, 6, 0, 0),
-            TextWrapping = TextWrapping.Wrap,
-            FontSize = 12,
-        };
-        block.SetResourceReference(TextBlock.ForegroundProperty, "Body");
-        return block;
+            await browse(cancellation.Token);
+        }
+        finally
+        {
+            var current = ReferenceEquals(_browseCancellation, cancellation);
+            if (current)
+            {
+                _browseCancellation = null;
+            }
+
+            cancellation.Dispose();
+
+            if (current)
+            {
+                // The bounded inline command has now settled, so a parked Stop
+                // returns to Start for every terminal Browse result.
+                _browseActive = false;
+                _stopping = false;
+                if (!_disposed && _catalog is not null) Render(_catalog.State);
+            }
+        }
     }
 
     private async Task RunActionAsync(Func<CancellationToken, Task> action)
@@ -626,6 +1079,7 @@ public partial class CatalogScreen : UserControl, IDisposable
             {
                 _actionCancellation = null;
             }
+
             cancellation.Dispose();
         }
     }
@@ -648,12 +1102,21 @@ public partial class CatalogScreen : UserControl, IDisposable
         if (_disposed) return;
         _disposed = true;
 
+        IsVisibleChanged -= CatalogScreen_IsVisibleChanged;
         if (_catalog is not null) _catalog.StateChanged -= Catalog_StateChanged;
         if (_context is not null) _context.Queue.QueueSummaryChanged -= Queue_QueueSummaryChanged;
 
         var actionCancellation = _actionCancellation;
         _actionCancellation = null;
         actionCancellation?.Cancel();
+
+        var browseCancellation = _browseCancellation;
+        _browseCancellation = null;
+        browseCancellation?.Cancel();
+
+        var coverFetchCancellation = _coverFetchCancellation;
+        _coverFetchCancellation = null;
+        coverFetchCancellation?.Cancel();
 
         var coverCancellation = _coverCancellation;
         _coverCancellation = null;
@@ -669,5 +1132,94 @@ public partial class CatalogScreen : UserControl, IDisposable
 
         _cards.Clear();
         _cardsByIdentity.Clear();
+
+        foreach (var row in _chapterRows) row.SelectionChanged -= Row_SelectionChanged;
+        _chapterRows.Clear();
+        _chapterSetKey = null;
+    }
+
+    /// <summary>
+    /// One chapter row. Presentation only — the feature owns the selection the
+    /// queue receives, and this model only mirrors it so the shared table can bind
+    /// a checkbox and dim a chapter that already exists locally.
+    /// </summary>
+    private sealed class ChapterRow : INotifyPropertyChanged
+    {
+        private bool _isSelected;
+        private bool _isLocallyAvailable;
+
+        public ChapterRow(RemoteChapterSummary chapter) =>
+            Chapter = chapter ?? throw new ArgumentNullException(nameof(chapter));
+
+        public RemoteChapterSummary Chapter { get; }
+
+        public string DisplayName => Chapter.DisplayName;
+
+        public string ChapterNumber => Chapter.Identity.ChapterNumber;
+
+        /// <summary>
+        /// Zero-padded so a header sort on Number reads 2 before 10 while the cell
+        /// keeps showing the provider's own label.
+        /// </summary>
+        public string ChapterSortKey => SortKey(Chapter.Identity.ChapterNumber, Chapter.OrderIndex);
+
+        /// <summary>
+        /// Dimmed, never disabled: re-downloading an existing chapter is allowed
+        /// and only asks once for the whole batch.
+        /// </summary>
+        public bool IsLocallyAvailable
+        {
+            get => _isLocallyAvailable;
+            set
+            {
+                if (_isLocallyAvailable == value) return;
+                _isLocallyAvailable = value;
+                OnPropertyChanged();
+                OnPropertyChanged(nameof(AvailabilityOpacity));
+                OnPropertyChanged(nameof(AvailabilityText));
+            }
+        }
+
+        public double AvailabilityOpacity => _isLocallyAvailable ? 0.45 : 1.0;
+
+        public string AvailabilityText => _isLocallyAvailable ? "Already local" : "Not downloaded";
+
+        public bool IsSelected
+        {
+            get => _isSelected;
+            set
+            {
+                if (_isSelected == value) return;
+                _isSelected = value;
+                OnPropertyChanged();
+                SelectionChanged?.Invoke(this, EventArgs.Empty);
+            }
+        }
+
+        public event EventHandler? SelectionChanged;
+
+        public event PropertyChangedEventHandler? PropertyChanged;
+
+        private static string SortKey(string chapterNumber, int orderIndex)
+        {
+            var normalized = ChapterNumberText.Normalize(chapterNumber);
+            if (normalized is null)
+            {
+                return orderIndex.ToString("D10", CultureInfo.InvariantCulture);
+            }
+
+            var parts = normalized.Split('.', 2);
+            var integer = long.TryParse(
+                    parts[0],
+                    NumberStyles.Integer,
+                    CultureInfo.InvariantCulture,
+                    out var value)
+                ? value.ToString("D10", CultureInfo.InvariantCulture)
+                : parts[0];
+            return parts.Length == 2 ? integer + "." + parts[1] : integer;
+        }
+
+        private void OnPropertyChanged([CallerMemberName] string? propertyName = null) =>
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
     }
 }

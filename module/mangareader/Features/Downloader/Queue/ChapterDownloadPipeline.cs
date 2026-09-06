@@ -1,7 +1,7 @@
 using System.IO;
 using System.Security.Cryptography;
 using System.Text.Json;
-using Module.Mangareader.Features.Downloader.Sources;
+using Module.Mangareader.Sources;
 
 namespace Module.Mangareader.Features.Downloader.Queue;
 

@@ -5,6 +5,13 @@
     xmlns:local="clr-namespace:Citadel.Setting.Components"
     Background="{DynamicResource TransparentBrush}"
     Foreground="{DynamicResource Fg}">
+    <UserControl.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <ResourceDictionary Source="ScrollBar.xaml" />
+            </ResourceDictionary.MergedDictionaries>
+        </ResourceDictionary>
+    </UserControl.Resources>
     <DataGrid
         x:Name="InnerTable"
         AutoGenerateColumns="False"
@@ -33,6 +40,13 @@
         VerticalGridLinesBrush="{DynamicResource Border}"
         VerticalScrollBarVisibility="Auto">
         <DataGrid.Resources>
+            <!-- Keep DataGrid's specialized ScrollViewer template, but render
+                 every scrollbar through the shared Citadel primitive. -->
+            <Style TargetType="{x:Type ScrollBar}"
+                   BasedOn="{StaticResource SettingScrollBarStyle}" />
+            <Style TargetType="{x:Type ScrollViewer}">
+                <Setter Property="local:ScrollBarAutoFade.IsEnabled" Value="True" />
+            </Style>
             <Style TargetType="{x:Type DataGridColumnHeader}">
                 <Setter Property="Background" Value="{DynamicResource Card}" />
                 <Setter Property="BorderBrush" Value="{DynamicResource Border}" />

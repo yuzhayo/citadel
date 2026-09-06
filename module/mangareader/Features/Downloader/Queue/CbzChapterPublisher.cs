@@ -4,7 +4,7 @@ using System.Text;
 using System.Text.Json;
 using System.Windows.Media.Imaging;
 using Module.Mangareader.Archive;
-using Module.Mangareader.Features.Downloader.Sources;
+using Module.Mangareader.Sources;
 
 namespace Module.Mangareader.Features.Downloader.Queue;
 

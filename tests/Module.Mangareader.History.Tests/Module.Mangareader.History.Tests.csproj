@@ -1,0 +1,44 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="coverlet.collector" Version="6.0.4" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
+    <PackageReference Include="xunit" Version="2.9.3" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="3.1.4" />
+  </ItemGroup>
+
+  <!--
+    The MangaReader citizen is never a normal solution dependency: only the pure
+    History sources are linked, exactly as the citizen compiles them. They carry
+    no WPF dependency, so this project deliberately does not enable WPF and does
+    not link HistoryView or HistoryCardModel — the clear, pin, retention and
+    view-mode rules are all testable without a rendered screen.
+  -->
+  <ItemGroup>
+    <Compile Include="..\..\module\mangareader\History\ReadingHistoryStore.cs"
+             Link="History\ReadingHistoryStore.cs" />
+    <Compile Include="..\..\module\mangareader\History\ReadingHistory.cs"
+             Link="History\ReadingHistory.cs" />
+    <Compile Include="..\..\module\mangareader\History\ClearHistoryFeature.cs"
+             Link="History\ClearHistoryFeature.cs" />
+    <Compile Include="..\..\module\mangareader\History\PinnedHistoryFeature.cs"
+             Link="History\PinnedHistoryFeature.cs" />
+    <Compile Include="..\..\module\mangareader\History\HistoryViewModeFeature.cs"
+             Link="History\HistoryViewModeFeature.cs" />
+    <Compile Include="..\..\module\mangareader\shareLogic\MangaLibrary.cs"
+             Link="ShareLogic\MangaLibrary.cs" />
+    <Compile Include="..\..\module\mangareader\shareLogic\MangaViewMode.cs"
+             Link="ShareLogic\MangaViewMode.cs" />
+    <Compile Include="..\..\module\mangareader\shareLogic\ViewModePreferenceStore.cs"
+             Link="ShareLogic\ViewModePreferenceStore.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Using Include="Xunit" />
+  </ItemGroup>
+
+</Project>

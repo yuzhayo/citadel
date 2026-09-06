@@ -1,6 +1,7 @@
 using System.IO;
 using Module.Mangareader.Features.Downloader;
 using Module.Mangareader.Features.Downloader.Queue;
+using Module.Mangareader.Sources;
 using Module.Mangareader.Features.Downloader.Sources;
 using Module.Mangareader.Library;
 
@@ -57,31 +58,140 @@ public sealed class QueuedTargetSnapshotTests : IDisposable
     }
 
     [Fact]
-    public void AnExistingMappingIsReusedAndAlreadyPublishedChaptersAreSkipped()
+    public async Task APublishedChapterNeedsConfirmedPermissionToBeQueuedAgain()
     {
-        var (feature, _) = CreateFeature(out var folderA);
-        Directory.CreateDirectory(Path.Combine(folderA, "Some Folder"));
-
-        var first = feature.QueueChapters(Title(), Group(), [Chapter()], "Some Folder");
-        Assert.Equal(1, first.Queued);
-
-        // The same chapter identity is now published, so queueing it again is
-        // skipped rather than creating a duplicate or a "(2)" file.
-        var job = Assert.Single(feature.Snapshot());
+        var (feature, _) = CreateFeature(out _);
         var index = new DownloadSourceIndex(_root);
-        Assert.True(index.TryRecordPublished(job.Identity, job.Target.FileName, out _));
+        var published = await PublishAsync(feature, index);
+        Assert.Empty(feature.Snapshot());
 
-        var second = feature.QueueChapters(Title(), Group(), [Chapter()], "Some Folder");
+        // A caller that never asked keeps the skip, so an unconfirmed re-download
+        // can neither create a duplicate nor overwrite a library file.
+        var unconfirmed = feature.QueueChapters(Title(), Group(), [Chapter()], "Some Folder");
 
-        Assert.Equal(0, second.Queued);
-        Assert.Equal(1, second.SkippedAlreadyPublished);
+        Assert.Equal(0, unconfirmed.Queued);
+        Assert.Equal(1, unconfirmed.SkippedAlreadyPublished);
+        Assert.Equal(0, unconfirmed.SkippedAlreadyQueued);
+        Assert.Empty(feature.Snapshot());
+
+        // The permission a confirmed batch carries is what actually queues it. It
+        // lands on the same target as the published chapter, which is what lets the
+        // publisher replace the archive atomically instead of writing a "(2)".
+        var confirmed = feature.QueueChapters(
+            Title(),
+            Group(),
+            [Chapter()],
+            "Some Folder",
+            allowPublishedReplacement: true);
+
+        Assert.Equal(1, confirmed.Queued);
+        Assert.Equal(0, confirmed.SkippedAlreadyPublished);
+        Assert.Null(confirmed.Blocked);
+
+        var replacement = Assert.Single(feature.Snapshot());
+        Assert.Equal(published.Identity, replacement.Identity);
+        Assert.Equal(published.Target, replacement.Target);
     }
+
+    /// <summary>
+    /// The replacement permission covers chapters that are already published. It must
+    /// not also produce a second live job for an identity whose previous job has not
+    /// finished, which would download one chapter twice into one file.
+    /// </summary>
+    [Fact]
+    public void AChapterWhoseJobHasNotFinishedIsNotQueuedAgainEvenWithPermission()
+    {
+        var (feature, _) = CreateFeature(out _, seededJobs: [PendingJob(LibraryFolder)]);
+
+        // The restart rule parks a persisted job, and a parked job is not terminal.
+        Assert.Equal(DownloadJobState.Paused, Assert.Single(feature.Snapshot()).State);
+
+        var result = feature.QueueChapters(
+            Title(),
+            Group(),
+            [Chapter()],
+            "Some Folder",
+            allowPublishedReplacement: true);
+
+        Assert.Equal(0, result.Queued);
+        Assert.Equal(1, result.SkippedAlreadyQueued);
+        Assert.Equal(0, result.SkippedAlreadyPublished);
+        Assert.Null(result.Blocked);
+        Assert.Equal("pending", Assert.Single(feature.Snapshot()).JobId);
+    }
+
+    /// <summary>
+    /// A publication record whose CBZ the user deleted is not evidence the Library
+    /// still has the chapter. Trusting the record alone would skip the download and
+    /// never show a confirmation, because the local probe correctly reports the
+    /// chapter as absent — so the user could not re-download it at all.
+    /// </summary>
+    [Fact]
+    public async Task APublishedRecordWhoseFileWasDeletedNoLongerBlocksTheDownload()
+    {
+        var (feature, _) = CreateFeature(out _);
+        var index = new DownloadSourceIndex(_root);
+        var published = await PublishAsync(feature, index);
+
+        File.Delete(published.Target.FilePath);
+
+        var result = feature.QueueChapters(Title(), Group(), [Chapter()], "Some Folder");
+
+        Assert.Equal(1, result.Queued);
+        Assert.Equal(0, result.SkippedAlreadyPublished);
+        Assert.Null(result.Blocked);
+        Assert.Single(feature.Snapshot());
+    }
+
+    /// <summary>
+    /// Puts one chapter into the published state admission actually checks — the index
+    /// record plus the file it names — and takes the seeding job out of the queue, so
+    /// a later admission decision is about publication and not about a live job.
+    /// </summary>
+    private async Task<DownloadJobRecord> PublishAsync(
+        DownloadQueueFeature feature,
+        DownloadSourceIndex index)
+    {
+        var queued = feature.QueueChapters(Title(), Group(), [Chapter()], "Some Folder");
+        Assert.Equal(1, queued.Queued);
+
+        var job = Assert.Single(feature.Snapshot());
+        feature.Remove(job.JobId);
+
+        Assert.True(index.TryRecordPublished(job.Identity, job.Target.FileName, out _));
+        Directory.CreateDirectory(Path.GetDirectoryName(job.Target.FilePath)!);
+        await File.WriteAllBytesAsync(job.Target.FilePath, [1, 2, 3]);
+        Assert.True(index.IsPublishedOnDisk(job.Identity, job.Target.Root, job.Target.FolderName));
+        return job;
+    }
+
+    /// <summary>
+    /// One persisted job for the same chapter identity the queue command builds, so
+    /// admission sees work that has not finished. Queued on disk, which the restart
+    /// rule parks — deterministic, and the scheduler is never started.
+    /// </summary>
+    private static DownloadJobRecord PendingJob(string libraryFolder) => new()
+    {
+        JobId = "pending",
+        Identity = new DownloadJobIdentity("comix", "12947", "dy88", "chapter-143", "9897"),
+        TitleDisplayName = "The Novel's Extra",
+        ChapterDisplayName = "Chapter 143",
+        GroupDisplayName = "Official",
+        ChapterNumber = "143",
+        Target = new DownloadTarget(libraryFolder, "Some Folder", "0143 - Chapter 143 [Official].cbz"),
+        State = DownloadJobState.Queued,
+        QueuedUtc = DateTimeOffset.UtcNow,
+        UpdatedUtc = DateTimeOffset.UtcNow,
+    };
+
+    private string LibraryFolder => Path.Combine(_root, "libraryA");
 
     private (DownloadQueueFeature Feature, LibraryRootContext Root) CreateFeature(
         out string libraryFolder,
-        bool commitRoot = true)
+        bool commitRoot = true,
+        IReadOnlyList<DownloadJobRecord>? seededJobs = null)
     {
-        libraryFolder = Path.Combine(_root, "libraryA");
+        libraryFolder = LibraryFolder;
         Directory.CreateDirectory(libraryFolder);
 
         var libraryRoot = new LibraryRootContext(
@@ -97,12 +207,15 @@ public sealed class QueuedTargetSnapshotTests : IDisposable
         var browser = new DownloaderPyHostClient(Path.Combine(_root, "downloads"));
         _disposables.Add(browser);
 
+        var store = new DownloadQueueStore(_root);
+        if (seededJobs is not null) store.Save(seededJobs);
+
         // An empty registry keeps the scheduler from ever reaching a provider.
         var feature = new DownloadQueueFeature(
             libraryRoot,
             new MangaSourceRegistry([]),
             browser,
-            new DownloadQueueStore(_root),
+            store,
             new DownloadSourceIndex(_root));
         _disposables.Add(feature);
         return (feature, libraryRoot);

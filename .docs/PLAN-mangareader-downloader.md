@@ -867,7 +867,6 @@ Reuse the existing:
 
 - `SettingButton`;
 - `SettingField` and `SettingPasswordField` behavior where applicable;
-- `SettingToggle`;
 - `SettingTable` and `SettingTableActions`;
 - `SettingScrollViewerStyle` and auto-fading shared scrollbar;
 - `SettingComboBoxStyle` for single-select provider/group/sort fields;
@@ -885,7 +884,7 @@ persistence or scheduling policy.
 
 Multi-select and searchable resolved-tag selection are feature-local composites
 inside `Features/Downloader/Sources/Comix/`. Build them only from existing
-`SettingField`, `SettingButton`, `SettingToggle`, `SettingListStyle`,
+`SettingField`, `SettingButton`, `SettingListStyle`,
 `SettingCardStyle` and `SettingScrollViewerStyle`. The composite owns arrangement
 and selected provider keys while delegating focus, keyboard, scrolling and
 rendering behavior to those shared controls. This plan adds no shared primitive,
@@ -896,7 +895,7 @@ style or template and makes no change under `setting/Components`.
 | provider, group | standard `ComboBox` with `SettingComboBoxStyle` |
 | sort | compact single-select dropdown |
 | rating, type, demographic, status | compact multi-select dropdown with one checkbox per option |
-| genre/format | compact searchable multi-select dropdown with one checkbox per resolved provider option and AND/OR control |
+| genre/format | one compact multi-select dropdown holding the 31 captured genres plus the 9 captured formats, with one checkbox per provider option and an AND/OR control. The 2026-09-06 live capture recovered the whole taxonomy with its provider ids from the browse page's own rendered document, so no tag lookup is needed and none is invented |
 | minimum chapter, year from/to | numeric-validated `SettingField` inside `Advanced Filters` dropdown |
 | author/artist | `SettingField`, explicit lookup action, and selectable resolved results inside `Advanced Filters` dropdown |
 | Start/Stop, Reset, Load more, navigation/actions | `SettingButton` |
