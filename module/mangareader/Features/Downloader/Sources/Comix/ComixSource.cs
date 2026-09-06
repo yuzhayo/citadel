@@ -1149,22 +1149,11 @@ public sealed class ComixSource(DownloaderPyHostClient client) : IMangaSource
 
     private async Task EnsureBrowserSessionAsync(CancellationToken cancellationToken)
     {
-        try
-        {
-            await _client.EnsureSessionAsync(
-                ComixContract.SourceId,
-                ComixContract.BaseUrl + "/browse",
-                headless: true,
-                cancellationToken).ConfigureAwait(false);
-        }
-        catch (PyHostException exception) when (exception.Code == "SITE_CHALLENGE")
-        {
-            await _client.EnsureSessionAsync(
-                ComixContract.SourceId,
-                ComixContract.BaseUrl + "/browse",
-                headless: false,
-                cancellationToken).ConfigureAwait(false);
-        }
+        await _client.EnsureSessionAsync(
+            ComixContract.SourceId,
+            ComixContract.BaseUrl + "/browse",
+            headless: true,
+            cancellationToken).ConfigureAwait(false);
     }
 
     /// <summary>

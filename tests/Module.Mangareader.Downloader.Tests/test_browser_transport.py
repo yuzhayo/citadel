@@ -55,6 +55,14 @@ class ComixPageReadinessTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual("API_CLIENT_UNAVAILABLE", caught.exception.code)
 
+    async def test_headless_challenge_waits_in_same_page(self):
+        page = _ChallengePage()
+
+        await BROWSER_MODULE._wait_for_application_page(page, 1234)
+
+        self.assertEqual(1234, page.wait_timeout)
+        self.assertEqual("domcontentloaded", page.load_state)
+
 
 class _BridgePage:
     url = "https://comix.ws/browse"
@@ -72,6 +80,24 @@ class _BridgePage:
     async def add_script_tag(self, *, content):
         self.injected = content
         self.present = True
+
+
+class _ChallengePage:
+    url = "https://comix.ws/@waf/challenge"
+
+    def __init__(self):
+        self.wait_timeout = None
+        self.load_state = None
+
+    async def wait_for_url(self, predicate, *, timeout):
+        self.wait_timeout = timeout
+        self.url = "https://comix.ws/browse"
+        if not predicate(self.url):
+            raise AssertionError("application URL was rejected")
+
+    async def wait_for_load_state(self, state, *, timeout):
+        self.load_state = state
+        self.wait_timeout = timeout
 
 
 if __name__ == "__main__":

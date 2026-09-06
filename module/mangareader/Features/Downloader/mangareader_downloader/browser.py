@@ -219,14 +219,14 @@ def _is_waf_challenge(url):
     return urlparse(url).path.startswith("/@waf/")
 
 
-async def _wait_for_application_page(page, headless, timeout_ms):
+async def _wait_for_application_page(page, timeout_ms):
     if not _is_waf_challenge(page.url):
         return
-    if headless:
-        raise PyhostError(
-            "SITE_CHALLENGE",
-            "Comix meminta verifikasi manusia; membuka browser interaktif")
     try:
+        # The WAF page can complete its browser check without user input. Keep
+        # waiting in the same isolated headless profile instead of relaunching a
+        # visible browser, which used to create a second profile lifecycle and
+        # surface Camoufox windows during normal Downloader work.
         await page.wait_for_url(
             lambda value: not _is_waf_challenge(str(value)),
             timeout=timeout_ms)
@@ -280,7 +280,7 @@ async def cmd_open(host, msg):
         await page.goto(start_url, wait_until="domcontentloaded",
                         timeout=_timeout_ms(msg, 120000))
         await _wait_for_application_page(
-            page, headless, _timeout_ms(msg, 120000))
+            page, _timeout_ms(msg, 120000))
     except asyncio.CancelledError:
         await host._drop_session(sid)
         raise
