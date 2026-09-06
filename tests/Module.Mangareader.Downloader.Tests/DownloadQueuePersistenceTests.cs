@@ -174,6 +174,41 @@ public sealed class DownloadQueuePersistenceTests : IDisposable
         Assert.Equal("9897", job.Identity.GroupId);
     }
 
+    [Fact]
+    public void FailedIdentityKeepsItsRowUntilTheUserResumesIt()
+    {
+        var failed = Job("failed", DownloadJobState.Failed) with
+        {
+            Identity = new DownloadJobIdentity("comix", "12947", "dy88", "chapter-143", "9897"),
+        };
+        new DownloadQueueStore(_root).Save([failed]);
+        using var feature = CreateFeature(new MangaSourceRegistry([]), commitRoot: true);
+
+        var result = feature.QueueChapters(
+            Title(), OfficialGroup(), [Chapter("143")], "Some Folder");
+
+        Assert.Equal(0, result.Queued);
+        Assert.Equal(1, result.SkippedAlreadyQueued);
+        Assert.Equal("failed", Assert.Single(feature.Snapshot()).JobId);
+    }
+
+    [Fact]
+    public void NewBatchIsQueuedFromTheSmallestChapterNumber()
+    {
+        using var feature = CreateFeature(new MangaSourceRegistry([]), commitRoot: true);
+
+        var result = feature.QueueChapters(
+            Title(),
+            OfficialGroup(),
+            [Chapter("10"), Chapter("2"), Chapter("1"), Chapter("10.5")],
+            "Some Folder");
+
+        Assert.Equal(4, result.Queued);
+        Assert.Equal(
+            ["1", "2", "10", "10.5"],
+            feature.Snapshot().Select(job => job.ChapterNumber));
+    }
+
     /// <summary>
     /// A provider double that parks inside its manifest call, which is what puts a job
     /// genuinely in flight so the queue has a running cancellation source to protect.

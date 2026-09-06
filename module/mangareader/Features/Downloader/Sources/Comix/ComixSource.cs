@@ -2,6 +2,7 @@ using System.Globalization;
 using System.IO;
 using System.Text;
 using System.Text.Json.Nodes;
+using CitadelBridge;
 using Module.Mangareader.Sources;
 
 namespace Module.Mangareader.Features.Downloader.Sources.Comix;
@@ -1138,16 +1139,32 @@ public sealed class ComixSource(DownloaderPyHostClient client) : IMangaSource
         string queryString,
         CancellationToken cancellationToken)
     {
-        await _client.EnsureSessionAsync(
-            ComixContract.SourceId,
-            ComixContract.BaseUrl + "/browse",
-            headless: true,
-            cancellationToken).ConfigureAwait(false);
+        await EnsureBrowserSessionAsync(cancellationToken).ConfigureAwait(false);
 
         var url = ComixContract.BaseUrl + route
             + (queryString.Length == 0 ? string.Empty : "?" + queryString);
         var response = await _client.ApiAsync(url, cancellationToken).ConfigureAwait(false);
         return ReadApiResponse(response, route);
+    }
+
+    private async Task EnsureBrowserSessionAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            await _client.EnsureSessionAsync(
+                ComixContract.SourceId,
+                ComixContract.BaseUrl + "/browse",
+                headless: true,
+                cancellationToken).ConfigureAwait(false);
+        }
+        catch (PyHostException exception) when (exception.Code == "SITE_CHALLENGE")
+        {
+            await _client.EnsureSessionAsync(
+                ComixContract.SourceId,
+                ComixContract.BaseUrl + "/browse",
+                headless: false,
+                cancellationToken).ConfigureAwait(false);
+        }
     }
 
     /// <summary>

@@ -56,13 +56,6 @@ _API_BRIDGE_JS = r"""
 
     let apiPromise = null;
 
-    function locateEnvUrl() {
-        const names = performance.getEntriesByType('resource').map(e => e.name);
-        return names.find(name => /\/env-[^/]*\.js(\?|$)/.test(name))
-            || names.find(name => /env-[^/]*\.js(\?|$)/.test(name))
-            || null;
-    }
-
     function isApi(value) {
         return !!value && !!value.defaults && value.defaults.baseURL === '/api/v1'
             && !!value.interceptors && typeof value.request === 'function';
@@ -71,9 +64,7 @@ _API_BRIDGE_JS = r"""
     function api() {
         if (!apiPromise) {
             apiPromise = (async () => {
-                const envUrl = locateEnvUrl();
-                if (!envUrl) throw new Error('chunk env tidak ditemukan di resource timing');
-                const instance = Object.values(await import(envUrl)).find(isApi);
+                const instance = Object.values(await import(__ENV_MODULE_URL__)).find(isApi);
                 if (!instance) throw new Error('instance axios baseURL /api/v1 tidak ditemukan');
                 return instance;
             })().catch(error => { apiPromise = null; throw error; });
@@ -149,13 +140,33 @@ _API_BRIDGE_JS = r"""
 })();
 """
 
+_LOCATE_ENV_URL_JS = r"""() => {
+    const declared = Array.from(document.querySelectorAll('script[src], link[href]'))
+        .map(node => node.src || node.href)
+        .filter(Boolean);
+    const observed = performance.getEntriesByType('resource').map(entry => entry.name);
+    return declared.concat(observed)
+        .find(name => /\/env-[^/]*\.js(\?|$)/.test(name)) || null;
+}"""
+
+
+def _runtime_root():
+    """Stable application location for this deployed plugin payload."""
+    return os.path.realpath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
+
+
+def _instance_key(runtime_root):
+    canonical = os.path.normcase(os.path.realpath(runtime_root)).encode("utf-8")
+    return hashlib.sha256(canonical).hexdigest()[:12]
+
 
 def browser_root():
     local = os.environ.get("LOCALAPPDATA")
     if not local:
         raise PyhostError("NO_BROWSER_ROOT", "LOCALAPPDATA tidak tersedia")
     return os.path.realpath(
-        os.path.join(local, "Citadel", "MangaReader", "browser"))
+        os.path.join(local, "Citadel", "MangaReader", "browser", "instances",
+                     _instance_key(_runtime_root())))
 
 
 def _provider_dir(provider):
@@ -202,6 +213,30 @@ def _timeout_ms(msg, default_ms):
     return int(min(value, 180000))
 
 
+def _is_waf_challenge(url):
+    if not isinstance(url, str):
+        return False
+    return urlparse(url).path.startswith("/@waf/")
+
+
+async def _wait_for_application_page(page, headless, timeout_ms):
+    if not _is_waf_challenge(page.url):
+        return
+    if headless:
+        raise PyhostError(
+            "SITE_CHALLENGE",
+            "Comix meminta verifikasi manusia; membuka browser interaktif")
+    try:
+        await page.wait_for_url(
+            lambda value: not _is_waf_challenge(str(value)),
+            timeout=timeout_ms)
+        await page.wait_for_load_state("domcontentloaded", timeout=timeout_ms)
+    except Exception as exc:  # noqa: BLE001 - browser boundary
+        raise PyhostError(
+            "SITE_CHALLENGE_TIMEOUT",
+            "verifikasi Comix belum selesai: %s" % exc) from exc
+
+
 async def cmd_open(host, msg):
     """Buka (atau pakai ulang) satu session browser untuk satu provider."""
     provider = msg.get("provider")
@@ -244,8 +279,13 @@ async def cmd_open(host, msg):
         host.sessions[sid]["page"] = page
         await page.goto(start_url, wait_until="domcontentloaded",
                         timeout=_timeout_ms(msg, 120000))
+        await _wait_for_application_page(
+            page, headless, _timeout_ms(msg, 120000))
     except asyncio.CancelledError:
         await host._drop_session(sid)
+        raise
+    except PyhostError:
+        await host._drop_session(sid, forget_on_failure=True)
         raise
     except Exception as e:  # noqa: BLE001 - laporkan terstruktur
         await host._drop_session(sid, forget_on_failure=True)
@@ -308,7 +348,21 @@ async def _ensure_bridge(page):
     if await page.evaluate(present):
         return
 
-    await page.add_script_tag(content=_API_BRIDGE_JS)
+    env_url = await page.evaluate(_LOCATE_ENV_URL_JS)
+    parsed_page = urlparse(page.url)
+    parsed_env = urlparse(env_url) if isinstance(env_url, str) else None
+    if (parsed_env is None
+            or parsed_env.scheme not in ("http", "https")
+            or parsed_env.scheme != parsed_page.scheme
+            or parsed_env.netloc != parsed_page.netloc
+            or not re.search(r"/env-[^/]*\.js$", parsed_env.path)):
+        raise PyhostError(
+            "API_CLIENT_UNAVAILABLE",
+            "modul API Comix tidak ditemukan pada dokumen aktif")
+
+    bridge = _API_BRIDGE_JS.replace(
+        "__ENV_MODULE_URL__", json.dumps(env_url))
+    await page.add_script_tag(content=bridge)
     if not await page.evaluate(present):
         raise PyhostError(
             "API_BRIDGE_FAILED",

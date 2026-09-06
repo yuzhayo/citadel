@@ -2,6 +2,7 @@ using System.IO;
 using Module.Mangareader.Sources;
 using Module.Mangareader.Features.Downloader.Sources;
 using Module.Mangareader.Library;
+using Module.Mangareader.ShareLogic;
 
 namespace Module.Mangareader.Features.Downloader.Queue;
 
@@ -137,16 +138,21 @@ public sealed class DownloadQueueFeature : IDisposable
         // authority: the same question is asked again inside the commit transaction
         // below, which is the only place two concurrent admissions are serialized
         // against each other.
-        HashSet<string> live;
+        HashSet<string> reserved;
         lock (_gate)
         {
-            live = LiveIdentityKeys(_jobs);
+            reserved = ReservedIdentityKeys(_jobs);
         }
 
         var skippedPublished = 0;
         var skippedQueued = 0;
         var candidates = new List<DownloadJobRecord>();
-        foreach (var chapter in chapters)
+        // Provider chapter lists are normally newest-first. Queue the selected
+        // batch in reading order so the stable FIFO scheduler starts at the
+        // smallest chapter without changing any job already in the queue.
+        foreach (var chapter in chapters.OrderBy(
+                     chapter => NormalizeNumber(chapter.Identity.ChapterNumber),
+                     NaturalStringComparer.OrdinalIgnoreCase))
         {
             var identity = new DownloadJobIdentity(
                 chapter.Identity.SourceId,
@@ -155,7 +161,7 @@ public sealed class DownloadQueueFeature : IDisposable
                 chapter.Identity.ChapterId,
                 group.Identity.GroupId);
 
-            if (live.Contains(identity.Key))
+            if (reserved.Contains(identity.Key))
             {
                 skippedQueued++;
                 continue;
@@ -196,7 +202,7 @@ public sealed class DownloadQueueFeature : IDisposable
             // Decision and append in one transaction. Reserving each identity in the
             // same set that reports the live ones is what makes this safe under two
             // concurrent callers, and it also keeps one batch from repeating itself.
-            var taken = LiveIdentityKeys(jobs);
+            var taken = ReservedIdentityKeys(jobs);
             foreach (var candidate in candidates)
             {
                 if (!taken.Add(candidate.Identity.Key))
@@ -218,13 +224,12 @@ public sealed class DownloadQueueFeature : IDisposable
     }
 
     /// <summary>
-    /// The one definition of an identity that is already spoken for: a job that has
-    /// not finished. A replacement permission covers chapters that are already
-    /// published; it never covers work still in flight, which would download one
-    /// chapter twice into one file.
+    /// The one definition of an identity that is already spoken for. Completed work
+    /// may be queued again after explicit replacement confirmation; unfinished and
+    /// failed work keeps its existing row and must be resumed instead of duplicated.
     /// </summary>
-    private static HashSet<string> LiveIdentityKeys(IEnumerable<DownloadJobRecord> jobs) =>
-        jobs.Where(job => !job.IsTerminal)
+    private static HashSet<string> ReservedIdentityKeys(IEnumerable<DownloadJobRecord> jobs) =>
+        jobs.Where(job => job.State != DownloadJobState.Completed)
             .Select(job => job.Identity.Key)
             .ToHashSet(StringComparer.Ordinal);
 
@@ -254,6 +259,33 @@ public sealed class DownloadQueueFeature : IDisposable
             }
             : job);
         EnsureStarted();
+    }
+
+    /// <summary>
+    /// Resumes every parked or failed job in one durable queue mutation. Existing
+    /// JobIds and staging remain intact, so this never creates duplicate rows.
+    /// </summary>
+    public void ResumeAll()
+    {
+        var changed = false;
+        Commit(jobs =>
+        {
+            for (var index = 0; index < jobs.Count; index++)
+            {
+                var job = jobs[index];
+                if (job.State is not (DownloadJobState.Paused or DownloadJobState.Failed)) continue;
+
+                jobs[index] = job with
+                {
+                    State = DownloadJobState.Queued,
+                    Warning = null,
+                    UpdatedUtc = DateTimeOffset.UtcNow,
+                };
+                changed = true;
+            }
+        });
+
+        if (changed) EnsureStarted();
     }
 
     /// <summary>
@@ -584,7 +616,6 @@ public sealed class DownloadQueueFeature : IDisposable
                 UpdatedUtc = DateTimeOffset.UtcNow,
             };
         });
-        Notify();
 
         var transport = new PageTransport(_browser, _browser.StagingRoot);
         var pipeline = new ChapterDownloadPipeline(transport, source, _browser.StagingRoot);
@@ -744,26 +775,32 @@ public sealed class DownloadQueueFeature : IDisposable
 
     private void UpdateProgress(string jobId, ChapterDownloadProgress update)
     {
-        try
+        var changed = false;
+        lock (_gate)
         {
-            Commit(jobs =>
+            var index = FindIndex(_jobs, jobId);
+            if (index >= 0)
             {
-                var index = FindIndex(jobs, jobId);
-                if (index < 0) return;
-                jobs[index] = jobs[index] with
+                var current = _jobs[index];
+                var pageCount = update.PageCount == 0 ? current.PageCount : update.PageCount;
+                if (current.CompletedPages != update.CompletedPages || current.PageCount != pageCount)
                 {
-                    CompletedPages = update.CompletedPages,
-                    PageCount = update.PageCount == 0 ? jobs[index].PageCount : update.PageCount,
-                    UpdatedUtc = DateTimeOffset.UtcNow,
-                };
-            });
+                    // Per-page durability belongs to the staging journal. Keeping
+                    // this projection in memory avoids rewriting the complete
+                    // queue.json for every downloaded page; the next durable state
+                    // transition persists the latest projection with the job.
+                    _jobs[index] = current with
+                    {
+                        CompletedPages = update.CompletedPages,
+                        PageCount = pageCount,
+                        UpdatedUtc = DateTimeOffset.UtcNow,
+                    };
+                    changed = true;
+                }
+            }
         }
-        catch (QueuePersistenceException)
-        {
-            // Progress is not a transition that can leave staging ambiguously
-            // owned, so a failed save here is dropped rather than thrown at the
-            // UI thread. The durable transitions still enforce it.
-        }
+
+        if (changed) Notify();
     }
 
     private void SetState(string jobId, DownloadJobState state, string? warning) =>

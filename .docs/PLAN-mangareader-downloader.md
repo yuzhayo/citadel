@@ -130,6 +130,22 @@ The observed result count is remote and volatile. It must never be hard-coded.
 The initial Comix filter state uses the provider-observed defaults: latest
 update and Safe + Suggestive (`Safe + 1`).
 
+Title search has a distinct contextual default matching the live Comix search
+page. When a non-empty keyword is submitted and the user has not explicitly
+chosen sort or rating filters for that search, use Best match
+(`order[relevance]=desc`) and all four content ratings (the site's `Safe + 3`).
+This makes "search without filters" a relevance search across the complete
+rating set instead of a latest-update browse with two hidden active ratings.
+An explicit user sort or rating selection always wins and remains visible.
+Clearing the keyword restores the ordinary Catalog defaults above.
+
+Implementation stays inside the Comix filter/query owner. It must not add
+client-side fuzzy sorting, reorder returned cards, change provider parsing,
+change the shared card/table components, or alter browser transport. Add one
+focused query-contract regression proving the contextual defaults and the
+explicit-selection override; visual confirmation checks that the toolbar label
+matches the effective request.
+
 The 2026-09-06 live Camoufox pass captured the current page-client requests,
 not merely the labels rendered by the site. The following browse serialization
 is therefore locked as provider evidence:
@@ -679,9 +695,45 @@ count and hash/evidence. Do not encode chapter/page bytes into NDJSON.
 
 Account commands retain `CITADEL_CREDENZ` validation. Downloader validates its
 own absolute browser/download roots, with profiles under
-`%LocalAppData%\Citadel\MangaReader\browser\<provider>`, never Google profiles.
+`%LocalAppData%\Citadel\MangaReader\browser\instances\<app-location-hash>\<provider>`,
+never Google profiles. The stable application-location namespace lets an
+installed and a portable Citadel run concurrently without sharing a live
+Camoufox profile. If a headless Comix bootstrap reaches its human-verification
+page, that attempt closes and one interactive bootstrap opens on the same
+instance profile; normal requests remain headless after the profile is trusted.
 Readiness/capabilities distinguish missing runtime, missing plugin and failed
 provider bootstrap; opening the tab must not auto-install or start a browser.
+
+### 7.2.1 Recorded follow-up: lighter Comix browser ownership
+
+Current live behavior does not yet match the sentence above that normal requests
+return to headless after trust. When headless reaches `/@waf/`, the implementation
+opens a headed Camoufox session and retains that visible session for page-context
+Axios work until the 60-second idle release. Portable and installed builds also
+use different app-location profile namespaces, so a challenge solved in one is
+not automatically trusted by the other.
+
+Camoufox is considered too heavy for Manga Downloader's narrow requirement.
+Evaluate an additive replacement using installed Chrome/Chromium in headless
+mode with one application-owned persistent Comix profile and an inter-process
+profile lock. Never attach to or lock the user's personal Chrome profile. The
+lock must give one Citadel process exclusive ownership and return a clear
+`PROFILE_BUSY` result to another portable/installed process; it must not copy or
+merge a profile while either browser is alive.
+
+The goal is to reuse provider cookies/trust across Citadel locations and avoid a
+headed window during normal Catalog/Detail/download operations. Headless Chrome
+is a hypothesis, not a promise that WAF challenge will disappear. Prove it live
+against Catalog, Detail, chapters, manifest, page download and restart before
+making it the default. Keep the current Comix/Camoufox path available and
+unchanged until that proof passes; if Chrome is missing, locked, challenged, or
+cannot expose the site's Axios contract, fail visibly or use the existing path
+according to one explicit adapter policy—never loop browser launches silently.
+
+This experiment belongs only to Downloader browser transport/profile ownership.
+It may not change CamoProf, shared PyHost protocol, Queue state, Catalog UI,
+provider parsing, Library, or CBZ publication. No new browser framework or
+background service is authorized.
 
 ### 7.3 Hybrid transport
 
@@ -763,6 +815,9 @@ network activity; local reconciliation recognizes an already completed job.
   it must never target CamoProf or a process not created by Downloader.
 - Manual Resume revalidates staging before reuse.
 - Queue order is stable; retrying one job cannot silently reorder other jobs.
+- A newly admitted multi-chapter batch is appended from the smallest chapter
+  number to the largest. Existing durable jobs are never reordered; FIFO remains
+  the scheduler authority.
 
 ### 8.3 Staging and resume
 
@@ -1449,3 +1504,21 @@ live revalidation of the Comix contract table above (Phase 0/3), a captured
 algorithm-3 fixture for the decoder gate, one complete live chapter into a
 disposable library with restart/pause/resume and Reader open (Phase 8), and one
 CamoProf smoke because the shared response reader changed.
+
+### Recorded follow-up: Download List scroll responsiveness
+
+Confirmed cause: `SettingTable` already enables row and column virtualization,
+but each page-progress update currently persists the complete queue, raises
+`QueueSummaryChanged`, and makes `DownloadListScreen.Render` clear and re-add
+every row. With hundreds of jobs this repeatedly destroys and recreates the
+presentation collection while the user scrolls. Entry into `Downloading` also
+raises one redundant notification immediately after `Commit`, which already
+notifies.
+
+The bounded correction is owned by Queue presentation and progress delivery:
+keep durable state transitions atomic, coalesce/throttle non-terminal progress
+updates, update only the changed row in the screen collection, and remove the
+redundant notification. Do not replace `SettingTable`, disable virtualization,
+change scheduler order, or add a second queue/state owner. Verification is a
+live scroll check with a large queue while one job reports progress, plus one
+focused regression for the coalesced progress contract.

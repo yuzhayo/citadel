@@ -31,6 +31,12 @@
                                                Content="Clear completed"
                                                Click="ClearCompletedButton_Click"
                                                AutomationProperties.Name="Clear completed jobs" />
+                        <setting:SettingButton x:Name="ResumeButton"
+                                               MinWidth="100"
+                                               Margin="10,0,0,0"
+                                               Content="Resume"
+                                               Click="ResumeButton_Click"
+                                               AutomationProperties.Name="Resume paused and failed jobs" />
                     </StackPanel>
                 </setting:SettingActionCard.Content>
                 <setting:SettingActionCard.ActionContent>

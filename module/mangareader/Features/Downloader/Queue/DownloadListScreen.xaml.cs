@@ -51,16 +51,39 @@ public partial class DownloadListScreen : UserControl, IDisposable
 
     private void Render(IReadOnlyList<DownloadJobRecord> jobs, QueueSummary summary)
     {
-        _rows.Clear();
-        foreach (var job in jobs)
+        // Queue order is stable. Preserve existing row containers during progress
+        // updates so DataGrid virtualization and the user's scroll position remain
+        // effective; rebuild only for a structural insert/remove/reorder.
+        var structureMatches = _rows.Count == jobs.Count;
+        if (structureMatches)
         {
-            _rows.Add(job);
+            for (var index = 0; index < jobs.Count; index++)
+            {
+                if (string.Equals(_rows[index].JobId, jobs[index].JobId, StringComparison.Ordinal)) continue;
+                structureMatches = false;
+                break;
+            }
+        }
+
+        if (!structureMatches)
+        {
+            _rows.Clear();
+            foreach (var job in jobs) _rows.Add(job);
+        }
+        else
+        {
+            for (var index = 0; index < jobs.Count; index++)
+            {
+                if (_rows[index] != jobs[index]) _rows[index] = jobs[index];
+            }
         }
 
         EmptyText.Visibility = _rows.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
         SummaryText.Text = summary.Total == 0
             ? "No jobs"
             : $"{summary.Active} active · {summary.Paused} paused · {summary.Failed} failed · {summary.Total} total";
+        ResumeButton.IsEnabled = jobs.Any(job =>
+            job.State is DownloadJobState.Paused or DownloadJobState.Failed);
     }
 
     private void BackButton_Click(object sender, RoutedEventArgs e) =>
@@ -70,6 +93,12 @@ public partial class DownloadListScreen : UserControl, IDisposable
     {
         if (_context is null) return;
         Run(() => _context.Queue.ClearCompleted());
+    }
+
+    private void ResumeButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (_context is null) return;
+        Run(() => _context.Queue.ResumeAll());
     }
 
     private void PauseResume_Click(object sender, RoutedEventArgs e)

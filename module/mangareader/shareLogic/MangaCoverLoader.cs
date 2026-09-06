@@ -6,6 +6,8 @@ namespace Module.Mangareader.ShareLogic;
 
 public sealed class MangaCoverLoader
 {
+    public const string TitleCoverFileName = "cover.png";
+
     /// <summary>
     /// Decode width for card covers. Every consumer must pass this same
     /// value: the render cache key is the chapter's file identity plus the
@@ -36,6 +38,10 @@ public sealed class MangaCoverLoader
         int maximumPixelWidth,
         CancellationToken cancellationToken)
     {
+        cancellationToken.ThrowIfCancellationRequested();
+        var titleCover = TryLoadTitleCover(title.FolderPath, maximumPixelWidth);
+        if (titleCover is not null) return titleCover;
+
         var chapter = title.Chapters.FirstOrDefault();
         if (chapter is null || !File.Exists(chapter.FilePath)) return null;
 
@@ -70,5 +76,49 @@ public sealed class MangaCoverLoader
         }
 
         return bitmap;
+    }
+
+    private static BitmapSource? TryLoadTitleCover(string titleFolder, int maximumPixelWidth)
+    {
+        if (string.IsNullOrWhiteSpace(titleFolder)) return null;
+
+        var coverPath = Path.Combine(titleFolder, TitleCoverFileName);
+        if (!File.Exists(coverPath)) return null;
+
+        try
+        {
+            // OnLoad closes the file immediately, so Auto Cover can replace it later
+            // without being blocked by a live WPF image stream.
+            using var payload = new FileStream(
+                coverPath,
+                FileMode.Open,
+                FileAccess.Read,
+                FileShare.ReadWrite | FileShare.Delete);
+            var bitmap = new BitmapImage();
+            bitmap.BeginInit();
+            bitmap.CacheOption = BitmapCacheOption.OnLoad;
+            bitmap.CreateOptions = BitmapCreateOptions.PreservePixelFormat;
+            bitmap.DecodePixelWidth = maximumPixelWidth;
+            bitmap.StreamSource = payload;
+            bitmap.EndInit();
+            bitmap.Freeze();
+            return bitmap;
+        }
+        catch (IOException)
+        {
+            return null;
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return null;
+        }
+        catch (NotSupportedException)
+        {
+            return null;
+        }
+        catch (FileFormatException)
+        {
+            return null;
+        }
     }
 }
