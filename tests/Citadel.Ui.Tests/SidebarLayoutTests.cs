@@ -158,6 +158,48 @@ public sealed class SidebarLayoutTests
         });
     }
 
+    [Fact]
+    public void GroupHeaderAndChildExposeDistinctHierarchyCues()
+    {
+        StaTest.Run(() =>
+        {
+            var tokens = new Tokens();
+            using var animations = new AnimationManager();
+            var lifetime = new Lifetime();
+            var sidebar = new Sidebar();
+            sidebar.Entries.Add(NavEntry.Group("tools", "Tools", expanded: true));
+            sidebar.Entries.Add(new NavEntry(
+                "proxy", "Proxy", "\uE968", GroupId: "tools", IsChild: true));
+            sidebar.Attach(tokens, animations, lifetime);
+            WpfLayout.Arrange(sidebar, sidebar.CurrentWidth);
+
+            var navList = Assert.IsType<ListBox>(
+                sidebar.Template.FindName(Sidebar.NavListPart, sidebar));
+            var groupRow = Assert.IsType<ListBoxItem>(navList.ItemContainerGenerator.ContainerFromIndex(0));
+            var childRow = Assert.IsType<ListBoxItem>(navList.ItemContainerGenerator.ContainerFromIndex(1));
+
+            var groupSurface = Assert.Single(
+                WpfLayout.Descendants<Border>(groupRow),
+                element => Equals(element.Tag, "SidebarGroupSurface"));
+            var groupGuide = Assert.Single(
+                WpfLayout.Descendants<Border>(groupRow),
+                element => Equals(element.Tag, "SidebarChildGuide"));
+            var childGuide = Assert.Single(
+                WpfLayout.Descendants<Border>(childRow),
+                element => Equals(element.Tag, "SidebarChildGuide"));
+            var childTitle = Assert.Single(
+                WpfLayout.Descendants<TextBlock>(childRow),
+                element => Equals(element.Tag, "NavTitle"));
+
+            Assert.NotNull(groupSurface.Background);
+            Assert.Equal(Visibility.Collapsed, groupGuide.Visibility);
+            Assert.Equal(Visibility.Visible, childGuide.Visibility);
+            Assert.True(childTitle.Margin.Left >= 16);
+
+            lifetime.Destroy();
+        });
+    }
+
     private static void AssertRows(double expectedHeight, Sidebar sidebar, bool collapsed)
     {
         WpfLayout.Arrange(sidebar, sidebar.CurrentWidth);

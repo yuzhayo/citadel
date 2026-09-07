@@ -52,6 +52,10 @@
     <Thickness x:Key="SidebarMainInset">0,9,0,0</Thickness>
     <Thickness x:Key="SidebarPinInset">0,0,0,9</Thickness>
     <Thickness x:Key="SidebarItemInset">10,1,10,1</Thickness>
+    <Thickness x:Key="SidebarGroupItemInset">6,3,6,3</Thickness>
+    <Thickness x:Key="SidebarGroupAccentInset">12,10,0,10</Thickness>
+    <Thickness x:Key="SidebarChildTitleInset">18,0,0,0</Thickness>
+    <Thickness x:Key="SidebarChildGuideInset">5,8,0,8</Thickness>
     <CornerRadius x:Key="ControlCornerRadius">8</CornerRadius>
     <CornerRadius x:Key="ShellCardRadius">12</CornerRadius>
     <CornerRadius x:Key="ContentHeaderCornerRadius">11,11,0,0</CornerRadius>
@@ -92,6 +96,15 @@
                             BorderThickness="{DynamicResource ShellBorderThickness}"
                             CornerRadius="{DynamicResource SidebarItemCornerRadius}"
                             SnapsToDevicePixels="True" />
+                        <Border
+                            x:Name="GroupAccent"
+                            Width="2"
+                            Margin="{DynamicResource SidebarGroupAccentInset}"
+                            HorizontalAlignment="Left"
+                            Background="{DynamicResource Accent}"
+                            CornerRadius="1"
+                            IsHitTestVisible="False"
+                            Visibility="Collapsed" />
                         <ContentPresenter
                             HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
                             VerticalAlignment="{TemplateBinding VerticalContentAlignment}" />
@@ -103,6 +116,19 @@
                         <Trigger Property="IsSelected" Value="True">
                             <Setter TargetName="Surface" Property="Background" Value="{DynamicResource Selected}" />
                         </Trigger>
+                        <DataTrigger Binding="{Binding IsGroup}" Value="True">
+                            <Setter TargetName="Surface" Property="Tag" Value="SidebarGroupSurface" />
+                            <Setter TargetName="Surface" Property="Margin" Value="{DynamicResource SidebarGroupItemInset}" />
+                            <Setter TargetName="Surface" Property="Background" Value="{DynamicResource Card}" />
+                            <Setter TargetName="GroupAccent" Property="Visibility" Value="Visible" />
+                        </DataTrigger>
+                        <MultiDataTrigger>
+                            <MultiDataTrigger.Conditions>
+                                <Condition Binding="{Binding IsGroup}" Value="True" />
+                                <Condition Binding="{Binding IsMouseOver, RelativeSource={RelativeSource Self}}" Value="True" />
+                            </MultiDataTrigger.Conditions>
+                            <Setter TargetName="Surface" Property="Background" Value="{DynamicResource Hover}" />
+                        </MultiDataTrigger>
                     </ControlTemplate.Triggers>
                 </ControlTemplate>
             </Setter.Value>
@@ -175,19 +201,32 @@
                 ClipToBounds="True"
                 Opacity="{Binding TitleOpacity, RelativeSource={RelativeSource AncestorType={x:Type controls:Sidebar}}}"
                 Tag="NavTitleHost">
+                <Grid>
+                    <Border
+                        x:Name="ChildGuide"
+                        Width="1"
+                        Margin="{DynamicResource SidebarChildGuideInset}"
+                        HorizontalAlignment="Left"
+                        Background="{DynamicResource Border}"
+                        IsHitTestVisible="False"
+                        Tag="SidebarChildGuide"
+                        Visibility="Collapsed" />
                 <TextBlock
                     x:Name="NavTitle"
+                    Tag="NavTitle"
                     VerticalAlignment="Center"
                     FontFamily="{Binding TitleFontFamily, RelativeSource={RelativeSource AncestorType={x:Type controls:Sidebar}}}"
                     FontSize="{Binding TitleFontSize, RelativeSource={RelativeSource AncestorType={x:Type controls:Sidebar}}}"
                     Foreground="{DynamicResource Fg}"
                     Text="{Binding Title}"
                     TextTrimming="CharacterEllipsis" />
+                </Grid>
             </Border>
         </Grid>
         <DataTemplate.Triggers>
             <DataTrigger Binding="{Binding IsChild}" Value="True">
-                <Setter TargetName="NavTitle" Property="Margin" Value="12,0,0,0" />
+                <Setter TargetName="NavTitle" Property="Margin" Value="{DynamicResource SidebarChildTitleInset}" />
+                <Setter TargetName="ChildGuide" Property="Visibility" Value="Visible" />
             </DataTrigger>
             <DataTrigger Binding="{Binding IsGroup}" Value="True">
                 <Setter TargetName="NavTitle" Property="FontWeight" Value="SemiBold" />
