@@ -237,6 +237,34 @@ async def _wait_for_application_page(page, timeout_ms):
             "verifikasi Comix belum selesai: %s" % exc) from exc
 
 
+async def _navigate_application_page(page, start_url, timeout_ms):
+    await page.goto(start_url, wait_until="domcontentloaded",
+                    timeout=timeout_ms)
+    await _wait_for_application_page(page, timeout_ms)
+
+
+def _live_provider_session(host, profile):
+    """Return the live session already owning this provider profile."""
+    for sid, session in host.sessions.items():
+        if session.get("profile") != profile:
+            continue
+        page = session.get("page")
+        if session.get("ctx") is None or page is None:
+            return None
+        is_closed = getattr(page, "is_closed", None)
+        if callable(is_closed) and is_closed():
+            return None
+        return sid, session, page
+    return None
+
+
+async def _forget_dead_provider_session(host, profile):
+    """Remove a dead/partial owner so the same profile can open again."""
+    for sid, session in tuple(host.sessions.items()):
+        if session.get("profile") == profile:
+            await host._drop_session(sid, forget_on_failure=True)
+
+
 async def cmd_open(host, msg):
     """Buka (atau pakai ulang) satu session browser untuk satu provider."""
     provider = msg.get("provider")
@@ -247,8 +275,15 @@ async def cmd_open(host, msg):
 
     profile = "downloader-" + (provider if isinstance(provider, str) else "x")
     if host._profile_busy(profile):
-        raise PyhostError("PROFILE_BUSY",
-                          "provider sudah punya session: " + str(provider))
+        existing = _live_provider_session(host, profile)
+        if existing is not None:
+            sid, session, page = existing
+            if session.get("headless", headless) == headless:
+                await _navigate_application_page(
+                    page, start_url, _timeout_ms(msg, 120000))
+                return {"session": sid, "provider": provider,
+                        "url": page.url, "headless": headless}
+        await _forget_dead_provider_session(host, profile)
 
     pdir = _provider_dir(provider)
     os.makedirs(pdir, exist_ok=True)
@@ -277,10 +312,8 @@ async def cmd_open(host, msg):
         host.sessions[sid]["ctx"] = ctx
         page = ctx.pages[0] if ctx.pages else await ctx.new_page()
         host.sessions[sid]["page"] = page
-        await page.goto(start_url, wait_until="domcontentloaded",
-                        timeout=_timeout_ms(msg, 120000))
-        await _wait_for_application_page(
-            page, _timeout_ms(msg, 120000))
+        await _navigate_application_page(
+            page, start_url, _timeout_ms(msg, 120000))
     except asyncio.CancelledError:
         await host._drop_session(sid)
         raise
