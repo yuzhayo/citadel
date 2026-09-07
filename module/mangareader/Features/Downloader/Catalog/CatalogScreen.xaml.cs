@@ -184,20 +184,18 @@ public partial class CatalogScreen : UserControl, IDisposable
         // Browse is actually started.
         if (_catalog.State.IsActionBusy) return;
 
+        if (_context is not null)
+        {
+            _context.Browser.ShowBrowser = ShowBrowserToggle.IsChecked == true;
+        }
+
         await RunBrowseAsync(token => _catalog.StartAsync(SearchField.Text, token));
     }
 
     /// <summary>
-    /// Logically stops the active Browse and nothing else. The transport token is
-    /// deliberately left alone: cancelling it reaches the inline pyhost command,
-    /// which completes at once with a TIMEOUT while Python is still busy — a fake
-    /// provider error, a button that snaps back to Start too early, and a following
-    /// Start written before the old command settled.
-    ///
-    /// The feature marks the request stale instead, so its late result cannot
-    /// commit, and this screen stays parked at <c>Stopping…</c> until the awaited
-    /// Browse is genuinely terminal. Only <see cref="Dispose"/> cancels the
-    /// transport, which is a real end of lifetime rather than a user's Stop.
+    /// Stops the active Browse and its Downloader-owned Python/browser process.
+    /// The result is marked stale first, so termination is a requested terminal
+    /// state rather than a provider error. A later Start creates a clean session.
     /// </summary>
     private void Stop()
     {
@@ -205,6 +203,8 @@ public partial class CatalogScreen : UserControl, IDisposable
 
         _stopping = true;
         _catalog.AbandonActiveBrowse();
+        _context?.Browser.AbortSession();
+        _browseCancellation?.Cancel();
     }
 
     private async void LoadMoreButton_Click(object sender, RoutedEventArgs e)
@@ -473,6 +473,8 @@ public partial class CatalogScreen : UserControl, IDisposable
     /// </summary>
     private void RenderRequestButton(CatalogState state)
     {
+        ShowBrowserToggle.IsEnabled = !_browseActive && !_stopping && !state.IsActionBusy;
+
         if (_stopping)
         {
             StartButton.Content = "Stopping…";

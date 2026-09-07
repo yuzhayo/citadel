@@ -28,6 +28,7 @@ public sealed class DownloaderContext
     internal DownloaderContext(
         MangaSourceRegistry sources,
         DownloadQueueFeature queue,
+        DownloaderPyHostClient browser,
         LibraryRootContext libraryRoot,
         DownloadSourceIndex index,
         ListerFeature lister,
@@ -35,6 +36,7 @@ public sealed class DownloaderContext
     {
         Sources = sources;
         Queue = queue;
+        Browser = browser;
         LibraryRoot = libraryRoot;
         Index = index;
         Lister = lister;
@@ -44,6 +46,8 @@ public sealed class DownloaderContext
     public MangaSourceRegistry Sources { get; }
 
     public DownloadQueueFeature Queue { get; }
+
+    public DownloaderPyHostClient Browser { get; }
 
     public LibraryRootContext LibraryRoot { get; }
 

@@ -340,17 +340,84 @@ public sealed class PyHost : IDisposable
         }
         finally
         {
-            Volatile.Write(ref _disposed, 1);
-            foreach (var pair in _pending)
-            {
-                if (_pending.TryRemove(pair.Key, out var completion))
-                {
-                    completion.TrySetException(new PyHostException("HOST_DISPOSED", "pyhost disposed"));
-                }
-            }
-
-            _process.Dispose();
+            CompleteDispose("HOST_DISPOSED", "pyhost disposed");
         }
+    }
+
+    /// <summary>
+    /// Immediately terminates this host and its browser process tree. This is
+    /// reserved for an explicit user Stop where waiting for the inline Python
+    /// command to reach its timeout would make Stop ineffective.
+    /// </summary>
+    public void Abort()
+    {
+        if (Interlocked.Exchange(ref _disposeStarted, 1) != 0)
+        {
+            return;
+        }
+
+        try
+        {
+            if (!_process.HasExited)
+            {
+                if (OperatingSystem.IsWindows())
+                {
+                    // Playwright can interpose a Python launcher and Node driver.
+                    // Process.Kill(entireProcessTree) may terminate the launcher
+                    // first and leave Camoufox re-parented. taskkill snapshots and
+                    // terminates the Windows tree from the still-live root PID.
+                    using var killer = Process.Start(new ProcessStartInfo
+                    {
+                        FileName = "taskkill.exe",
+                        UseShellExecute = false,
+                        CreateNoWindow = true,
+                        RedirectStandardOutput = true,
+                        RedirectStandardError = true,
+                        ArgumentList =
+                        {
+                            "/PID",
+                            _process.Id.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                            "/T",
+                            "/F",
+                        },
+                    });
+                    killer?.WaitForExit(2000);
+                }
+
+                if (!_process.HasExited)
+                {
+                    _process.Kill(entireProcessTree: true);
+                }
+                _process.WaitForExit(2000);
+            }
+        }
+        catch (Exception)
+        {
+            // The process may already have exited; pending requests are still
+            // completed below so callers never remain parked until timeout.
+        }
+        finally
+        {
+            CompleteDispose("HOST_ABORTED", "pyhost aborted");
+        }
+    }
+
+    private void CompleteDispose(string code, string message)
+    {
+        if (Interlocked.Exchange(ref _disposed, 1) != 0)
+        {
+            return;
+        }
+
+        foreach (var pair in _pending)
+        {
+            if (_pending.TryRemove(pair.Key, out var completion))
+            {
+                completion.TrySetException(new PyHostException(code, message));
+            }
+        }
+
+        _process.Dispose();
     }
 
     /// <summary>

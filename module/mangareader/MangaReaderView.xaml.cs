@@ -83,7 +83,7 @@ public partial class MangaReaderView : UserControl, IContentHeaderActionProvider
             request => EnqueueUpdate(request, _queue)));
 
         DownloaderTab.UseContext(
-            new DownloaderContext(sources, _queue, _libraryRoot, index, lister, autoCover));
+            new DownloaderContext(sources, _queue, _downloaderBrowser, _libraryRoot, index, lister, autoCover));
 
         // The module lifetime owns queue execution independently of which routed
         // screen is visible. A restart parks every job, so starting here causes

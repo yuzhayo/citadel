@@ -50,6 +50,12 @@
                 </setting:SettingActionCard.Content>
                 <setting:SettingActionCard.ActionContent>
                     <StackPanel Orientation="Horizontal">
+                        <setting:SettingToggle x:Name="ShowBrowserToggle"
+                                               Margin="0,0,12,0"
+                                               Content="Show browser while loading"
+                                               IsChecked="False"
+                                               ToolTip="Off uses the Downloader's headless browser"
+                                               AutomationProperties.Name="Show browser while loading catalog" />
                         <setting:SettingButton x:Name="StartButton"
                                                MinWidth="96"
                                                Height="34"

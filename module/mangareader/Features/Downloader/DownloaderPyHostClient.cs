@@ -45,6 +45,8 @@ public sealed class DownloaderPyHostClient : IDisposable
     private PyHost? _host;
     private string? _session;
     private string? _sessionProvider;
+    private bool? _sessionHeadless;
+    private int _showBrowser;
     private DateTimeOffset _lastUsedUtc = DateTimeOffset.UtcNow;
     private int _disposed;
 
@@ -58,6 +60,16 @@ public sealed class DownloaderPyHostClient : IDisposable
 
     /// <summary>Absolute root every browser write must stay inside.</summary>
     public string StagingRoot { get; }
+
+    /// <summary>
+    /// Whether the next explicit browser-backed action should use a visible
+    /// window. Off preserves the Downloader's normal headless behavior.
+    /// </summary>
+    public bool ShowBrowser
+    {
+        get => Volatile.Read(ref _showBrowser) != 0;
+        set => Volatile.Write(ref _showBrowser, value ? 1 : 0);
+    }
 
     public bool HasSession
     {
@@ -94,7 +106,9 @@ public sealed class DownloaderPyHostClient : IDisposable
         try
         {
             ThrowIfDisposed();
-            if (_session is not null && string.Equals(_sessionProvider, provider, StringComparison.Ordinal))
+            if (_session is not null
+                && string.Equals(_sessionProvider, provider, StringComparison.Ordinal)
+                && _sessionHeadless == headless)
             {
                 _lastUsedUtc = DateTimeOffset.UtcNow;
                 return _session;
@@ -117,6 +131,7 @@ public sealed class DownloaderPyHostClient : IDisposable
             _session = response["session"]?.GetValue<string>()
                 ?? throw new PyHostException("BAD_RESPONSE", "downloader.open tidak mengembalikan session");
             _sessionProvider = provider;
+            _sessionHeadless = headless;
             _lastUsedUtc = DateTimeOffset.UtcNow;
             return _session;
         }
@@ -197,6 +212,25 @@ public sealed class DownloaderPyHostClient : IDisposable
         }
     }
 
+    /// <summary>
+    /// Stops the Downloader-owned host immediately. The active request fails at
+    /// once and a later explicit action creates a new host and browser session.
+    /// This never targets CamoProf or another module's process.
+    /// </summary>
+    public void AbortSession()
+    {
+        if (Volatile.Read(ref _disposed) != 0)
+        {
+            return;
+        }
+
+        var host = Interlocked.Exchange(ref _host, null);
+        Interlocked.Exchange(ref _session, null);
+        Interlocked.Exchange(ref _sessionProvider, null);
+        _sessionHeadless = null;
+        host?.Abort();
+    }
+
     /// <summary>Canonicalizes a staging-relative path and refuses escapes.</summary>
     public string ResolveContained(string relativePath)
     {
@@ -231,6 +265,7 @@ public sealed class DownloaderPyHostClient : IDisposable
             _host = null;
             _session = null;
             _sessionProvider = null;
+            _sessionHeadless = null;
         }
         finally
         {
@@ -323,6 +358,7 @@ public sealed class DownloaderPyHostClient : IDisposable
         var session = _session;
         _session = null;
         _sessionProvider = null;
+        _sessionHeadless = null;
         if (host is null || session is null)
         {
             return;

@@ -1152,7 +1152,7 @@ public sealed class ComixSource(DownloaderPyHostClient client) : IMangaSource
         await _client.EnsureSessionAsync(
             ComixContract.SourceId,
             ComixContract.BaseUrl + "/browse",
-            headless: true,
+            headless: !_client.ShowBrowser,
             cancellationToken).ConfigureAwait(false);
     }
 
