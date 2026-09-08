@@ -7,6 +7,7 @@ using System.Reflection;
 using System.Windows.Media;
 using System.Windows.Shell;
 using System.Windows.Threading;
+using System.Windows.Data;
 using Citadel.Setting;
 using Citadel.Setting.Components;
 
@@ -67,7 +68,7 @@ public class SharedComponentBehaviorTests
     }
 
     [Fact]
-    public void Table_DefaultsToEqualStarColumnsAndCenteredHeaders()
+    public void Table_DefaultsToAutoResizableCompactColumnsWithDistinctHeaders()
     {
         Sta.Run(() =>
         {
@@ -78,19 +79,94 @@ public class SharedComponentBehaviorTests
 
             var grid = Descendant<DataGrid>(table);
 
+            Assert.Equal(DataGridLengthUnitType.Auto, grid.ColumnWidth.UnitType);
+            Assert.True(grid.CanUserResizeColumns);
+            Assert.Equal(HorizontalAlignment.Stretch, table.CellHorizontalContentAlignment);
+            Assert.All(grid.Columns, column =>
+            {
+                Assert.Equal(DataGridLengthUnitType.Auto, column.Width.UnitType);
+            });
+
+            var headerStyle = Assert.IsType<Style>(
+                grid.Resources[typeof(DataGridColumnHeader)]);
+            var headerAlignment = headerStyle.Setters
+                .OfType<Setter>()
+                .Single(setter => setter.Property == Control.HorizontalContentAlignmentProperty);
+            var headerPadding = headerStyle.Setters
+                .OfType<Setter>()
+                .Single(setter => setter.Property == Control.PaddingProperty);
+            var headerWeight = headerStyle.Setters
+                .OfType<Setter>()
+                .Single(setter => setter.Property == Control.FontWeightProperty);
+            Assert.IsType<Binding>(headerAlignment.Value);
+            Assert.Equal(new Thickness(10, 6, 10, 6), headerPadding.Value);
+            Assert.Equal(FontWeights.SemiBold, headerWeight.Value);
+
+            var cellStyle = Assert.IsType<Style>(grid.Resources[typeof(DataGridCell)]);
+            var cellPadding = cellStyle.Setters
+                .OfType<Setter>()
+                .Single(setter => setter.Property == Control.PaddingProperty);
+            var verticalAlignment = cellStyle.Setters
+                .OfType<Setter>()
+                .Single(setter => setter.Property == Control.VerticalContentAlignmentProperty);
+            Assert.Equal(new Thickness(10, 5, 10, 5), cellPadding.Value);
+            Assert.Equal(VerticalAlignment.Center, verticalAlignment.Value);
+
+            var rowStyle = Assert.IsType<Style>(grid.Resources[typeof(DataGridRow)]);
+            var rowHeight = rowStyle.Setters
+                .OfType<Setter>()
+                .Single(setter => setter.Property == FrameworkElement.MinHeightProperty);
+            Assert.Equal(40d, rowHeight.Value);
+
+            var header = Descendants<DataGridColumnHeader>(grid)
+                .First(candidate => candidate.Column is not null);
+            var grippers = Descendants<Thumb>(header).ToArray();
+            Assert.Contains(grippers, thumb => thumb.Name == "PART_LeftHeaderGripper");
+            var rightGripper = Assert.Single(
+                grippers,
+                thumb => thumb.Name == "PART_RightHeaderGripper");
+
+            var initialWidth = header.Column.ActualWidth;
+            rightGripper.RaiseEvent(new DragDeltaEventArgs(32, 0));
+            Assert.True(header.Column.ActualWidth > initialWidth);
+        });
+    }
+
+    [Fact]
+    public void Table_SharedSizingAndAlignmentPropertiesConfigureItsGrid()
+    {
+        Sta.Run(() =>
+        {
+            var table = Arrange(new SettingTable
+            {
+                Width = 640,
+                Height = 240,
+                CanUserResizeColumns = false,
+                ColumnWidth = new DataGridLength(1, DataGridLengthUnitType.Star),
+                CellHorizontalContentAlignment = HorizontalAlignment.Right,
+                HeaderHorizontalContentAlignment = HorizontalAlignment.Left,
+            });
+            table.SetColumns(["One", "Two"]);
+            table.SetRows([["a", "b"]]);
+            Arrange(table);
+
+            var grid = Descendant<DataGrid>(table);
+            Assert.False(grid.CanUserResizeColumns);
             Assert.Equal(DataGridLengthUnitType.Star, grid.ColumnWidth.UnitType);
+            Assert.Equal(1, grid.ColumnWidth.Value);
             Assert.All(grid.Columns, column =>
             {
                 Assert.Equal(DataGridLengthUnitType.Star, column.Width.UnitType);
                 Assert.Equal(1, column.Width.Value);
             });
 
-            var headerStyle = Assert.IsType<Style>(
-                grid.Resources[typeof(DataGridColumnHeader)]);
-            var alignment = headerStyle.Setters
-                .OfType<Setter>()
-                .Single(setter => setter.Property == Control.HorizontalContentAlignmentProperty);
-            Assert.Equal(HorizontalAlignment.Center, alignment.Value);
+            var header = Descendants<DataGridColumnHeader>(grid)
+                .First(candidate => candidate.Column is not null);
+            var cell = Descendants<DataGridCell>(grid).First();
+            Assert.Equal(HorizontalAlignment.Left, header.HorizontalContentAlignment);
+            Assert.Equal(VerticalAlignment.Center, header.VerticalContentAlignment);
+            Assert.Equal(HorizontalAlignment.Right, cell.HorizontalContentAlignment);
+            Assert.Equal(VerticalAlignment.Center, cell.VerticalContentAlignment);
         });
     }
 

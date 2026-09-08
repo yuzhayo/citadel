@@ -19,7 +19,7 @@ interaction behavior.
 | `SettingTabs` | left-aligned tab group, equal outer inset, rounded normal/hover/selected/focus states |
 | `SettingViewport` | finite screen root, shared inset, explicit `Contained`/`Document` overflow ownership |
 | `SettingActionCard` | compact fill-width surface with flexible content and right-side actions |
-| `SettingTable` | equal star columns by default, centered headers, optional interactive-column header sorting with direction indicator, left text cells, grid lines, virtualization and scrolling |
+| `SettingTable` | auto-sized, user-resizable columns by default; configurable default cell/header horizontal alignment; vertically centered compact cells; distinct centered headers; optional interactive-column sorting with direction indicator; grid lines, virtualization and scrolling |
 | `SettingTableActions` | one action centered; two actions balanced against the cell edges |
 | `SettingDialog` | modal chrome, owner centering and reusable confirmation behavior |
 | `SettingCardStyle` | ordinary shared card background, border, radius, padding and row spacing |
@@ -119,6 +119,25 @@ No per-screen scrollbar templates. Behavior consistent across app.
   can therefore use compact responsive padding without copying the template.
 - `SettingSlider` carries minimum, maximum, value, and direction into its track;
   reversed direction remains valid for inverse speed semantics.
+
+## Table sizing and alignment
+
+- Columns without a feature-owned width start with `ColumnWidth="Auto"`, sizing
+  to their header and visible content. A feature may use the same property with
+  `SizeToCells`, `SizeToHeader`, a fixed pixel width, or star sizing.
+- `CanUserResizeColumns` defaults to `true`. The shared header template owns the
+  left/right resize grippers; individual columns may still opt out.
+- `CellHorizontalContentAlignment` supports the normal WPF left, center, and
+  right alignments. Its compatibility default is stretch so feature-owned
+  templates and `SettingTableActions` keep the full cell width; ordinary text
+  remains visually left-aligned. `HeaderHorizontalContentAlignment` defaults
+  to center. A feature-owned interactive column may override either when its
+  content has a specific semantic alignment.
+- Header and cell content are vertically centered automatically. Header weight,
+  background, and lower border distinguish it from data rows.
+- Shared defaults use 6 DIP vertical header padding, 5 DIP vertical cell
+  padding, and a 40 DIP minimum row height. Horizontal overflow remains owned
+  by the table's shared auto-fade scrollbar.
 
 ## 2026-09-02 evidence
 

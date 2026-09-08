@@ -20,9 +20,10 @@
         CanUserAddRows="False"
         CanUserDeleteRows="False"
         CanUserReorderColumns="False"
+        CanUserResizeColumns="{Binding CanUserResizeColumns, RelativeSource={RelativeSource AncestorType=UserControl}}"
         CanUserResizeRows="False"
         CanUserSortColumns="{Binding CanUserSortColumns, RelativeSource={RelativeSource AncestorType=UserControl}}"
-        ColumnWidth="*"
+        ColumnWidth="{Binding ColumnWidth, RelativeSource={RelativeSource AncestorType=UserControl}}"
         EnableColumnVirtualization="True"
         EnableRowVirtualization="True"
         FontSize="{DynamicResource SettingBodyFontSize}"
@@ -48,12 +49,15 @@
                 <Setter Property="local:ScrollBarAutoFade.IsEnabled" Value="True" />
             </Style>
             <Style TargetType="{x:Type DataGridColumnHeader}">
-                <Setter Property="Background" Value="{DynamicResource Card}" />
+                <Setter Property="Background" Value="{DynamicResource Hover}" />
                 <Setter Property="BorderBrush" Value="{DynamicResource Border}" />
-                <Setter Property="BorderThickness" Value="0,0,1,1" />
-                <Setter Property="Foreground" Value="{DynamicResource Body}" />
-                <Setter Property="HorizontalContentAlignment" Value="Center" />
-                <Setter Property="Padding" Value="10,8" />
+                <Setter Property="BorderThickness" Value="0,0,1,2" />
+                <Setter Property="FontWeight" Value="SemiBold" />
+                <Setter Property="Foreground" Value="{DynamicResource Fg}" />
+                <Setter Property="HorizontalContentAlignment"
+                        Value="{Binding HeaderHorizontalContentAlignment, RelativeSource={RelativeSource AncestorType={x:Type local:SettingTable}}}" />
+                <Setter Property="VerticalContentAlignment" Value="Center" />
+                <Setter Property="Padding" Value="10,6" />
                 <Setter Property="Template">
                     <Setter.Value>
                         <ControlTemplate TargetType="{x:Type DataGridColumnHeader}">
@@ -62,19 +66,32 @@
                                 BorderBrush="{TemplateBinding BorderBrush}"
                                 BorderThickness="{TemplateBinding BorderThickness}"
                                 Padding="{TemplateBinding Padding}">
-                                <Grid
-                                    VerticalAlignment="Center">
+                                <Grid VerticalAlignment="Center">
                                     <ContentPresenter
                                         HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
-                                        VerticalAlignment="Center" />
+                                        VerticalAlignment="{TemplateBinding VerticalContentAlignment}" />
                                     <TextBlock
                                         x:Name="SortIndicator"
-                                        Margin="0,0,2,0"
+                                        Margin="0,0,4,0"
                                         HorizontalAlignment="Right"
                                         VerticalAlignment="Center"
                                         Foreground="{TemplateBinding Foreground}"
                                         Text="▲"
                                         Visibility="Collapsed" />
+                                    <Thumb
+                                        x:Name="PART_LeftHeaderGripper"
+                                        Width="5"
+                                        HorizontalAlignment="Left"
+                                        Background="{DynamicResource TransparentBrush}"
+                                        Cursor="SizeWE"
+                                        Focusable="False" />
+                                    <Thumb
+                                        x:Name="PART_RightHeaderGripper"
+                                        Width="5"
+                                        HorizontalAlignment="Right"
+                                        Background="{DynamicResource TransparentBrush}"
+                                        Cursor="SizeWE"
+                                        Focusable="False" />
                                 </Grid>
                             </Border>
                             <ControlTemplate.Triggers>
@@ -101,8 +118,10 @@
                 <Setter Property="BorderThickness" Value="0,0,1,1" />
                 <Setter Property="FocusVisualStyle" Value="{x:Null}" />
                 <Setter Property="Foreground" Value="{DynamicResource Fg}" />
-                <Setter Property="HorizontalContentAlignment" Value="Stretch" />
-                <Setter Property="Padding" Value="10,8" />
+                <Setter Property="HorizontalContentAlignment"
+                        Value="{Binding CellHorizontalContentAlignment, RelativeSource={RelativeSource AncestorType={x:Type local:SettingTable}}}" />
+                <Setter Property="VerticalContentAlignment" Value="Center" />
+                <Setter Property="Padding" Value="10,5" />
                 <Setter Property="Template">
                     <Setter.Value>
                         <ControlTemplate TargetType="{x:Type DataGridCell}">
@@ -113,7 +132,7 @@
                                 Padding="{TemplateBinding Padding}">
                                 <ContentPresenter
                                     HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
-                                    VerticalAlignment="Center" />
+                                    VerticalAlignment="{TemplateBinding VerticalContentAlignment}" />
                             </Border>
                         </ControlTemplate>
                     </Setter.Value>
@@ -122,7 +141,7 @@
             <Style TargetType="{x:Type DataGridRow}">
                 <Setter Property="Background" Value="{DynamicResource TransparentBrush}" />
                 <Setter Property="Foreground" Value="{DynamicResource Fg}" />
-                <Setter Property="MinHeight" Value="52" />
+                <Setter Property="MinHeight" Value="40" />
                 <Setter Property="SnapsToDevicePixels" Value="True" />
                 <Style.Triggers>
                     <Trigger Property="IsMouseOver" Value="True">

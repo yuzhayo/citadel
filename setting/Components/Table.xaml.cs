@@ -41,6 +41,34 @@ public sealed partial class SettingTable : UserControl
             typeof(SettingTable),
             new FrameworkPropertyMetadata(false));
 
+    public static readonly DependencyProperty CanUserResizeColumnsProperty =
+        DependencyProperty.Register(
+            nameof(CanUserResizeColumns),
+            typeof(bool),
+            typeof(SettingTable),
+            new FrameworkPropertyMetadata(true));
+
+    public static readonly DependencyProperty ColumnWidthProperty =
+        DependencyProperty.Register(
+            nameof(ColumnWidth),
+            typeof(DataGridLength),
+            typeof(SettingTable),
+            new FrameworkPropertyMetadata(DataGridLength.Auto));
+
+    public static readonly DependencyProperty CellHorizontalContentAlignmentProperty =
+        DependencyProperty.Register(
+            nameof(CellHorizontalContentAlignment),
+            typeof(HorizontalAlignment),
+            typeof(SettingTable),
+            new FrameworkPropertyMetadata(HorizontalAlignment.Stretch));
+
+    public static readonly DependencyProperty HeaderHorizontalContentAlignmentProperty =
+        DependencyProperty.Register(
+            nameof(HeaderHorizontalContentAlignment),
+            typeof(HorizontalAlignment),
+            typeof(SettingTable),
+            new FrameworkPropertyMetadata(HorizontalAlignment.Center));
+
     private readonly ObservableCollection<string> _columns = [];
     private readonly ObservableCollection<IReadOnlyList<string>> _rows = [];
     private readonly List<IReadOnlyList<string>> _source = [];
@@ -88,6 +116,37 @@ public sealed partial class SettingTable : UserControl
     {
         get => (bool)GetValue(CanUserSortColumnsProperty);
         set => SetValue(CanUserSortColumnsProperty, value);
+    }
+
+    /// <summary>Allows users to resize columns with the shared header grippers.</summary>
+    public bool CanUserResizeColumns
+    {
+        get => (bool)GetValue(CanUserResizeColumnsProperty);
+        set => SetValue(CanUserResizeColumnsProperty, value);
+    }
+
+    /// <summary>
+    /// Sets the default width for columns that do not declare their own width.
+    /// Supports native WPF Auto, SizeToCells, SizeToHeader, pixel, and star values.
+    /// </summary>
+    public DataGridLength ColumnWidth
+    {
+        get => (DataGridLength)GetValue(ColumnWidthProperty);
+        set => SetValue(ColumnWidthProperty, value);
+    }
+
+    /// <summary>Sets the default horizontal alignment for table cells.</summary>
+    public HorizontalAlignment CellHorizontalContentAlignment
+    {
+        get => (HorizontalAlignment)GetValue(CellHorizontalContentAlignmentProperty);
+        set => SetValue(CellHorizontalContentAlignmentProperty, value);
+    }
+
+    /// <summary>Sets the horizontal alignment for column header content.</summary>
+    public HorizontalAlignment HeaderHorizontalContentAlignment
+    {
+        get => (HorizontalAlignment)GetValue(HeaderHorizontalContentAlignmentProperty);
+        set => SetValue(HeaderHorizontalContentAlignmentProperty, value);
     }
 
     public void SetColumns(IEnumerable<string> columns)
@@ -143,7 +202,6 @@ public sealed partial class SettingTable : UserControl
                 Header = label,
                 Binding = new Binding($"[{index}]") { Mode = BindingMode.OneWay },
                 IsReadOnly = true,
-                Width = new DataGridLength(1, DataGridLengthUnitType.Star),
             });
         }
     }
