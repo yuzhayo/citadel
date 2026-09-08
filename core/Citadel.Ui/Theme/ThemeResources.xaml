@@ -96,15 +96,6 @@
                             BorderThickness="{DynamicResource ShellBorderThickness}"
                             CornerRadius="{DynamicResource SidebarItemCornerRadius}"
                             SnapsToDevicePixels="True" />
-                        <Border
-                            x:Name="GroupAccent"
-                            Width="2"
-                            Margin="{DynamicResource SidebarGroupAccentInset}"
-                            HorizontalAlignment="Left"
-                            Background="{DynamicResource Accent}"
-                            CornerRadius="1"
-                            IsHitTestVisible="False"
-                            Visibility="Collapsed" />
                         <ContentPresenter
                             HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
                             VerticalAlignment="{TemplateBinding VerticalContentAlignment}" />
@@ -120,7 +111,6 @@
                             <Setter TargetName="Surface" Property="Tag" Value="SidebarGroupSurface" />
                             <Setter TargetName="Surface" Property="Margin" Value="{DynamicResource SidebarGroupItemInset}" />
                             <Setter TargetName="Surface" Property="Background" Value="{DynamicResource Card}" />
-                            <Setter TargetName="GroupAccent" Property="Visibility" Value="Visible" />
                         </DataTrigger>
                         <MultiDataTrigger>
                             <MultiDataTrigger.Conditions>

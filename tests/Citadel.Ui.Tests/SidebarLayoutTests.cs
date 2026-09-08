@@ -181,6 +181,7 @@ public sealed class SidebarLayoutTests
             var groupSurface = Assert.Single(
                 WpfLayout.Descendants<Border>(groupRow),
                 element => Equals(element.Tag, "SidebarGroupSurface"));
+            Assert.Null(groupRow.Template.FindName("GroupAccent", groupRow));
             var groupGuide = Assert.Single(
                 WpfLayout.Descendants<Border>(groupRow),
                 element => Equals(element.Tag, "SidebarChildGuide"));

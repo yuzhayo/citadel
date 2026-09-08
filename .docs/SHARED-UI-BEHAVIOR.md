@@ -125,8 +125,10 @@ No per-screen scrollbar templates. Behavior consistent across app.
 - Columns without a feature-owned width start with `ColumnWidth="Auto"`, sizing
   to their header and visible content. A feature may use the same property with
   `SizeToCells`, `SizeToHeader`, a fixed pixel width, or star sizing.
-- `CanUserResizeColumns` defaults to `true`. The shared header template owns the
-  left/right resize grippers; individual columns may still opt out.
+- `CanUserResizeColumns` defaults to `true`. The shared header template owns one
+  transparent right-edge resize target per column, matching spreadsheet
+  boundary dragging without adding visible handles; individual columns may
+  still opt out.
 - `CellHorizontalContentAlignment` supports the normal WPF left, center, and
   right alignments. Its compatibility default is stretch so feature-owned
   templates and `SettingTableActions` keep the full cell width; ordinary text

@@ -79,19 +79,18 @@
                                         Text="▲"
                                         Visibility="Collapsed" />
                                     <Thumb
-                                        x:Name="PART_LeftHeaderGripper"
-                                        Width="5"
-                                        HorizontalAlignment="Left"
-                                        Background="{DynamicResource TransparentBrush}"
-                                        Cursor="SizeWE"
-                                        Focusable="False" />
-                                    <Thumb
                                         x:Name="PART_RightHeaderGripper"
-                                        Width="5"
+                                        Width="7"
                                         HorizontalAlignment="Right"
-                                        Background="{DynamicResource TransparentBrush}"
+                                        Background="Transparent"
                                         Cursor="SizeWE"
-                                        Focusable="False" />
+                                        Focusable="False">
+                                        <Thumb.Template>
+                                            <ControlTemplate TargetType="{x:Type Thumb}">
+                                                <Border Background="Transparent" />
+                                            </ControlTemplate>
+                                        </Thumb.Template>
+                                    </Thumb>
                                 </Grid>
                             </Border>
                             <ControlTemplate.Triggers>

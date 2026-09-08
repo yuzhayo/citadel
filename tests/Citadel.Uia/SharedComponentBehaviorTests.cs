@@ -121,10 +121,13 @@ public class SharedComponentBehaviorTests
             var header = Descendants<DataGridColumnHeader>(grid)
                 .First(candidate => candidate.Column is not null);
             var grippers = Descendants<Thumb>(header).ToArray();
-            Assert.Contains(grippers, thumb => thumb.Name == "PART_LeftHeaderGripper");
+            Assert.DoesNotContain(grippers, thumb => thumb.Name == "PART_LeftHeaderGripper");
             var rightGripper = Assert.Single(
                 grippers,
                 thumb => thumb.Name == "PART_RightHeaderGripper");
+            var gripperSurface = Assert.Single(Descendants<Border>(rightGripper));
+            var gripperBrush = Assert.IsType<SolidColorBrush>(gripperSurface.Background);
+            Assert.Equal(0, gripperBrush.Color.A);
 
             var initialWidth = header.Column.ActualWidth;
             rightGripper.RaiseEvent(new DragDeltaEventArgs(32, 0));
