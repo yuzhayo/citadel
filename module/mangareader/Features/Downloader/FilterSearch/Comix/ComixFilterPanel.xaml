@@ -1,7 +1,7 @@
 <UserControl x:Class="Module.Mangareader.Features.Downloader.FilterSearch.Comix.ComixFilterPanel"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-             xmlns:comix="clr-namespace:Module.Mangareader.Features.Downloader.FilterSearch.Comix"
+             xmlns:mangacomponents="clr-namespace:Module.Mangareader.Components"
              xmlns:setting="clr-namespace:Citadel.Setting.Components;assembly=Citadel.Setting"
              Foreground="{DynamicResource Fg}">
     <UserControl.Resources>
@@ -36,22 +36,22 @@
                   SelectionChanged="SortPicker_SelectionChanged"
                   Style="{DynamicResource SettingComboBoxStyle}" />
 
-        <comix:ComixMultiSelectDropDown x:Name="TypeFilter"
+        <mangacomponents:MangaMultiSelectFilter x:Name="TypeFilter"
                                         Margin="0,0,8,8"
                                         Header="Type"
                                         SelectionChanged="DraftFilter_Changed" />
 
-        <comix:ComixMultiSelectDropDown x:Name="StatusFilter"
+        <mangacomponents:MangaMultiSelectFilter x:Name="StatusFilter"
                                         Margin="0,0,8,8"
                                         Header="Status"
                                         SelectionChanged="DraftFilter_Changed" />
 
-        <comix:ComixMultiSelectDropDown x:Name="RatingFilter"
+        <mangacomponents:MangaMultiSelectFilter x:Name="RatingFilter"
                                         Margin="0,0,8,8"
                                         Header="Rating"
                                         SelectionChanged="DraftFilter_Changed" />
 
-        <comix:ComixMultiSelectDropDown x:Name="GenreFilter"
+        <mangacomponents:MangaMultiSelectFilter x:Name="GenreFilter"
                                         Margin="0,0,8,8"
                                         Header="Genres"
                                         SelectionChanged="DraftFilter_Changed" />
@@ -82,7 +82,7 @@
                               Style="{DynamicResource SettingScrollViewerStyle}"
                               VerticalScrollBarVisibility="Auto">
                     <StackPanel>
-                        <comix:ComixMultiSelectDropDown x:Name="DemographicFilter"
+                        <mangacomponents:MangaMultiSelectFilter x:Name="DemographicFilter"
                                                         Margin="0,0,0,10"
                                                         HorizontalAlignment="Left"
                                                         Header="Demographic"
@@ -204,26 +204,8 @@
                         </Grid>
 
                         <Grid Margin="0,0,0,4">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="Auto" />
-                                <ColumnDefinition Width="*" />
-                                <ColumnDefinition Width="Auto" />
-                            </Grid.ColumnDefinitions>
-                            <setting:SettingButton x:Name="GenreModeButton"
-                                                   MinWidth="96"
-                                                   Height="34"
-                                                   AutomationProperties.Name="Genre match mode"
-                                                   Click="GenreModeButton_Click"
-                                                   Content="AND" />
-                            <TextBlock Grid.Column="1"
-                                       Margin="10,0"
-                                       FontSize="12"
-                                       Foreground="{DynamicResource Dim}"
-                                       Text="Genre/format match mode"
-                                       TextWrapping="Wrap"
-                                       VerticalAlignment="Center" />
                             <setting:SettingButton x:Name="ResetButton"
-                                                   Grid.Column="2"
+                                                   HorizontalAlignment="Right"
                                                    MinWidth="80"
                                                    Height="34"
                                                    AutomationProperties.Name="Reset filters to provider defaults"

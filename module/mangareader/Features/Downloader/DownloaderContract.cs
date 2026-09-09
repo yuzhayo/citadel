@@ -7,21 +7,11 @@ using Module.Mangareader.Library;
 namespace Module.Mangareader.Features.Downloader;
 
 /// <summary>
-/// The two routed child screens of the Downloader tab, and nothing else. There
-/// is no nested tab control, no third screen and no separate window.
-/// </summary>
-public enum DownloaderRoute
-{
-    Catalog,
-    DownloadList,
-}
-
-/// <summary>
-/// The narrow context both children receive. It exposes only what they actually
-/// consume: the source registry, the queue contract, the Library root snapshot,
-/// the mapping index and the Auto Cover command. Route commands stay on the
-/// screens themselves, and no child reaches into a sibling's mutable state
-/// through this.
+/// The narrow context the Catalog child receives. It exposes only what it
+/// actually consumes: the source registry, the queue contract, the Library
+/// root snapshot, the mapping index and the Auto Cover command. Route commands
+/// stay on the screens themselves, and no child reaches into a sibling's
+/// mutable state through this.
 /// </summary>
 public sealed class DownloaderContext
 {

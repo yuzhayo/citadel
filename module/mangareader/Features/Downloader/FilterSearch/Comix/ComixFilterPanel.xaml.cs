@@ -2,6 +2,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using Module.Mangareader.Sources;
+using Module.Mangareader.Components;
 using Module.Mangareader.Features.Downloader.Sources;
 using Module.Mangareader.Features.Downloader.Sources.Comix;
 
@@ -14,7 +15,7 @@ namespace Module.Mangareader.Features.Downloader.FilterSearch.Comix;
 ///
 /// <see cref="CreatePanel"/> and <see cref="State"/> deliberately resolve to the
 /// same instance, because the panel the screen hosts is the panel whose draft the
-/// source snapshots at Start. A second instance here would let a user edit
+/// source snapshots at Search. A second instance here would let a user edit
 /// filters that never reach a request.
 /// </summary>
 public sealed class ComixFilterContribution : IRemoteFilterContribution
@@ -48,15 +49,14 @@ public sealed partial class ComixFilterPanel : UserControl, IRemoteFilterState
 {
     private const string IdleMessage =
         "Defaults: latest update, Safe + Suggestive. Every filter value here was captured "
-        + "live from the provider. No request is sent until Start.";
+        + "live from the provider. No catalog request is sent until Search.";
 
     private readonly Func<RemoteLookupKind, string, CancellationToken, Task<IReadOnlyList<RemoteLookupOption>>> _lookup;
-    private readonly List<ComixCheckOption> _types;
-    private readonly List<ComixCheckOption> _statuses;
-    private readonly List<ComixCheckOption> _ratings;
-    private readonly List<ComixCheckOption> _demographics;
-    private readonly List<ComixCheckOption> _genres;
-    private ComixGenreMode _genreMode = ComixGenreMode.And;
+    private readonly List<MangaFilterOption> _types;
+    private readonly List<MangaFilterOption> _statuses;
+    private readonly List<MangaFilterOption> _ratings;
+    private readonly List<MangaFilterOption> _demographics;
+    private readonly List<MangaFilterOption> _genres;
     private CancellationTokenSource? _lookupCancellation;
 
     public ComixFilterPanel(
@@ -119,9 +119,6 @@ public sealed partial class ComixFilterPanel : UserControl, IRemoteFilterState
         AuthorList.ItemsSource = null;
         ArtistList.ItemsSource = null;
 
-        _genreMode = ComixGenreMode.And;
-        GenreModeButton.Content = "AND";
-
         NumericParseError = null;
         ValidationText.Text = IdleMessage;
     }
@@ -134,7 +131,7 @@ public sealed partial class ComixFilterPanel : UserControl, IRemoteFilterState
         Statuses = StatusFilter.SelectedKeys,
         Demographics = DemographicFilter.SelectedKeys,
         Genres = GenreFilter.SelectedKeys,
-        GenreMode = _genreMode,
+        GenreMode = ComixGenreMode.Or,
         MinimumChapter = ParseNullableInt(MinChapterField.Text),
         YearFrom = ParseNullableInt(YearFromField.Text),
         YearTo = ParseNullableInt(YearToField.Text),
@@ -142,8 +139,8 @@ public sealed partial class ComixFilterPanel : UserControl, IRemoteFilterState
         ArtistKey = (ArtistList.SelectedItem as RemoteLookupOption)?.Key,
     };
 
-    private static List<ComixCheckOption> CheckOptions(IReadOnlyList<RemoteOption> source) =>
-        [.. source.Select(option => new ComixCheckOption(option.Key, option.DisplayName))];
+    private static List<MangaFilterOption> CheckOptions(IReadOnlyList<RemoteOption> source) =>
+        [.. source.Select(option => new MangaFilterOption(option.Key, option.DisplayName))];
 
     private int? ParseNullableInt(string raw)
     {
@@ -189,12 +186,6 @@ public sealed partial class ComixFilterPanel : UserControl, IRemoteFilterState
 
     private void AdvancedButton_Click(object sender, RoutedEventArgs e) =>
         AdvancedPopup.IsOpen = !AdvancedPopup.IsOpen;
-
-    private void GenreModeButton_Click(object sender, RoutedEventArgs e)
-    {
-        _genreMode = _genreMode == ComixGenreMode.And ? ComixGenreMode.Or : ComixGenreMode.And;
-        GenreModeButton.Content = _genreMode == ComixGenreMode.And ? "AND" : "OR";
-    }
 
     private void ResetButton_Click(object sender, RoutedEventArgs e) => Reset();
 

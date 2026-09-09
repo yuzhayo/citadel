@@ -17,7 +17,7 @@ public interface IRemoteFilterContribution
 
 /// <summary>
 /// Filter input state and local validation, owned by the provider feature.
-/// <see cref="Snapshot"/> returns the immutable keyword-aware state taken at Start.
+/// <see cref="Snapshot"/> returns the immutable keyword-aware state taken at Search.
 ///
 /// Reset is deliberately not part of this contract: it belongs to the provider's
 /// own Advanced Filters surface, and no host invokes it.

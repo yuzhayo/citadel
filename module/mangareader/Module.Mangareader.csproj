@@ -11,6 +11,30 @@
   </ItemGroup>
 
   <!--
+    The single pinned data dependency (plan D0.1, SQLite track P1):
+    Microsoft.Data.Sqlite for the offline Catalog Mirror only. Its managed
+    assemblies deploy as ordinary private DLLs; its native engine needs the
+    explicit payload entry below because DeployCitizen only carries flat DLLs.
+  -->
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.11" />
+  </ItemGroup>
+
+  <Target Name="DeployMangaReaderSqliteNative" AfterTargets="DeployCitizen">
+    <PropertyGroup>
+      <SqliteNativeSource>$(TargetDir)runtimes\win-x64\native\e_sqlite3.dll</SqliteNativeSource>
+      <SqliteNativeFolder>$(CitizenRuntimeFolder)runtimes\win-x64\native\</SqliteNativeFolder>
+    </PropertyGroup>
+    <MakeDir Directories="$(SqliteNativeFolder)" Condition="Exists('$(SqliteNativeSource)')" />
+    <Copy SourceFiles="$(SqliteNativeSource)"
+          DestinationFolder="$(SqliteNativeFolder)"
+          SkipUnchangedFiles="true"
+          Condition="Exists('$(SqliteNativeSource)')" />
+    <Warning Condition="!Exists('$(SqliteNativeSource)')"
+             Text="SQLite native engine missing at $(SqliteNativeSource); Catalog Mirror database will not open at runtime." />
+  </Target>
+
+  <!--
     The Downloader owns one pyhost feature plugin. Citizen.targets deploys
     Features/*/<package>/*.py flat beside the shared pyhost payload and the C#
     host activates it via CITADEL_PYHOST_PLUGINS at spawn.
@@ -18,6 +42,23 @@
   <PropertyGroup>
     <PyhostPluginName>mangareader_downloader</PyhostPluginName>
   </PropertyGroup>
+
+  <!-- Catalog is a second top-level runtime owner. Deploy its Python package
+       beside the Downloader package, but activate it only from Catalog's own
+       PyHost process. The two packages never share a browser/session host. -->
+  <Target Name="DeployMangaReaderCatalogPyhostPlugin" AfterTargets="DeployPyhostPlugins">
+    <ItemGroup>
+      <CatalogPyhostPlugin Include="$(MSBuildProjectDirectory)\Features\Catalog\mangareader_catalog\*.py" />
+      <CatalogPyhostPluginInit Include="$(MSBuildProjectDirectory)\Features\Catalog\mangareader_catalog\plugin.py" />
+    </ItemGroup>
+    <MakeDir Directories="$(SharedLogicRuntimeRoot)pyhost\mangareader_catalog\" />
+    <Copy SourceFiles="@(CatalogPyhostPlugin)"
+          DestinationFiles="@(CatalogPyhostPlugin->'$(SharedLogicRuntimeRoot)pyhost\mangareader_catalog\%(Filename)%(Extension)')"
+          SkipUnchangedFiles="true" />
+    <Copy SourceFiles="@(CatalogPyhostPluginInit)"
+          DestinationFiles="$(SharedLogicRuntimeRoot)pyhost\mangareader_catalog\__init__.py"
+          SkipUnchangedFiles="true" />
+  </Target>
 
   <ItemGroup>
     <None Update="Features\Rar\Rar.exe"

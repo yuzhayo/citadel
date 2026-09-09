@@ -15,7 +15,7 @@ namespace Module.Mangareader.Features.Downloader.Queue;
 public partial class DownloadListScreen : UserControl, IDisposable
 {
     private readonly ObservableCollection<DownloadJobRecord> _rows = [];
-    private DownloaderContext? _context;
+    private DownloadQueueFeature? _queue;
     private bool _disposed;
 
     public DownloadListScreen()
@@ -24,29 +24,33 @@ public partial class DownloadListScreen : UserControl, IDisposable
         JobTable.ItemsSource = _rows;
     }
 
-    /// <summary>The only way back to Catalog; this screen is not a tab.</summary>
+    /// <summary>The only way back to the Downloader tab; the MangaReader parent selects it.</summary>
     public event EventHandler? BackRequested;
 
-    public void UseContext(DownloaderContext context)
+    /// <summary>
+    /// Attaches the queue owner with the narrow dependency only. Called by the
+    /// MangaReader composition before this top-level tab is loaded.
+    /// </summary>
+    public void UseQueue(DownloadQueueFeature queue)
     {
-        ArgumentNullException.ThrowIfNull(context);
-        if (_disposed || _context is not null) return;
+        ArgumentNullException.ThrowIfNull(queue);
+        if (_disposed || _queue is not null) return;
 
-        _context = context;
-        context.Queue.QueueSummaryChanged += Queue_QueueSummaryChanged;
-        Render(context.Queue.Snapshot(), context.Queue.Summary());
+        _queue = queue;
+        queue.QueueSummaryChanged += Queue_QueueSummaryChanged;
+        Render(queue.Snapshot(), queue.Summary());
     }
 
     private void Queue_QueueSummaryChanged(object? sender, EventArgs e)
     {
-        if (_disposed || _context is null) return;
+        if (_disposed || _queue is null) return;
         if (!Dispatcher.CheckAccess())
         {
             Dispatcher.BeginInvoke(() => Queue_QueueSummaryChanged(sender, e));
             return;
         }
 
-        Render(_context.Queue.Snapshot(), _context.Queue.Summary());
+        Render(_queue.Snapshot(), _queue.Summary());
     }
 
     private void Render(IReadOnlyList<DownloadJobRecord> jobs, QueueSummary summary)
@@ -91,19 +95,19 @@ public partial class DownloadListScreen : UserControl, IDisposable
 
     private void ClearCompletedButton_Click(object sender, RoutedEventArgs e)
     {
-        if (_context is null) return;
-        Run(() => _context.Queue.ClearCompleted());
+        if (_queue is null) return;
+        Run(() => _queue.ClearCompleted());
     }
 
     private void ResumeButton_Click(object sender, RoutedEventArgs e)
     {
-        if (_context is null) return;
-        Run(() => _context.Queue.ResumeAll());
+        if (_queue is null) return;
+        Run(() => _queue.ResumeAll());
     }
 
     private void PauseResume_Click(object sender, RoutedEventArgs e)
     {
-        if (Row(sender) is not { } job || _context is null) return;
+        if (Row(sender) is not { } job || _queue is null) return;
 
         // A paused or failed job resumes; anything else is asked to park. Pause
         // never terminates the browser or the pyhost process.
@@ -111,11 +115,11 @@ public partial class DownloadListScreen : UserControl, IDisposable
         {
             if (job.State is DownloadJobState.Paused or DownloadJobState.Failed)
             {
-                _context.Queue.Resume(job.JobId);
+                _queue.Resume(job.JobId);
             }
             else
             {
-                _context.Queue.Pause(job.JobId);
+                _queue.Pause(job.JobId);
             }
         });
     }
@@ -126,7 +130,7 @@ public partial class DownloadListScreen : UserControl, IDisposable
     /// </summary>
     private void ChooseSource_Click(object sender, RoutedEventArgs e)
     {
-        if (Row(sender) is not { } job || _context is null) return;
+        if (Row(sender) is not { } job || _queue is null) return;
         if (!job.CanChooseFallback)
         {
             SetStatus("Job ini tidak sedang menunggu fallback source.");
@@ -142,7 +146,7 @@ public partial class DownloadListScreen : UserControl, IDisposable
                 "Use this group");
             if (!accepted) continue;
 
-            Run(() => _context.Queue.ConfirmSourceFallback(job.JobId, candidate));
+            Run(() => _queue.ConfirmSourceFallback(job.JobId, candidate));
             return;
         }
 
@@ -173,11 +177,11 @@ public partial class DownloadListScreen : UserControl, IDisposable
 
     private void Remove_Click(object sender, RoutedEventArgs e)
     {
-        if (Row(sender) is not { } job || _context is null) return;
+        if (Row(sender) is not { } job || _queue is null) return;
 
         // Staging is deleted only after the queue state is committed, and the
         // user is asked first when there is something to lose.
-        if (_context.Queue.HasStagedData(job.JobId))
+        if (_queue.HasStagedData(job.JobId))
         {
             var confirmed = SettingDialog.Confirm(
                 Window.GetWindow(this),
@@ -187,7 +191,7 @@ public partial class DownloadListScreen : UserControl, IDisposable
             if (!confirmed) return;
         }
 
-        Run(() => _context.Queue.Remove(job.JobId));
+        Run(() => _queue.Remove(job.JobId));
     }
 
     private void Run(Action action)
@@ -222,7 +226,7 @@ public partial class DownloadListScreen : UserControl, IDisposable
         _disposed = true;
 
         // The queue itself outlives this screen: only the subscription goes.
-        if (_context is not null) _context.Queue.QueueSummaryChanged -= Queue_QueueSummaryChanged;
+        if (_queue is not null) _queue.QueueSummaryChanged -= Queue_QueueSummaryChanged;
         _rows.Clear();
     }
 }

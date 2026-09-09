@@ -15,12 +15,17 @@ public sealed class ComixFilterSearchPolicyTests
     }
 
     [Fact]
-    public void ExplicitNonDefaultSortIsPreservedDuringSearch()
+    public void KeywordAlwaysUsesBestMatchWhileFiltersStayIntact()
     {
-        var query = ComixBrowseQuery.Default with { SortKey = "title_asc" };
+        var query = ComixBrowseQuery.Default with
+        {
+            SortKey = "title_asc",
+            Types = ["manga"],
+        };
 
         var snapshot = ComixFilterSearchPolicy.Apply(query, "lover boy");
 
-        Assert.Equal("title_asc", snapshot.SortKey);
+        Assert.Equal(ComixFilterSearchPolicy.BestMatchSortKey, snapshot.SortKey);
+        Assert.Equal(["manga"], snapshot.Types);
     }
 }

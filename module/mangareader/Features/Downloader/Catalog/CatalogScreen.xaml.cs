@@ -111,7 +111,6 @@ public partial class CatalogScreen : UserControl, IDisposable
         _catalog = new CatalogFeature(context.Sources, () => context.LibraryRoot.CurrentRoot is not null);
         _catalog.StateChanged += Catalog_StateChanged;
         _lister = context.Lister;
-        context.Queue.QueueSummaryChanged += Queue_QueueSummaryChanged;
         InstallFetchCoverAction();
 
         _settingSource = true;
@@ -132,7 +131,6 @@ public partial class CatalogScreen : UserControl, IDisposable
         }
 
         Render(_catalog.State);
-        RenderBadge(context.Queue.Summary());
     }
 
     private void SourcePicker_SelectionChanged(object sender, SelectionChangedEventArgs e)
@@ -159,52 +157,52 @@ public partial class CatalogScreen : UserControl, IDisposable
 
     private void SearchField_KeyDown(object sender, KeyEventArgs e)
     {
-        // Typing never sends a request; an explicit Enter is a Start.
+        // Typing never sends a request; Enter is the same explicit Search action.
         if (e.Key == Key.Enter)
         {
             e.Handled = true;
-            StartButton_Click(sender, e);
+            SearchButton_Click(sender, e);
         }
     }
 
     private async void StartButton_Click(object sender, RoutedEventArgs e)
     {
-        if (_disposed || _catalog is null) return;
+        await StartCatalogAsync();
+    }
 
-        // The button is the Browse control only. Opening a title, changing group
-        // and Load more own their own lifecycle and are never stopped from here.
-        if (_browseActive)
-        {
-            Stop();
-            return;
-        }
+    private async void SearchButton_Click(object sender, RoutedEventArgs e)
+    {
+        await StartCatalogAsync();
+    }
 
-        // Enforced here and not only by the disabled button: Enter in the search
-        // field reaches this handler directly, so the refusal has to live where the
-        // Browse is actually started.
+    private async Task StartCatalogAsync()
+    {
+        if (_disposed || _catalog is null || _context is null || _browseActive) return;
         if (_catalog.State.IsActionBusy) return;
 
-        if (_context is not null)
-        {
-            _context.Browser.ShowBrowser = ShowBrowserToggle.IsChecked == true;
-        }
-
+        // Preserve the established Start behavior: the requested mode is applied
+        // by the provider's existing browse path. Switching the toggle and pressing
+        // Start therefore replaces a headed session with headless (or vice versa)
+        // and returns the catalog in the same operation.
+        _context.Browser.ShowBrowser = ShowBrowserToggle.IsChecked == true;
         await RunBrowseAsync(token => _catalog.StartAsync(SearchField.Text, token));
     }
 
-    /// <summary>
-    /// Stops the active Browse and its Downloader-owned Python/browser process.
-    /// The result is marked stale first, so termination is a requested terminal
-    /// state rather than a provider error. A later Start creates a clean session.
-    /// </summary>
-    private void Stop()
+    /// <summary>Stops only the Downloader-owned online provider process.</summary>
+    private void StopButton_Click(object sender, RoutedEventArgs e)
     {
-        if (_stopping || _catalog is null) return;
+        if (_stopping || _catalog is null || _context is null) return;
 
         _stopping = true;
         _catalog.AbandonActiveBrowse();
-        _context?.Browser.AbortSession();
         _browseCancellation?.Cancel();
+        _context.Browser.AbortSession();
+        if (!_browseActive)
+        {
+            _stopping = false;
+            SetStatus("Provider process stopped.", isError: false);
+            Render(_catalog.State);
+        }
     }
 
     private async void LoadMoreButton_Click(object sender, RoutedEventArgs e)
@@ -265,9 +263,6 @@ public partial class CatalogScreen : UserControl, IDisposable
             await RefreshListerAsync(token);
         });
     }
-
-    private void DownloadListButton_Click(object sender, RoutedEventArgs e) =>
-        OpenDownloadList?.Invoke(this, EventArgs.Empty);
 
     private void QueueButton_Click(object sender, RoutedEventArgs e)
     {
@@ -417,24 +412,9 @@ public partial class CatalogScreen : UserControl, IDisposable
         Render(_catalog.State);
     }
 
-    private void Queue_QueueSummaryChanged(object? sender, EventArgs e)
-    {
-        if (_disposed || _context is null) return;
-        if (!Dispatcher.CheckAccess())
-        {
-            Dispatcher.BeginInvoke(() => Queue_QueueSummaryChanged(sender, e));
-            return;
-        }
-
-        RenderBadge(_context.Queue.Summary());
-    }
-
-    private void RenderBadge(QueueSummary summary) =>
-        DownloadListButton.Content = $"Download List ({summary.BadgeCount})";
-
     private void Render(CatalogState state)
     {
-        RenderRequestButton(state);
+        RenderRequestButtons(state);
         LoadMoreButton.IsEnabled = !state.IsBusy && !_stopping && state.CanLoadMore;
         SourcePicker.IsEnabled = !state.IsBusy;
         SearchField.IsEnabled = !state.IsBusy;
@@ -462,40 +442,23 @@ public partial class CatalogScreen : UserControl, IDisposable
     }
 
     /// <summary>
-    /// The request button is the Browse activity indicator and nothing else, so an
-    /// open title, a group change or a Load more never turns it into Stop. A
-    /// terminal Browse reads Start, an active Browse reads Stop, the bounded inline
-    /// command settling after a Stop reads a disabled Stopping, and a detail action
-    /// in flight reads a disabled Start — same label, but not offered, because a
-    /// Browse must not cut into it. Provider errors and validation stay in the status
-    /// line below the bar and are not hidden merely because the button returned to
-    /// Start.
+    /// Start and Search both use the established provider browse path. Stop is a
+    /// separate process-lifetime action and remains available throughout a request.
     /// </summary>
-    private void RenderRequestButton(CatalogState state)
+    private void RenderRequestButtons(CatalogState state)
     {
-        ShowBrowserToggle.IsEnabled = !_browseActive && !_stopping && !state.IsActionBusy;
-
-        if (_stopping)
-        {
-            StartButton.Content = "Stopping…";
-            StartButton.IsEnabled = false;
-            return;
-        }
-
-        if (_browseActive)
-        {
-            StartButton.Content = "Stop";
-            StartButton.IsEnabled = true;
-            return;
-        }
-
+        var processBusy = _browseActive || _stopping;
+        var hasSession = !_browseActive && _context?.Browser.HasSession == true;
+        ShowBrowserToggle.IsEnabled = !processBusy && !state.IsActionBusy;
         StartButton.Content = "Start";
-
-        // A detail or group action in flight is not something Start may cut into. The
-        // button stays the Browse activity indicator — an action never turns it into
-        // Stop — but it is not offered while one runs, matching the picker and the
-        // search field, which already lock on the union of both busy halves.
-        StartButton.IsEnabled = state.SelectedSourceId is not null && !state.IsActionBusy;
+        StartButton.IsEnabled = state.SelectedSourceId is not null
+            && !processBusy
+            && !state.IsActionBusy;
+        SearchButton.Content = _browseActive ? "Searching…" : "Search";
+        SearchButton.IsEnabled = !processBusy
+            && !state.IsActionBusy;
+        StopButton.IsEnabled = !_stopping
+            && (hasSession || _browseActive);
     }
 
     private void RenderDetail(CatalogState state)
@@ -1106,7 +1069,6 @@ public partial class CatalogScreen : UserControl, IDisposable
 
         IsVisibleChanged -= CatalogScreen_IsVisibleChanged;
         if (_catalog is not null) _catalog.StateChanged -= Catalog_StateChanged;
-        if (_context is not null) _context.Queue.QueueSummaryChanged -= Queue_QueueSummaryChanged;
 
         var actionCancellation = _actionCancellation;
         _actionCancellation = null;

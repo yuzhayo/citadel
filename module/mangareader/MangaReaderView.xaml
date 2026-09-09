@@ -3,6 +3,8 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:local="clr-namespace:Module.Mangareader"
              xmlns:downloader="clr-namespace:Module.Mangareader.Features.Downloader"
+             xmlns:catalog="clr-namespace:Module.Mangareader.Features.Catalog"
+             xmlns:queue="clr-namespace:Module.Mangareader.Features.Downloader.Queue"
              xmlns:setting="clr-namespace:Citadel.Setting.Components;assembly=Citadel.Setting"
              Background="{DynamicResource Bg}"
              Foreground="{DynamicResource Fg}"
@@ -10,21 +12,32 @@
              SnapsToDevicePixels="True">
     <Grid>
         <setting:SettingTabs x:Name="WorkspaceTabs">
-            <TabItem Header="Library">
+            <TabItem Header="Library" Padding="12,9">
                 <local:LibraryView x:Name="LibraryTab"
                                    TitlesChanged="LibraryTab_TitlesChanged"
                                    OpenChapterRequested="OpenChapterRequested" />
             </TabItem>
-            <TabItem Header="History">
+            <TabItem Header="History" Padding="12,9">
                 <local:HistoryView x:Name="HistoryTab"
                                    OpenChapterRequested="OpenChapterRequested" />
             </TabItem>
-            <TabItem Header="Cover Builder">
+            <TabItem Header="Cover Builder" Padding="12,9">
                 <local:CoverBuilderView x:Name="CoverBuilderTab"
                                         CoverBaked="CoverBuilderTab_CoverBaked" />
             </TabItem>
-            <TabItem Header="Downloader">
+            <TabItem x:Name="DownloaderTabItem" Header="Downloader" Padding="12,9">
                 <downloader:DownloaderView x:Name="DownloaderTab" />
+            </TabItem>
+            <TabItem x:Name="CatalogTabItem" Header="Catalog" Padding="12,9">
+                <catalog:CatalogView x:Name="CatalogTab" />
+            </TabItem>
+            <TabItem x:Name="QueueTabItem"
+                     Header="Queue"
+                     Padding="12,9"
+                     ToolTip="Download Queue"
+                     AutomationProperties.Name="Download Queue">
+                <queue:DownloadListScreen x:Name="DownloadQueueTab"
+                                          BackRequested="DownloadQueueTab_BackRequested" />
             </TabItem>
         </setting:SettingTabs>
     </Grid>

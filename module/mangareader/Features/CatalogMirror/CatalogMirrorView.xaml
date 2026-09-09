@@ -1,0 +1,394 @@
+<UserControl x:Class="Module.Mangareader.Features.CatalogMirror.CatalogMirrorView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:setting="clr-namespace:Citadel.Setting.Components;assembly=Citadel.Setting"
+             xmlns:manga="clr-namespace:Module.Mangareader"
+             xmlns:mangacomponents="clr-namespace:Module.Mangareader.Components"
+             Background="{DynamicResource Bg}"
+             Foreground="{DynamicResource Fg}"
+             UseLayoutRounding="True"
+             SnapsToDevicePixels="True">
+    <!--
+      Offline Catalog layout from existing shared presentation only: action
+      card, fields, combo, card grid and shared scrolling. No new primitive,
+      style or template; data and policy live in the feature.
+    -->
+    <setting:SettingViewport Mode="Contained">
+        <Grid>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="*" />
+                <RowDefinition Height="Auto" />
+            </Grid.RowDefinitions>
+
+            <setting:SettingActionCard>
+                <setting:SettingActionCard.Content>
+                    <WrapPanel Orientation="Horizontal" VerticalAlignment="Center">
+                        <TextBlock Margin="0,0,12,8"
+                                   VerticalAlignment="Center"
+                                   FontWeight="SemiBold"
+                                   Foreground="{DynamicResource Dim}"
+                                   Text="Comix"
+                                   AutomationProperties.Name="Catalog provider Comix" />
+                        <setting:SettingField x:Name="SearchField"
+                                              Width="220"
+                                              Height="34"
+                                              Margin="0,0,8,8"
+                                              Placeholder="Search titles locally"
+                                              AutomationProperties.Name="Search catalog locally"
+                                              KeyDown="SearchField_KeyDown" />
+                        <setting:SettingButton x:Name="SearchButton"
+                                               MinWidth="88"
+                                               Height="34"
+                                               Margin="0,0,8,8"
+                                               Content="Search"
+                                               Click="SearchButton_Click"
+                                               AutomationProperties.Name="Search loaded catalog" />
+                        <setting:SettingButton x:Name="FiltersButton"
+                                               MinWidth="96"
+                                               Height="34"
+                                               Margin="0,0,8,8"
+                                               Content="Filters"
+                                               Click="FiltersButton_Click"
+                                               AutomationProperties.Name="Show or hide local filters" />
+                        <ComboBox x:Name="SortBox"
+                                  MinWidth="170"
+                                  Height="34"
+                                  Margin="0,0,8,8"
+                                  Style="{DynamicResource SettingComboBoxStyle}"
+                                  AutomationProperties.Name="Sort catalog locally"
+                                  SelectionChanged="SortBox_SelectionChanged" />
+                    </WrapPanel>
+                </setting:SettingActionCard.Content>
+                <setting:SettingActionCard.ActionContent>
+                    <WrapPanel Orientation="Horizontal">
+                        <setting:SettingToggle x:Name="ShowBrowserToggle"
+                                               Margin="0,0,8,0"
+                                               IsChecked="False"
+                                               ToolTip="Show the Catalog browser; off keeps Catalog headless"
+                                               AutomationProperties.Name="Show Catalog browser while online">
+                            <TextBlock FontFamily="Segoe MDL2 Assets"
+                                       FontSize="14"
+                                       Text="&#xE946;" />
+                        </setting:SettingToggle>
+                        <setting:SettingButton x:Name="StartOnlineButton"
+                                               MinWidth="88"
+                                               Height="34"
+                                               Margin="0,0,8,0"
+                                               Content="Start"
+                                               Click="StartOnlineButton_Click"
+                                               AutomationProperties.Name="Start Catalog provider process" />
+                        <setting:SettingButton x:Name="StopOnlineButton"
+                                               MinWidth="88"
+                                               Height="34"
+                                               Margin="0,0,8,0"
+                                               Content="Stop"
+                                               Click="StopOnlineButton_Click"
+                                               AutomationProperties.Name="Stop Catalog provider process" />
+                        <setting:SettingButton x:Name="LoadButton"
+                                               MinWidth="112"
+                                               Height="34"
+                                               Margin="0,0,8,0"
+                                               Content="Load Catalog"
+                                               Click="LoadButton_Click"
+                                               ToolTip="Load catalog data from the local database"
+                                               AutomationProperties.Name="Load catalog from database" />
+                        <setting:SettingButton x:Name="SyncButton"
+                                               MinWidth="120"
+                                               Height="34"
+                                               Margin="0,0,8,0"
+                                               Content="Sync Catalog"
+                                               Click="SyncButton_Click"
+                                               AutomationProperties.Name="Sync resume or stop the catalog" />
+                        <setting:SettingButton x:Name="RefreshButton"
+                                               MinWidth="96"
+                                               Height="34"
+                                               Margin="0,0,8,0"
+                                               Content="Refresh"
+                                               Click="RefreshButton_Click"
+                                               ToolTip="Refresh from latest updates"
+                                               AutomationProperties.Name="Refresh catalog from latest updates" />
+                        <setting:SettingButton x:Name="GenreSyncButton"
+                                               MinWidth="120"
+                                               Height="34"
+                                               Content="Sync Genres"
+                                               Click="GenreSyncButton_Click"
+                                               ToolTip="Enrich the active catalog with genre memberships"
+                                               AutomationProperties.Name="Sync catalog genres" />
+                        <setting:SettingButton x:Name="WarningsButton"
+                                               MinWidth="120"
+                                               Height="34"
+                                               Margin="8,0,0,0"
+                                               Content="Warnings"
+                                               Click="WarningsButton_Click"
+                                               ToolTip="Show sync warnings"
+                                               AutomationProperties.Name="Show sync warnings"
+                                               Visibility="Collapsed" />
+                    </WrapPanel>
+                </setting:SettingActionCard.ActionContent>
+            </setting:SettingActionCard>
+
+            <StackPanel Grid.Row="1" Margin="2,8,2,0">
+                <TextBlock x:Name="StatusLine"
+                           Foreground="{DynamicResource Body}"
+                           Text="No snapshot."
+                           TextWrapping="Wrap"
+                           AutomationProperties.LiveSetting="Polite" />
+                <ProgressBar x:Name="SyncProgressBar"
+                             Height="6"
+                             Margin="0,6,0,0"
+                             Minimum="0"
+                             Maximum="100"
+                             Visibility="Collapsed"
+                             AutomationProperties.Name="Catalog sync progress" />
+                <TextBlock x:Name="PartialLabel"
+                           Margin="0,4,0,0"
+                           FontStyle="Italic"
+                           Foreground="{DynamicResource Dim}"
+                           Text="Sync writes to the database only. Press Load Catalog when you want to refresh the displayed data."
+                           TextWrapping="Wrap"
+                           Visibility="Collapsed" />
+            </StackPanel>
+
+            <Border x:Name="FilterPanel"
+                    Grid.Row="2"
+                    Margin="0,8,0,0"
+                    Padding="12,10"
+                    Style="{DynamicResource SettingCardStyle}"
+                    Visibility="Collapsed">
+                <StackPanel>
+                    <WrapPanel Orientation="Horizontal">
+                        <mangacomponents:MangaMultiSelectFilter x:Name="RatingFilter"
+                                                                Margin="0,0,8,8"
+                                                                Header="Rating"
+                                                                SelectionChanged="LocalFilter_Changed" />
+                        <mangacomponents:MangaMultiSelectFilter x:Name="TypeFilter"
+                                                                Margin="0,0,8,8"
+                                                                Header="Type"
+                                                                SelectionChanged="LocalFilter_Changed" />
+                        <mangacomponents:MangaMultiSelectFilter x:Name="StatusFilter"
+                                                                Margin="0,0,8,8"
+                                                                Header="Status"
+                                                                SelectionChanged="LocalFilter_Changed" />
+                        <mangacomponents:MangaMultiSelectFilter x:Name="LanguageFilter"
+                                                                Margin="0,0,8,8"
+                                                                Header="Language"
+                                                                SelectionChanged="LocalFilter_Changed" />
+                        <mangacomponents:MangaMultiSelectFilter x:Name="GenreFilter"
+                                                                Margin="0,0,8,8"
+                                                                Header="Genres"
+                                                                IsEnabled="False"
+                                                                SelectionChanged="LocalFilter_Changed" />
+                    </WrapPanel>
+                    <TextBlock x:Name="GenreStatusText"
+                               Margin="0,0,0,8"
+                               Foreground="{DynamicResource Dim}"
+                               Text="Genres become available after Genre Sync completes and Load Catalog is pressed."
+                               TextWrapping="Wrap" />
+                    <WrapPanel Margin="0,10,0,0" Orientation="Horizontal" VerticalAlignment="Center">
+                        <setting:SettingField x:Name="YearFromField"
+                                              Width="110"
+                                              Height="34"
+                                              Margin="0,0,8,0"
+                                              Placeholder="Year from"
+                                              AutomationProperties.Name="Filter year from" />
+                        <setting:SettingField x:Name="YearToField"
+                                              Width="110"
+                                              Height="34"
+                                              Margin="0,0,8,0"
+                                              Placeholder="Year to"
+                                              AutomationProperties.Name="Filter year to" />
+                        <setting:SettingField x:Name="MinChapterField"
+                                              Width="150"
+                                              Height="34"
+                                              Margin="0,0,8,0"
+                                              Placeholder="Min. chapter"
+                                              AutomationProperties.Name="Filter minimum latest chapter" />
+                        <setting:SettingButton x:Name="ApplyFiltersButton"
+                                               MinWidth="96"
+                                               Height="34"
+                                               Content="Apply"
+                                               Click="ApplyFiltersButton_Click"
+                                               AutomationProperties.Name="Apply local filters" />
+                        <setting:SettingButton x:Name="ResetFiltersButton"
+                                               MinWidth="96"
+                                               Height="34"
+                                               Margin="8,0,0,0"
+                                               Content="Reset"
+                                               Click="ResetFiltersButton_Click"
+                                               AutomationProperties.Name="Reset local filters" />
+                    </WrapPanel>
+                </StackPanel>
+            </Border>
+
+            <Grid x:Name="ResultsArea" Grid.Row="3" Margin="0,10,0,0">
+                <ScrollViewer x:Name="ResultsScroll"
+                              VerticalScrollBarVisibility="Auto"
+                              HorizontalScrollBarVisibility="Disabled"
+                              Style="{DynamicResource SettingScrollViewerStyle}">
+                    <ItemsControl x:Name="ResultsList">
+                        <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate>
+                                <WrapPanel Orientation="Horizontal" />
+                            </ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <manga:MangaTitleCard Margin="0,0,12,12"
+                                                      Tag="{Binding}"
+                                                      Click="TitleCard_Click" />
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </ScrollViewer>
+
+                <StackPanel x:Name="EmptyPanel"
+                            HorizontalAlignment="Center"
+                            VerticalAlignment="Center"
+                            MaxWidth="440"
+                            Visibility="Collapsed">
+                    <TextBlock x:Name="EmptyTitle"
+                               FontSize="17"
+                               FontWeight="SemiBold"
+                               HorizontalAlignment="Center"
+                               Text="No snapshot yet" />
+                    <TextBlock x:Name="EmptyDetail"
+                               Margin="0,8,0,0"
+                               TextWrapping="Wrap"
+                               TextAlignment="Center"
+                               Foreground="{DynamicResource Body}"
+                               Text="Press Sync Catalog to download the title index. Search, filter, sort and paging stay offline afterwards." />
+                </StackPanel>
+            </Grid>
+
+            <StackPanel x:Name="PaginationRow"
+                        Grid.Row="4"
+                        Margin="0,10,0,0"
+                        Orientation="Horizontal"
+                        HorizontalAlignment="Center">
+                <setting:SettingButton x:Name="PreviousPageButton"
+                                       MinWidth="96"
+                                       Content="Previous"
+                                       Click="PreviousPageButton_Click"
+                                       AutomationProperties.Name="Previous result page" />
+                <TextBlock x:Name="PageLabel"
+                           Margin="14,0"
+                           VerticalAlignment="Center"
+                           Foreground="{DynamicResource Body}"
+                           Text="Page 1 of 1" />
+                <setting:SettingButton x:Name="NextPageButton"
+                                       MinWidth="96"
+                                       Content="Next"
+                                       Click="NextPageButton_Click"
+                                       AutomationProperties.Name="Next result page" />
+            </StackPanel>
+
+            <!-- Title detail replaces the grid; Back restores it exactly. -->
+            <Grid x:Name="DetailHost" Grid.Row="3" Visibility="Collapsed">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="*" />
+                    <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
+
+                <mangacomponents:MangaDetailView x:Name="DetailView"
+                                                  MaxHeight="300">
+                    <mangacomponents:MangaDetailView.HeaderLeadingContent>
+                        <setting:SettingButton Width="38"
+                                               Height="38"
+                                               HorizontalAlignment="Left"
+                                               Padding="0"
+                                               Click="DetailBackButton_Click"
+                                               ToolTip="Back to catalog results"
+                                               AutomationProperties.Name="Back to catalog results">
+                            <TextBlock FontFamily="Segoe MDL2 Assets"
+                                       FontSize="14"
+                                       Text="&#xE72B;" />
+                        </setting:SettingButton>
+                    </mangacomponents:MangaDetailView.HeaderLeadingContent>
+                </mangacomponents:MangaDetailView>
+
+                <StackPanel Grid.Row="1"
+                             Margin="0,10,0,0"
+                             Orientation="Horizontal"
+                             VerticalAlignment="Center">
+                    <TextBlock VerticalAlignment="Center"
+                               Foreground="{DynamicResource Dim}"
+                               Text="Source group" />
+                    <ComboBox x:Name="GroupBox"
+                              MinWidth="200"
+                              Height="34"
+                              Margin="10,0,0,0"
+                              Style="{DynamicResource SettingComboBoxStyle}"
+                              DisplayMemberPath="DisplayName"
+                              AutomationProperties.Name="Source group"
+                              SelectionChanged="GroupBox_SelectionChanged" />
+                    <TextBlock x:Name="DetailStatus"
+                               Margin="12,0,0,0"
+                               VerticalAlignment="Center"
+                               Foreground="{DynamicResource Body}"
+                               TextWrapping="Wrap"
+                               AutomationProperties.LiveSetting="Polite" />
+                </StackPanel>
+
+                <Border Grid.Row="2"
+                        Margin="0,10,0,0"
+                        Style="{DynamicResource SettingCardStyle}">
+                    <setting:SettingTable x:Name="ChapterTable"
+                                          AutomationProperties.Name="Chapters">
+                        <setting:SettingTable.InteractiveColumns>
+                        <DataGridTemplateColumn Header="Title"
+                                                MinWidth="220">
+                            <DataGridTemplateColumn.CellTemplate>
+                                <DataTemplate>
+                                    <TextBlock Text="{Binding DisplayName}"
+                                               TextTrimming="CharacterEllipsis"
+                                               ToolTip="{Binding DisplayName}" />
+                                </DataTemplate>
+                            </DataGridTemplateColumn.CellTemplate>
+                        </DataGridTemplateColumn>
+                        <DataGridTemplateColumn Header="On device"
+                                                MinWidth="110">
+                            <DataGridTemplateColumn.CellTemplate>
+                                <DataTemplate>
+                                    <TextBlock Text="{Binding AvailabilityText}" />
+                                </DataTemplate>
+                            </DataGridTemplateColumn.CellTemplate>
+                        </DataGridTemplateColumn>
+                        <DataGridTemplateColumn MinWidth="90">
+                            <DataGridTemplateColumn.Header>
+                                <CheckBox Content="Select all"
+                                          Loaded="SelectAllCheckBox_Loaded"
+                                          Checked="SelectAllCheckBox_Changed"
+                                          Unchecked="SelectAllCheckBox_Changed"
+                                          AutomationProperties.Name="Select all chapters" />
+                            </DataGridTemplateColumn.Header>
+                            <DataGridTemplateColumn.CellTemplate>
+                                <DataTemplate>
+                                    <CheckBox IsChecked="{Binding IsSelected, Mode=OneWay}"
+                                              Tag="{Binding ChapterId}"
+                                              Checked="ChapterCheckBox_Changed"
+                                              Unchecked="ChapterCheckBox_Changed"
+                                              AutomationProperties.Name="Select chapter" />
+                                </DataTemplate>
+                            </DataGridTemplateColumn.CellTemplate>
+                        </DataGridTemplateColumn>
+                        </setting:SettingTable.InteractiveColumns>
+                    </setting:SettingTable>
+                </Border>
+
+                <setting:SettingButton x:Name="QueueSelectedButton"
+                                       Grid.Row="3"
+                                       MinWidth="160"
+                                       Margin="0,10,0,0"
+                                       HorizontalAlignment="Center"
+                                       Content="Queue Selected"
+                                       Click="QueueSelectedButton_Click"
+                                       AutomationProperties.Name="Queue selected chapters" />
+            </Grid>
+        </Grid>
+    </setting:SettingViewport>
+</UserControl>

@@ -1,13 +1,13 @@
-using System.Windows;
 using System.Windows.Controls;
 using Module.Mangareader.Features.Downloader.AutoCover;
 
 namespace Module.Mangareader.Features.Downloader;
 
 /// <summary>
-/// The Downloader's route host. It owns routing and child lifetime only — no
-/// filter, job, provider or transport state lives here, and hiding a screen
-/// never disposes it.
+/// The Downloader's route host. It owns the online Catalog child and its
+/// lifetime only — no filter, job, provider or transport state lives here.
+/// Queue navigation is relayed to the MangaReader parent, which owns the
+/// top-level tabs.
 /// </summary>
 public partial class DownloaderView : UserControl, IDisposable
 {
@@ -26,7 +26,7 @@ public partial class DownloaderView : UserControl, IDisposable
     public DownloaderView() => InitializeComponent();
 
     /// <summary>
-    /// Attaches the module-lifetime context to both children. Called by the
+    /// Attaches the module-lifetime context to the Catalog child. Called by the
     /// MangaReader composition before this view is loaded.
     /// </summary>
     public void UseContext(DownloaderContext context)
@@ -36,17 +36,18 @@ public partial class DownloaderView : UserControl, IDisposable
 
         _context = context;
         CatalogScreen.UseContext(context);
-        DownloadListScreen.UseContext(context);
         CatalogScreen.OpenDownloadList += CatalogScreen_OpenDownloadList;
         CatalogScreen.CoverCandidateAvailable += CatalogScreen_CoverCandidateAvailable;
-        DownloadListScreen.BackRequested += DownloadListScreen_BackRequested;
-        Navigate(DownloaderRoute.Catalog);
     }
 
-    public DownloaderRoute Route { get; private set; } = DownloaderRoute.Catalog;
+    /// <summary>
+    /// The Catalog asked for the standalone Download Queue tab. This host keeps
+    /// no queue screen itself; the MangaReader parent selects that tab.
+    /// </summary>
+    public event EventHandler? OpenDownloadQueue;
 
     private void CatalogScreen_OpenDownloadList(object? sender, EventArgs e) =>
-        Navigate(DownloaderRoute.DownloadList);
+        OpenDownloadQueue?.Invoke(this, EventArgs.Empty);
 
     /// <summary>
     /// Relays one immutable cover candidate to Auto Cover. This host decides
@@ -82,21 +83,6 @@ public partial class DownloaderView : UserControl, IDisposable
         }
     }
 
-    private void DownloadListScreen_BackRequested(object? sender, EventArgs e) =>
-        Navigate(DownloaderRoute.Catalog);
-
-    private void Navigate(DownloaderRoute route)
-    {
-        if (_disposed) return;
-        Route = route;
-
-        // Visibility, not reconstruction: Catalog keeps its provider, filters,
-        // result page, selection and scroll anchor, and the queue keeps running.
-        var catalog = route == DownloaderRoute.Catalog;
-        CatalogScreen.Visibility = catalog ? Visibility.Visible : Visibility.Collapsed;
-        DownloadListScreen.Visibility = catalog ? Visibility.Collapsed : Visibility.Visible;
-    }
-
     public void Dispose()
     {
         if (_disposed) return;
@@ -104,7 +90,6 @@ public partial class DownloaderView : UserControl, IDisposable
 
         CatalogScreen.OpenDownloadList -= CatalogScreen_OpenDownloadList;
         CatalogScreen.CoverCandidateAvailable -= CatalogScreen_CoverCandidateAvailable;
-        DownloadListScreen.BackRequested -= DownloadListScreen_BackRequested;
 
         // Take the field, clear it, then cancel and dispose: an automatic cover
         // still in flight must stop with its host, and nothing afterwards can hand
@@ -115,7 +100,6 @@ public partial class DownloaderView : UserControl, IDisposable
         lifetime?.Dispose();
 
         CatalogScreen.Dispose();
-        DownloadListScreen.Dispose();
         _context = null;
     }
 }

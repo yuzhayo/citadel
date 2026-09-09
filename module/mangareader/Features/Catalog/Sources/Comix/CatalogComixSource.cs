@@ -4,9 +4,10 @@ using System.Text;
 using System.Text.RegularExpressions;
 using System.Text.Json.Nodes;
 using CitadelBridge;
+using Module.Mangareader.Features.Catalog.Runtime;
 using Module.Mangareader.Sources;
 
-namespace Module.Mangareader.Features.Downloader.Sources.Comix;
+namespace Module.Mangareader.Features.Catalog.Sources.Comix;
 
 /// <summary>
 /// The whole Comix wire contract in one place: routes, query keys and response
@@ -509,8 +510,8 @@ public static class ComixOptions
 /// The Comix adapter: routes, page-context calls, parsing and normalization.
 /// No WPF, no queue, no archive writing.
 /// </summary>
-public sealed class ComixSource(DownloaderPyHostClient client)
-    : IMangaSource, ICatalogSnapshotSource, ICatalogGenreSnapshotSource
+public sealed class CatalogComixSource(CatalogBrowserClient client)
+    : IMangaSource, ICatalogSnapshotSource
 {
     /// <summary>
     /// Bound on one chapter listing: 100 captured pages of 20 is 2000 chapters,
@@ -519,15 +520,13 @@ public sealed class ComixSource(DownloaderPyHostClient client)
     /// </summary>
     private const int MaximumChapterPages = 100;
 
-    private readonly DownloaderPyHostClient _client = client;
+    private readonly CatalogBrowserClient _client = client;
 
     public string Id => ComixContract.SourceId;
 
     public string DisplayName => ComixContract.DisplayName;
 
     string ICatalogSnapshotSource.SourceId => ComixContract.SourceId;
-
-    string ICatalogGenreSnapshotSource.SourceId => ComixContract.SourceId;
 
     /// <summary>
     /// Only the lookups this adapter can actually answer. Genre and format are not
@@ -560,11 +559,6 @@ public sealed class ComixSource(DownloaderPyHostClient client)
             .Select(option => new CatalogSnapshotPartition(option.Key, option.Key))
             .ToArray();
 
-    public IReadOnlyList<CatalogSnapshotGenre> SnapshotGenres { get; } =
-        ComixOptions.Genres
-            .Select(option => new CatalogSnapshotGenre(option.Key, option.DisplayName))
-            .ToArray();
-
     /// <summary>
     /// One snapshot page through the same browser page-context path as
     /// <see cref="BrowseAsync"/>, plus exactly one same-page retry when the
@@ -580,62 +574,6 @@ public sealed class ComixSource(DownloaderPyHostClient client)
             token => FetchSnapshotPageAsync(partition, page, token, latestFirst),
             token => _client.ReleaseSessionAsync(token),
             cancellationToken);
-
-    public Task<CatalogSnapshotGenrePage> GetGenreSnapshotPageAsync(
-        CatalogSnapshotGenre genre,
-        int page,
-        CancellationToken cancellationToken) =>
-        WithSnapshotSessionRetryAsync(
-            token => FetchGenreSnapshotPageAsync(genre, page, token),
-            token => _client.ReleaseSessionAsync(token),
-            cancellationToken);
-
-    private async Task<CatalogSnapshotGenrePage> FetchGenreSnapshotPageAsync(
-        CatalogSnapshotGenre genre,
-        int page,
-        CancellationToken cancellationToken)
-    {
-        ArgumentNullException.ThrowIfNull(genre);
-        if (page < 1) throw new ArgumentOutOfRangeException(nameof(page), "page is one-based");
-        if (ComixOptions.Genres.All(option =>
-            !string.Equals(option.Key, genre.Key, StringComparison.Ordinal)))
-        {
-            throw new ComixContractException($"Genre '{genre.Key}' is not offered.");
-        }
-
-        var filter = new ComixBrowseQuery
-        {
-            SortKey = SnapshotSortKey,
-            Genres = [genre.Key],
-            GenreMode = ComixGenreMode.Or,
-        };
-        var query = new StringBuilder(filter.ToQueryString());
-        AppendKey(query, ComixContract.KeyPage, page.ToString(CultureInfo.InvariantCulture));
-        AppendKey(query, ComixContract.KeyLimit, ComixContract.PageSize.ToString(CultureInfo.InvariantCulture));
-
-        var result = await GetResultAsync(ComixContract.RouteBrowse, query.ToString(), cancellationToken)
-            .ConfigureAwait(false);
-        var items = result[ComixContract.FieldItems] as JsonArray ?? throw Missing(ComixContract.FieldItems);
-        var identities = new List<string>(items.Count);
-        foreach (var item in items)
-        {
-            if (item is not JsonObject entry)
-            {
-                throw new ComixContractException(
-                    "Comix genre snapshot item is not an object; the provider contract changed.");
-            }
-
-            var hid = ReadString(entry, ComixContract.FieldHid) ?? throw Missing(ComixContract.FieldHid);
-            identities.Add(ReadLong(entry, ComixContract.FieldId)?.ToString(CultureInfo.InvariantCulture) ?? hid);
-        }
-
-        var meta = result[ComixContract.FieldMeta] as JsonObject;
-        return new CatalogSnapshotGenrePage(
-            identities,
-            meta is null ? null : ReadLong(meta, ComixContract.MetaTotal),
-            page,
-            HasNextPage(result));
-    }
 
     /// <summary>
     /// The snapshot-only session-expiry policy: release the existing browser
@@ -1240,13 +1178,13 @@ public sealed class ComixSource(DownloaderPyHostClient client)
             (int)ReadParameter(transform, "grid"),
             (int)ReadParameter(transform, "algo"),
             transform.Parameters.TryGetValue("hash", out var hash) ? (int)long.Parse(hash, CultureInfo.InvariantCulture) : null);
-        if (!ComixPageDecoder.IsSupported(header))
+        if (!CatalogComixPageDecoder.IsSupported(header))
         {
             throw new ComixContractException(
                 $"Unsupported Comix scramble variant: algorithm {header.Algorithm}, grid {header.Grid}.");
         }
 
-        var decoded = new ComixPageDecoder().Descramble(payload, header);
+        var decoded = new CatalogComixPageDecoder().Descramble(payload, header);
         return Task.FromResult(new RemotePageImage(decoded, "png"));
     }
 

@@ -84,9 +84,10 @@ internal sealed class Loader
             // before the stream load — a stream-loaded assembly has no Location
             // to recover this from.
             var resolver = new AssemblyDependencyResolver(manifest.Entry);
-            context = new AssemblyLoadContext(
+            context = new CitizenLoadContext(
                 $"citadel-module-{manifest.Route}",
-                isCollectible: true);
+                resolver,
+                _log);
             context.Resolving += (loadContext, name) => ResolvePrivate(loadContext, resolver, name);
 
             var assembly = LoadWithoutRetainingHandle(context, manifest.Entry);
@@ -238,6 +239,39 @@ internal sealed class Loader
                 return;
             }
             _contexts.Add(context);
+        }
+    }
+
+    /// <summary>
+    /// A citizen's managed and native dependencies share the same deployment
+    /// graph, but native P/Invoke resolution does not raise the managed
+    /// <see cref="AssemblyLoadContext.Resolving"/> event. Keep native lookup in
+    /// the citizen context and let the resolver read the runtime asset selected
+    /// in the citizen's .deps.json. This avoids process-wide PATH changes and
+    /// prevents one citizen from resolving another citizen's native library.
+    /// </summary>
+    private sealed class CitizenLoadContext(
+        string name,
+        AssemblyDependencyResolver resolver,
+        Action<string> log)
+        : AssemblyLoadContext(name, isCollectible: true)
+    {
+        protected override nint LoadUnmanagedDll(string unmanagedDllName)
+        {
+            var path = resolver.ResolveUnmanagedDllToPath(unmanagedDllName);
+            if (path is null || !File.Exists(path)) return nint.Zero;
+
+            try
+            {
+                return LoadUnmanagedDllFromPath(path);
+            }
+            catch (Exception exception)
+            {
+                log(
+                    $"[Loader] native dependency '{unmanagedDllName}' "
+                    + $"failed to load from '{path}': {exception.Message}");
+                return nint.Zero;
+            }
         }
     }
 

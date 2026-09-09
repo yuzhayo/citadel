@@ -6,18 +6,14 @@ using System.Windows.Automation;
 using System.Windows.Controls;
 using System.Windows.Media;
 
-namespace Module.Mangareader.Features.Downloader.FilterSearch.Comix;
+namespace Module.Mangareader.Components;
 
-/// <summary>
-/// One checkable provider option. The key is the provider's own option id and is
-/// the only part that may enter a browse query; the display name is what the user
-/// reads and what an accessible name is built from.
-/// </summary>
-public sealed class ComixCheckOption : INotifyPropertyChanged
+/// <summary>One reusable keyed checkbox option used by MangaReader filters.</summary>
+public sealed class MangaFilterOption : INotifyPropertyChanged
 {
     private bool _isChecked;
 
-    public ComixCheckOption(string key, string displayName)
+    public MangaFilterOption(string key, string displayName)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(key);
         ArgumentException.ThrowIfNullOrWhiteSpace(displayName);
@@ -36,42 +32,31 @@ public sealed class ComixCheckOption : INotifyPropertyChanged
         {
             if (_isChecked == value) return;
             _isChecked = value;
-            OnPropertyChanged();
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsChecked)));
         }
     }
 
     public event PropertyChangedEventHandler? PropertyChanged;
-
-    public override string ToString() => DisplayName;
-
-    private void OnPropertyChanged([CallerMemberName] string? propertyName = null) =>
-        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
 }
 
 /// <summary>
-/// The compact multi-select dropdown used by the Comix filter feature. It owns
-/// draft selection state and nothing else: it never issues a request, never
-/// validates a range, and never persists a choice.
-///
-/// Composition contract: the shared button keeps its hover, press, focus and
-/// disabled behavior; the popup keeps its own outside-click dismissal; the shared
-/// scroll viewer keeps the auto-fade behavior. This control adds only the summary
-/// label and the checked-key projection.
+/// Shared MangaReader checkbox dropdown. It owns only draft selection and
+/// never performs validation, persistence, database work, or network calls.
 /// </summary>
-public partial class ComixMultiSelectDropDown : UserControl
+public partial class MangaMultiSelectFilter : UserControl
 {
     public static readonly DependencyProperty HeaderProperty =
         DependencyProperty.Register(
             nameof(Header),
             typeof(string),
-            typeof(ComixMultiSelectDropDown),
+            typeof(MangaMultiSelectFilter),
             new FrameworkPropertyMetadata(string.Empty, OnHeaderChanged));
 
     public static readonly DependencyProperty OptionsProperty =
         DependencyProperty.Register(
             nameof(Options),
             typeof(IEnumerable),
-            typeof(ComixMultiSelectDropDown),
+            typeof(MangaMultiSelectFilter),
             new FrameworkPropertyMetadata(null, OnOptionsChanged));
 
     private readonly TextBlock _summary = new()
@@ -80,7 +65,7 @@ public partial class ComixMultiSelectDropDown : UserControl
         TextTrimming = TextTrimming.CharacterEllipsis,
     };
 
-    public ComixMultiSelectDropDown()
+    public MangaMultiSelectFilter()
     {
         InitializeComponent();
 
@@ -98,11 +83,9 @@ public partial class ComixMultiSelectDropDown : UserControl
         label.Children.Add(_summary);
         label.Children.Add(chevron);
         ToggleButton.Content = label;
-
         UpdateSummary();
     }
 
-    /// <summary>Raised after the user changes a checkbox. Never a request.</summary>
     public event EventHandler? SelectionChanged;
 
     public string Header
@@ -117,31 +100,26 @@ public partial class ComixMultiSelectDropDown : UserControl
         set => SetValue(OptionsProperty, value);
     }
 
-    /// <summary>The checked provider ids, in option order.</summary>
     public IReadOnlyList<string> SelectedKeys =>
-        TypedOptions().Where(option => option.IsChecked).Select(option => option.Key).ToList();
+        TypedOptions().Where(option => option.IsChecked).Select(option => option.Key).ToArray();
 
     public void SetSelectedKeys(IEnumerable<string> keys)
     {
         ArgumentNullException.ThrowIfNull(keys);
         var wanted = new HashSet<string>(keys, StringComparer.Ordinal);
-        foreach (var option in TypedOptions())
-        {
-            option.IsChecked = wanted.Contains(option.Key);
-        }
-
+        foreach (var option in TypedOptions()) option.IsChecked = wanted.Contains(option.Key);
         UpdateSummary();
     }
 
-    private IEnumerable<ComixCheckOption> TypedOptions() =>
-        OptionList.ItemsSource?.OfType<ComixCheckOption>() ?? [];
+    private IEnumerable<MangaFilterOption> TypedOptions() =>
+        OptionList.ItemsSource?.OfType<MangaFilterOption>() ?? [];
 
     private static void OnHeaderChanged(DependencyObject sender, DependencyPropertyChangedEventArgs args) =>
-        ((ComixMultiSelectDropDown)sender).UpdateSummary();
+        ((MangaMultiSelectFilter)sender).UpdateSummary();
 
     private static void OnOptionsChanged(DependencyObject sender, DependencyPropertyChangedEventArgs args)
     {
-        var control = (ComixMultiSelectDropDown)sender;
+        var control = (MangaMultiSelectFilter)sender;
         control.OptionList.ItemsSource = args.NewValue as IEnumerable;
         control.UpdateSummary();
     }
@@ -155,21 +133,13 @@ public partial class ComixMultiSelectDropDown : UserControl
         SelectionChanged?.Invoke(this, EventArgs.Empty);
     }
 
-    /// <summary>
-    /// One summary and one accessible name for the closed dropdown: the filter
-    /// label alone when nothing is checked, and the label with a count when
-    /// something is, so the bar never has to widen to show every choice.
-    /// </summary>
     private void UpdateSummary()
     {
         if (ToggleButton is null) return;
-
         var selected = TypedOptions().Count(option => option.IsChecked);
         _summary.Text = selected == 0 ? Header : $"{Header} ({selected})";
         AutomationProperties.SetName(
             ToggleButton,
-            selected == 0
-                ? Header
-                : $"{Header}, {selected} selected");
+            selected == 0 ? Header : $"{Header}, {selected} selected");
     }
 }

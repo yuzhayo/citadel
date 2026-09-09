@@ -11,6 +11,7 @@
   <ItemGroup>
     <PackageReference Include="coverlet.collector" Version="6.0.4" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
+    <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.11" />
     <PackageReference Include="xunit" Version="2.9.3" />
     <PackageReference Include="xunit.runner.visualstudio" Version="3.1.4" />
   </ItemGroup>
@@ -34,11 +35,11 @@
              Link="Downloader\FilterSearch\Comix\ComixFilterPanel.xaml.cs">
       <DependentUpon>ComixFilterPanel.xaml</DependentUpon>
     </Compile>
-    <Page Include="..\..\module\mangareader\Features\Downloader\FilterSearch\Comix\ComixMultiSelectDropDown.xaml"
-          Link="Downloader\FilterSearch\Comix\ComixMultiSelectDropDown.xaml" />
-    <Compile Include="..\..\module\mangareader\Features\Downloader\FilterSearch\Comix\ComixMultiSelectDropDown.xaml.cs"
-             Link="Downloader\FilterSearch\Comix\ComixMultiSelectDropDown.xaml.cs">
-      <DependentUpon>ComixMultiSelectDropDown.xaml</DependentUpon>
+    <Page Include="..\..\module\mangareader\Components\MangaMultiSelectFilter.xaml"
+          Link="Components\MangaMultiSelectFilter.xaml" />
+    <Compile Include="..\..\module\mangareader\Components\MangaMultiSelectFilter.xaml.cs"
+             Link="Components\MangaMultiSelectFilter.xaml.cs">
+      <DependentUpon>MangaMultiSelectFilter.xaml</DependentUpon>
     </Compile>
     <Compile Include="..\..\module\mangareader\Features\Downloader\Catalog\CatalogFeature.cs"
              Link="Downloader\Catalog\CatalogFeature.cs" />
@@ -72,6 +73,34 @@
              Link="Downloader\Sources\Comix\ComixSource.cs" />
     <Compile Include="..\..\module\mangareader\Features\Downloader\Sources\Comix\ComixPageDecoder.cs"
              Link="Downloader\Sources\Comix\ComixPageDecoder.cs" />
+    <Compile Include="..\..\module\mangareader\shareLogic\Sources\CatalogSnapshotContracts.cs"
+             Link="Sources\CatalogSnapshotContracts.cs" />
+    <Compile Include="..\..\module\mangareader\Features\CatalogMirror\CatalogMirrorContracts.cs"
+             Link="CatalogMirror\CatalogMirrorContracts.cs" />
+    <Compile Include="..\..\module\mangareader\Features\CatalogMirror\CatalogMirrorPaths.cs"
+             Link="CatalogMirror\CatalogMirrorPaths.cs" />
+    <Compile Include="..\..\module\mangareader\Features\CatalogMirror\CatalogSnapshotStore.cs"
+             Link="CatalogMirror\CatalogSnapshotStore.cs" />
+    <Compile Include="..\..\module\mangareader\Features\CatalogMirror\CatalogEnrichmentStore.cs"
+             Link="CatalogMirror\CatalogEnrichmentStore.cs" />
+    <Compile Include="..\..\module\mangareader\Features\CatalogMirror\CatalogMirrorQuery.cs"
+             Link="CatalogMirror\CatalogMirrorQuery.cs" />
+    <Compile Include="..\..\module\mangareader\Features\CatalogMirror\CatalogMirrorLoadFeature.cs"
+             Link="CatalogMirror\CatalogMirrorLoadFeature.cs" />
+    <Compile Include="..\..\module\mangareader\Features\CatalogMirror\CatalogMirrorCoverCache.cs"
+             Link="CatalogMirror\CatalogMirrorCoverCache.cs" />
+    <Compile Include="..\..\module\mangareader\Features\CatalogMirror\CatalogMirrorSyncFeature.cs"
+             Link="CatalogMirror\CatalogMirrorSyncFeature.cs" />
+    <Compile Include="..\..\module\mangareader\Features\CatalogMirror\CatalogGenreStore.cs"
+             Link="CatalogMirror\CatalogGenreStore.cs" />
+    <Compile Include="..\..\module\mangareader\Features\CatalogMirror\CatalogGenreSyncFeature.cs"
+             Link="CatalogMirror\CatalogGenreSyncFeature.cs" />
+    <Compile Include="..\..\module\mangareader\Features\CatalogMirror\CatalogMirrorDatabase.cs"
+             Link="CatalogMirror\CatalogMirrorDatabase.cs" />
+    <Compile Include="..\..\module\mangareader\Features\CatalogMirror\CatalogMirrorDetailFeature.cs"
+             Link="CatalogMirror\CatalogMirrorDetailFeature.cs" />
+    <Compile Include="..\..\module\mangareader\Features\CatalogMirror\CatalogMirrorFeature.cs"
+             Link="CatalogMirror\CatalogMirrorFeature.cs" />
     <Compile Include="..\..\module\mangareader\Library\LibraryRootContext.cs"
              Link="Library\LibraryRootContext.cs" />
     <Compile Include="..\..\module\mangareader\Library\LibraryPathStore.cs"

@@ -1,4 +1,4 @@
-<UserControl x:Class="Module.Mangareader.Features.Downloader.FilterSearch.Comix.ComixMultiSelectDropDown"
+<UserControl x:Class="Module.Mangareader.Components.MangaMultiSelectFilter"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:setting="clr-namespace:Citadel.Setting.Components;assembly=Citadel.Setting"
@@ -6,16 +6,6 @@
              Foreground="{DynamicResource Fg}"
              UseLayoutRounding="True"
              SnapsToDevicePixels="True">
-    <!--
-      Compact checkbox dropdown: a composition of the shared button, the shared
-      auto-fade scroll viewer and ordinary framework checkboxes inside an
-      ordinary popup. It adds no new rendering or interaction primitive — the
-      shared button keeps its own hover/press/focus/disabled behavior and the
-      popup keeps its own outside-click dismissal.
-
-      It owns draft selection state only. It never issues a request, and editing
-      a checkbox here must not trigger a Browse.
-    -->
     <Grid>
         <setting:SettingButton x:Name="ToggleButton"
                                MinWidth="118"

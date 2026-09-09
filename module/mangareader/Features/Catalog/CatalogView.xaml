@@ -1,0 +1,14 @@
+<UserControl x:Class="Module.Mangareader.Features.Catalog.CatalogView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:mirror="clr-namespace:Module.Mangareader.Features.CatalogMirror"
+             Background="{DynamicResource Bg}"
+             Foreground="{DynamicResource Fg}"
+             UseLayoutRounding="True"
+             SnapsToDevicePixels="True">
+    <!-- Top-level Catalog route. Catalog Mirror is the owned database/search/
+         genre/detail child; no Downloader view or context is hosted here. -->
+    <Grid>
+        <mirror:CatalogMirrorView x:Name="CatalogWorkspace" />
+    </Grid>
+</UserControl>
