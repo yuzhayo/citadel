@@ -37,10 +37,11 @@ public sealed class CatalogMirrorDatabaseTests : IDisposable
             {
                 "catalog_generation", "catalog_genre", "catalog_genre_checkpoint",
                 "catalog_genre_state", "catalog_partition_checkpoint", "catalog_state",
-                "catalog_title", "catalog_title_genre", "catalog_warning",
+                "catalog_title", "catalog_title_genre", "catalog_title_genre_enrichment",
+                "catalog_warning",
             },
             TableNames(connection));
-        Assert.Equal(2L, Scalar<long>(connection, "PRAGMA user_version;"));
+        Assert.Equal(3L, Scalar<long>(connection, "PRAGMA user_version;"));
         Assert.Equal("wal", Scalar<string>(connection, "PRAGMA journal_mode;"));
         Assert.Equal(1L, Scalar<long>(connection, "PRAGMA foreign_keys;"));
     }
@@ -102,7 +103,7 @@ public sealed class CatalogMirrorDatabaseTests : IDisposable
         database.EnsureCreated();
 
         using var migrated = database.Open();
-        Assert.Equal(2L, Scalar<long>(migrated, "PRAGMA user_version;"));
+        Assert.Equal(3L, Scalar<long>(migrated, "PRAGMA user_version;"));
         Assert.Equal(1L, Scalar<long>(migrated, "SELECT COUNT(*) FROM catalog_title WHERE title='Keep me';"));
         Assert.Contains("updated_utc", ColumnNames(migrated, "catalog_title"));
     }
