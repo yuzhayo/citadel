@@ -9,6 +9,7 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <PackageReference Include="AngleSharp" Version="1.7.2" />
     <PackageReference Include="coverlet.collector" Version="6.0.4" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
     <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.11" />
@@ -73,6 +74,16 @@
              Link="Downloader\Sources\Comix\ComixSource.cs" />
     <Compile Include="..\..\module\mangareader\Features\Downloader\Sources\Comix\ComixPageDecoder.cs"
              Link="Downloader\Sources\Comix\ComixPageDecoder.cs" />
+    <Compile Include="..\..\module\mangareader\Features\Downloader\Sources\CucumberManga\CucumberMangaHtmlParser.cs"
+             Link="Downloader\Sources\CucumberManga\CucumberMangaHtmlParser.cs" />
+    <Compile Include="..\..\module\mangareader\Features\Downloader\Sources\CucumberManga\CucumberMangaSource.cs"
+             Link="Downloader\Sources\CucumberManga\CucumberMangaSource.cs" />
+    <Page Include="..\..\module\mangareader\Features\Downloader\FilterSearch\CucumberManga\CucumberMangaFilterPanel.xaml"
+          Link="Downloader\FilterSearch\CucumberManga\CucumberMangaFilterPanel.xaml" />
+    <Compile Include="..\..\module\mangareader\Features\Downloader\FilterSearch\CucumberManga\CucumberMangaFilterContribution.cs"
+             Link="Downloader\FilterSearch\CucumberManga\CucumberMangaFilterContribution.cs">
+      <DependentUpon>CucumberMangaFilterPanel.xaml</DependentUpon>
+    </Compile>
     <Compile Include="..\..\module\mangareader\shareLogic\Sources\CatalogSnapshotContracts.cs"
              Link="Sources\CatalogSnapshotContracts.cs" />
     <Compile Include="..\..\module\mangareader\Features\CatalogMirror\CatalogMirrorContracts.cs"

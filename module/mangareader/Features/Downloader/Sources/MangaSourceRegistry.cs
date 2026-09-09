@@ -93,12 +93,16 @@ public sealed class MangaSourceRegistry : IMangaSourceDirectory
     {
         ArgumentNullException.ThrowIfNull(client);
         var comix = new Comix.ComixSource(client);
+        var cucumberManga = new CucumberManga.CucumberMangaSource();
         return new MangaSourceRegistry(
         [
             new MangaSourceRegistration(
                 comix,
                 () => new global::Module.Mangareader.Features.Downloader.FilterSearch.Comix.ComixFilterContribution(
                     comix.LookupAsync)),
+            new MangaSourceRegistration(
+                cucumberManga,
+                () => new global::Module.Mangareader.Features.Downloader.FilterSearch.CucumberManga.CucumberMangaFilterContribution()),
         ]);
     }
 

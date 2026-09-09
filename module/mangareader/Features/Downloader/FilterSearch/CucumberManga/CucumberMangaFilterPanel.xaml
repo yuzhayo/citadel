@@ -1,0 +1,128 @@
+<UserControl x:Class="Module.Mangareader.Features.Downloader.FilterSearch.CucumberManga.CucumberMangaFilterPanel"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:mangacomponents="clr-namespace:Module.Mangareader.Components"
+             xmlns:setting="clr-namespace:Citadel.Setting.Components;assembly=Citadel.Setting"
+             Foreground="{DynamicResource Fg}">
+    <WrapPanel Orientation="Horizontal">
+        <ComboBox x:Name="SortPicker"
+                  MinWidth="150"
+                  Height="34"
+                  Margin="0,0,8,8"
+                  AutomationProperties.Name="Cucumber Manga sort order"
+                  DisplayMemberPath="DisplayName"
+                  SelectionChanged="DraftFilter_Changed"
+                  Style="{DynamicResource SettingComboBoxStyle}" />
+
+        <mangacomponents:MangaMultiSelectFilter x:Name="StatusFilter"
+                                                 Margin="0,0,8,8"
+                                                 Header="Status"
+                                                 SelectionChanged="DraftFilter_Changed" />
+
+        <mangacomponents:MangaMultiSelectFilter x:Name="GenreFilter"
+                                                 Margin="0,0,8,8"
+                                                 Header="Genres"
+                                                 SelectionChanged="DraftFilter_Changed" />
+
+        <setting:SettingButton x:Name="AdvancedButton"
+                               MinWidth="140"
+                               Height="34"
+                               Margin="0,0,0,8"
+                               AutomationProperties.Name="Cucumber Manga advanced filters"
+                               Click="AdvancedButton_Click"
+                               Content="Advanced Filters" />
+
+        <Popup x:Name="AdvancedPopup"
+               AllowsTransparency="True"
+               Placement="Bottom"
+               PlacementTarget="{Binding ElementName=AdvancedButton}"
+               PopupAnimation="Fade"
+               StaysOpen="False">
+            <Border Width="460"
+                    Margin="0,4,0,0"
+                    Padding="14,12"
+                    Background="{DynamicResource Bg}"
+                    BorderBrush="{DynamicResource Border}"
+                    BorderThickness="1"
+                    CornerRadius="{DynamicResource SidebarItemCornerRadius}">
+                <StackPanel>
+                    <Grid Margin="0,0,0,10">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+
+                        <StackPanel Margin="0,0,10,0">
+                            <TextBlock FontSize="12"
+                                       Foreground="{DynamicResource Dim}"
+                                       Text="Adult content" />
+                            <ComboBox x:Name="AdultPicker"
+                                      Height="34"
+                                      Margin="0,4,0,0"
+                                      AutomationProperties.Name="Adult content"
+                                      DisplayMemberPath="DisplayName"
+                                      SelectionChanged="DraftFilter_Changed"
+                                      Style="{DynamicResource SettingComboBoxStyle}" />
+                        </StackPanel>
+
+                        <StackPanel Grid.Column="1">
+                            <TextBlock FontSize="12"
+                                       Foreground="{DynamicResource Dim}"
+                                       Text="Release year" />
+                            <setting:SettingField x:Name="ReleaseYearField"
+                                                  Height="34"
+                                                  Margin="0,4,0,0"
+                                                  AutomationProperties.Name="Release year"
+                                                  Placeholder="Any"
+                                                  TextChanged="TextFilter_Changed" />
+                        </StackPanel>
+                    </Grid>
+
+                    <Grid Margin="0,0,0,10">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+
+                        <StackPanel Margin="0,0,10,0">
+                            <TextBlock FontSize="12"
+                                       Foreground="{DynamicResource Dim}"
+                                       Text="Author" />
+                            <setting:SettingField x:Name="AuthorField"
+                                                  Height="34"
+                                                  Margin="0,4,0,0"
+                                                  AutomationProperties.Name="Author"
+                                                  Placeholder="Any"
+                                                  TextChanged="TextFilter_Changed" />
+                        </StackPanel>
+
+                        <StackPanel Grid.Column="1">
+                            <TextBlock FontSize="12"
+                                       Foreground="{DynamicResource Dim}"
+                                       Text="Artist" />
+                            <setting:SettingField x:Name="ArtistField"
+                                                  Height="34"
+                                                  Margin="0,4,0,0"
+                                                  AutomationProperties.Name="Artist"
+                                                  Placeholder="Any"
+                                                  TextChanged="TextFilter_Changed" />
+                        </StackPanel>
+                    </Grid>
+
+                    <setting:SettingButton HorizontalAlignment="Right"
+                                           MinWidth="80"
+                                           Height="34"
+                                           AutomationProperties.Name="Reset Cucumber Manga filters"
+                                           Click="ResetButton_Click"
+                                           Content="Reset" />
+
+                    <TextBlock x:Name="ValidationText"
+                               Margin="0,8,0,0"
+                               FontSize="12"
+                               Foreground="{DynamicResource Dim}"
+                               TextWrapping="Wrap" />
+                </StackPanel>
+            </Border>
+        </Popup>
+    </WrapPanel>
+</UserControl>

@@ -10,13 +10,12 @@
     <Compile Include="..\sharedLogic\cs\**\*.cs" />
   </ItemGroup>
 
-  <!--
-    The single pinned data dependency (plan D0.1, SQLite track P1):
-    Microsoft.Data.Sqlite for the offline Catalog Mirror only. Its managed
-    assemblies deploy as ordinary private DLLs; its native engine needs the
-    explicit payload entry below because DeployCitizen only carries flat DLLs.
-  -->
+  <!-- Private module dependencies: AngleSharp parses provider-owned HTML;
+       Microsoft.Data.Sqlite owns the offline Catalog Mirror store. SQLite's
+       native engine needs the explicit payload entry below because
+       DeployCitizen only carries flat DLLs. -->
   <ItemGroup>
+    <PackageReference Include="AngleSharp" Version="1.7.2" />
     <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.11" />
   </ItemGroup>
 
