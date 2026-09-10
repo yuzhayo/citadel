@@ -52,6 +52,45 @@ internal sealed class GoogleCredentialStore
         => IsValidProfileId(profileId)
            && File.Exists(Path.Combine(ResolveSafeTarget(profileId), "password.dat"));
 
+    public Task SaveIdentityAsync(
+        string profileId,
+        string email,
+        CancellationToken cancellationToken = default)
+    {
+        if (!IsValidProfileId(profileId))
+        {
+            throw new InvalidOperationException("profile id tidak sah");
+        }
+
+        var normalizedEmail = email.Trim().ToLowerInvariant();
+        if (!IsValidEmail(normalizedEmail))
+        {
+            throw new InvalidOperationException("email Google tidak sah");
+        }
+
+        return Task.Run(() =>
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var target = ResolveSafeTarget(profileId);
+            Directory.CreateDirectory(target);
+
+            var existing = TryLoad(profileId);
+            var now = DateTimeOffset.Now;
+            var record = new GoogleAccountRecord(
+                profileId,
+                normalizedEmail,
+                "google",
+                existing?.CreatedAt ?? now,
+                now);
+
+            var identityTemp = Path.Combine(target, "identity.json.tmp");
+            File.WriteAllText(
+                identityTemp,
+                JsonSerializer.Serialize(record, new JsonSerializerOptions { WriteIndented = true }));
+            File.Move(identityTemp, Path.Combine(target, "identity.json"), overwrite: true);
+        }, cancellationToken);
+    }
+
     public Task SaveAsync(
         string profileId,
         string email,

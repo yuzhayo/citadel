@@ -20,6 +20,7 @@ public class AddProfileCoordinatorTests
     private sealed class Harness
     {
         public List<string> Calls { get; } = [];
+        public List<(string Profile, string Email)> SavedIdentities { get; } = [];
         public List<(string Profile, string Email, string Password)> Saved { get; } = [];
         public int FinishCalls;
         public int CancelCalls;
@@ -64,7 +65,13 @@ public class AddProfileCoordinatorTests
                 Calls.Add("close");
                 CloseCalls++;
                 return Task.CompletedTask;
-            };            coordinator.SaveCredentialAsync = (profile, email, password, _token) =>
+            };
+            coordinator.SaveIdentityAsync = (profile, email, _token) =>
+            {
+                SavedIdentities.Add((profile, email));
+                return Task.CompletedTask;
+            };
+            coordinator.SaveCredentialAsync = (profile, email, password, _token) =>
             {
                 if (saveFailure is not null)
                 {
@@ -120,7 +127,7 @@ public class AddProfileCoordinatorTests
     }
 
     [Fact]
-    public async Task Complete_without_password_never_calls_finish()
+    public async Task Complete_without_password_saves_identity_without_calling_finish()
     {
         var harness = new Harness();
         var coordinator = harness.Build();
@@ -132,6 +139,9 @@ public class AddProfileCoordinatorTests
 
         Assert.Equal(AddProfileOutcome.ActiveWithoutPassword, result.Outcome);
         Assert.False(result.SavedCredential);
+        Assert.Equal(
+            ("probe", "user@gmail.com"),
+            Assert.Single(harness.SavedIdentities));
         Assert.Empty(harness.Saved);
         Assert.Equal(0, harness.FinishCalls);
         Assert.Equal(1, harness.CancelCalls);

@@ -50,7 +50,17 @@ internal sealed class ProfileCatalog
             cancellationToken);
     }
 
-    private List<ProfileEntry> Scan(CancellationToken cancellationToken)
+    internal static IReadOnlyList<ProfileEntry> OrderForDisplay(
+        IEnumerable<ProfileEntry> profiles)
+    {
+        ArgumentNullException.ThrowIfNull(profiles);
+        return profiles
+            .OrderBy(profile => profile.DisplayName, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(profile => profile.ProfileId, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+    }
+
+    private IReadOnlyList<ProfileEntry> Scan(CancellationToken cancellationToken)
     {
         var rows = new List<ProfileEntry>();
         if (!Directory.Exists(_root))
@@ -72,7 +82,7 @@ internal sealed class ProfileCatalog
                 account is not null));
         }
 
-        return rows;
+        return OrderForDisplay(rows);
     }
 
     private string ResolveSafeTarget(string name)

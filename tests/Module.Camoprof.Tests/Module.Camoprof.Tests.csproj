@@ -28,6 +28,8 @@
   <ItemGroup>
     <Compile Include="..\..\module\sharedLogic\cs\**\*.cs" />
     <Compile Include="..\..\module\camoprof\sharedLogic\BrowserSessionCoordinator.cs" />
+    <Compile Include="..\..\module\camoprof\sharedLogic\ProfileCatalog.cs" />
+    <Compile Include="..\..\module\camoprof\sharedLogic\ProfileEntry.cs" />
     <Compile Include="..\..\module\camoprof\Providers\Google\GoogleAccountRecord.cs" />
     <Compile Include="..\..\module\camoprof\Providers\Google\GoogleCredentialStore.cs" />
     <Compile Include="..\..\module\camoprof\Features\AddProfile\AddProfileContract.cs" />

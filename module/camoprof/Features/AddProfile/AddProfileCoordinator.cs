@@ -31,6 +31,7 @@ internal sealed class AddProfileCoordinator
     internal Func<string, CancellationToken, Task<JsonObject>> FinishAsync { get; set; } = null!;
     internal Func<string, CancellationToken, Task> CancelAsync { get; set; } = null!;
     internal Func<string, CancellationToken, Task> CloseSessionAsync { get; set; } = null!;
+    internal Func<string, string, CancellationToken, Task> SaveIdentityAsync { get; set; } = null!;
     internal Func<string, string, string, CancellationToken, Task> SaveCredentialAsync { get; set; } = null!;
 
     public AddProfileCoordinator(
@@ -47,6 +48,8 @@ internal sealed class AddProfileCoordinator
         CancelAsync = client.CancelAsync;
         CloseSessionAsync = (profile, token)
             => sessions.CloseAsync(profile, token);
+        SaveIdentityAsync = (profile, email, token)
+            => credentials.SaveIdentityAsync(profile, email, token);
         SaveCredentialAsync = (profile, email, password, token)
             => credentials.SaveAsync(profile, email, password, token);
     }
@@ -144,20 +147,23 @@ internal sealed class AddProfileCoordinator
         var hasPassword = status["has_password"]?.GetValue<bool>() ?? false;
         var email = ReadEmail(status);
 
-        if (!hasPassword)
-        {
-            // Passkey/QR login: the session is genuinely active but there
-            // is no secret to retrieve — finish is never called on this
-            // branch. Honest outcome, nothing saved.
-            return Result(AddProfileOutcome.ActiveWithoutPassword, email);
-        }
-
         if (string.IsNullOrWhiteSpace(email))
         {
             return new AddProfileResult(
                 AddProfileOutcome.Failed,
                 null,
                 "account active but its identity could not be confirmed");
+        }
+
+        if (!string.IsNullOrWhiteSpace(expectedEmail)
+            && !string.Equals(email, expectedEmail.Trim(), StringComparison.OrdinalIgnoreCase))
+        {
+            return Result(AddProfileOutcome.WrongAccount, email);
+        }
+
+        if (!hasPassword)
+        {
+            return await SaveIdentityOnlyAsync(profileId, email, cancellationToken);
         }
 
         JsonObject finish;
@@ -188,7 +194,7 @@ internal sealed class AddProfileCoordinator
 
         if (string.IsNullOrEmpty(password))
         {
-            return Result(AddProfileOutcome.ActiveWithoutPassword, finishEmail);
+            return await SaveIdentityOnlyAsync(profileId, finishEmail, cancellationToken);
         }
 
         try
@@ -205,6 +211,26 @@ internal sealed class AddProfileCoordinator
         }
 
         return Result(AddProfileOutcome.Completed, finishEmail);
+    }
+
+    private async Task<AddProfileResult> SaveIdentityOnlyAsync(
+        string profileId,
+        string email,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            await SaveIdentityAsync(profileId, email, cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            return new AddProfileResult(
+                AddProfileOutcome.Failed,
+                email,
+                "identity could not be stored: " + ex.Message);
+        }
+
+        return Result(AddProfileOutcome.ActiveWithoutPassword, email);
     }
 
     private async Task CancelQuietlyAsync(string profileId)

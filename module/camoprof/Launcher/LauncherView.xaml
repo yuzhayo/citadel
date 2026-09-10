@@ -62,6 +62,7 @@
                         <DataGridTemplateColumn Header="Profile"
                                                 CanUserSort="True"
                                                 SortMemberPath="Name"
+                                                SortDirection="Ascending"
                                                 MinWidth="140">
                             <DataGridTemplateColumn.CellTemplate>
                                 <DataTemplate>
