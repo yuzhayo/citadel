@@ -24,11 +24,15 @@ internal static class DrakeScansJsonParser
             var id = RequiredString(item, "id");
             var slug = String(item, "urlSlug") ?? RequiredString(item, "slug");
             var title = RequiredString(item, "title");
+            var coverUrl = AbsoluteUrl(String(item, "coverImage"));
             items.Add(new RemoteTitleSummary(
                 new RemoteTitleIdentity(DrakeScansContract.SourceId, slug, id, slug),
                 title,
-                AbsoluteUrl(String(item, "coverImage")),
-                LatestChapterLabel(item)));
+                coverUrl,
+                LatestChapterLabel(item))
+            {
+                CoverFallbackUrls = DrakeScansContract.CoverFallbacks(coverUrl),
+            });
         }
 
         var total = meta.TryGetProperty("total", out var totalValue)

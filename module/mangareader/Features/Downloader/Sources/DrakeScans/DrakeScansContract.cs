@@ -13,6 +13,17 @@ public static class DrakeScansContract
     public const int PageSize = 24;
     public const int MaximumChapterPages = 1000;
     public const int MaximumResponseBytes = 8 * 1024 * 1024;
+
+    internal static IReadOnlyList<string> CoverFallbacks(string? absoluteCoverUrl)
+    {
+        if (absoluteCoverUrl is null) return [];
+        var cover = new Uri(absoluteCoverUrl, UriKind.Absolute);
+        return
+        [
+            BaseUrl + "/_next/image?url=" + Uri.EscapeDataString(cover.AbsolutePath)
+                + "&w=1200&q=75",
+        ];
+    }
 }
 
 public sealed class DrakeScansContractException(string message) : InvalidOperationException(message);

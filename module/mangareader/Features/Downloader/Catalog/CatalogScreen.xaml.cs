@@ -852,7 +852,7 @@ public partial class CatalogScreen : UserControl, IDisposable
         if (_disposed || _coverBatch is not null) return;
 
         var pending = _cards
-            .Where(card => card.Cover is null && card.CoverUrl.Length > 0)
+            .Where(card => card.Cover is null && card.CoverUrls.Count > 0)
             .ToList();
         if (pending.Count == 0) return;
 
@@ -878,7 +878,10 @@ public partial class CatalogScreen : UserControl, IDisposable
                 BitmapSource? cover;
                 try
                 {
-                    cover = await LoadCoverAsync(card.CoverUrl, cancellationToken).ConfigureAwait(true);
+                    cover = await LoadCoverAsync(
+                        card.CoverUrls,
+                        CoverPixelWidth,
+                        cancellationToken).ConfigureAwait(true);
                 }
                 catch (Exception exception) when (exception is not OperationCanceledException)
                 {
@@ -915,22 +918,42 @@ public partial class CatalogScreen : UserControl, IDisposable
     /// covers, so the two grids render identically.
     /// </summary>
     private static async Task<BitmapSource?> LoadCoverAsync(
-        string url,
+        IReadOnlyList<string> urls,
+        int decodePixelWidth,
         CancellationToken cancellationToken)
     {
-        var bytes = await CoverClient.GetByteArrayAsync(url, cancellationToken).ConfigureAwait(true);
-        if (bytes.Length == 0) return null;
+        Exception? lastFailure = null;
+        foreach (var url in urls)
+        {
+            try
+            {
+                var bytes = await CoverClient.GetByteArrayAsync(url, cancellationToken)
+                    .ConfigureAwait(true);
+                if (bytes.Length == 0) continue;
 
-        using var stream = new MemoryStream(bytes, writable: false);
-        var image = new BitmapImage();
-        image.BeginInit();
-        image.CacheOption = BitmapCacheOption.OnLoad;
-        image.CreateOptions = BitmapCreateOptions.PreservePixelFormat;
-        image.DecodePixelWidth = CoverPixelWidth;
-        image.StreamSource = stream;
-        image.EndInit();
-        image.Freeze();
-        return image;
+                using var stream = new MemoryStream(bytes, writable: false);
+                var image = new BitmapImage();
+                image.BeginInit();
+                image.CacheOption = BitmapCacheOption.OnLoad;
+                image.CreateOptions = BitmapCreateOptions.PreservePixelFormat;
+                if (decodePixelWidth > 0) image.DecodePixelWidth = decodePixelWidth;
+                image.StreamSource = stream;
+                image.EndInit();
+                image.Freeze();
+                return image;
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch (Exception exception)
+            {
+                lastFailure = exception;
+            }
+        }
+
+        if (lastFailure is not null) throw lastFailure;
+        return null;
     }
 
     /// <summary>
@@ -940,7 +963,8 @@ public partial class CatalogScreen : UserControl, IDisposable
     private async Task LoadDetailCoverAsync(RemoteTitleSummary title, CancellationToken cancellationToken)
     {
         var generation = Interlocked.Increment(ref _coverGeneration);
-        if (string.IsNullOrWhiteSpace(title.CoverUrl)) return;
+        var coverUrls = title.CoverCandidates().ToArray();
+        if (coverUrls.Length == 0) return;
 
         var previous = _coverCancellation;
         var cancellation = new CancellationTokenSource();
@@ -951,17 +975,10 @@ public partial class CatalogScreen : UserControl, IDisposable
         {
             using var linked = CancellationTokenSource.CreateLinkedTokenSource(
                 cancellationToken, cancellation.Token);
-            var bytes = await CoverClient.GetByteArrayAsync(title.CoverUrl, linked.Token)
+            var image = await LoadCoverAsync(coverUrls, decodePixelWidth: 0, linked.Token)
                 .ConfigureAwait(true);
             if (_disposed || generation != Volatile.Read(ref _coverGeneration)) return;
-
-            using var stream = new MemoryStream(bytes, writable: false);
-            var image = new BitmapImage();
-            image.BeginInit();
-            image.CacheOption = BitmapCacheOption.OnLoad;
-            image.StreamSource = stream;
-            image.EndInit();
-            image.Freeze();
+            if (image is null) return;
 
             if (generation != Volatile.Read(ref _coverGeneration)) return;
 

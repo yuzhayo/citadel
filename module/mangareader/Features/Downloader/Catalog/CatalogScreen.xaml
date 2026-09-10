@@ -16,21 +16,25 @@
                 <RowDefinition Height="Auto" />
             </Grid.RowDefinitions>
 
-            <!--
-              One fluid action bar. It uses the width available and wraps when the
-              reader window is narrow. The provider's filter contribution is
-              hosted between the search field and the request button, so this
-              screen never learns how many filters a provider has or what they
-              are called. The request button is also the activity state; there is
-              no separate idle text.
-            -->
-            <setting:SettingActionCard>
-                <setting:SettingActionCard.Content>
-                    <WrapPanel Orientation="Horizontal">
+            <!-- Query and provider-process lifecycle keep separate cards on one
+                 row. Provider-owned filters use a third card below with the same
+                 compact shared-card settings. -->
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+
+                <setting:SettingActionCard Margin="0,0,8,8" Padding="10,5">
+                    <WrapPanel Orientation="Horizontal" VerticalAlignment="Center">
                         <ComboBox x:Name="SourcePicker"
                                   MinWidth="150"
                                   Height="34"
-                                  Margin="0,0,8,8"
+                                  Margin="0,0,8,0"
                                   Style="{DynamicResource SettingComboBoxStyle}"
                                   DisplayMemberPath="DisplayName"
                                   AutomationProperties.Name="Web target"
@@ -39,7 +43,7 @@
                         <setting:SettingField x:Name="SearchField"
                                               Width="220"
                                               Height="34"
-                                              Margin="0,0,8,8"
+                                              Margin="0,0,8,0"
                                               Placeholder="Search titles"
                                               AutomationProperties.Name="Search titles"
                                               KeyDown="SearchField_KeyDown" />
@@ -47,17 +51,14 @@
                         <setting:SettingButton x:Name="SearchButton"
                                                MinWidth="88"
                                                Height="34"
-                                               Margin="0,0,8,8"
                                                Content="Search"
                                                Click="SearchButton_Click"
                                                AutomationProperties.Name="Search catalog with current filters" />
-
-                        <ContentControl x:Name="FilterHost" VerticalAlignment="Center" />
-
                     </WrapPanel>
-                </setting:SettingActionCard.Content>
-                <setting:SettingActionCard.ActionContent>
-                    <StackPanel Orientation="Horizontal">
+                </setting:SettingActionCard>
+
+                <setting:SettingActionCard Grid.Column="1" Padding="10,5">
+                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
                         <setting:SettingToggle x:Name="ShowBrowserToggle"
                                                Margin="0,0,8,0"
                                                IsChecked="False"
@@ -81,10 +82,16 @@
                                                Click="StopButton_Click"
                                                AutomationProperties.Name="Stop provider browser process" />
                     </StackPanel>
-                </setting:SettingActionCard.ActionContent>
-            </setting:SettingActionCard>
+                </setting:SettingActionCard>
 
-            <Grid Grid.Row="1" Margin="0,10,0,0">
+                <setting:SettingActionCard Grid.Row="1"
+                                           Grid.ColumnSpan="2"
+                                           Padding="10,5">
+                    <ContentControl x:Name="FilterHost" VerticalAlignment="Center" />
+                </setting:SettingActionCard>
+            </Grid>
+
+            <Grid Grid.Row="1">
                 <!-- Result grid -->
                 <Grid x:Name="ResultsPanel">
                     <Grid.RowDefinitions>

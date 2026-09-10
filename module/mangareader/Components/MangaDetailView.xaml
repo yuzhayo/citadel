@@ -23,7 +23,7 @@
         </Grid.ColumnDefinitions>
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
-            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
 
         <ContentPresenter Margin="0,0,14,0"
@@ -39,7 +39,9 @@
                    Text="{Binding Title, RelativeSource={RelativeSource AncestorType=local:MangaDetailView}}"
                    TextWrapping="Wrap" />
 
-        <StackPanel Grid.Row="1" Margin="0,8,14,0">
+        <StackPanel x:Name="CoverColumn"
+                    Grid.Row="1"
+                    Margin="0,8,14,0">
             <Border Width="132"
                     Height="180"
                     Background="{DynamicResource Card}"
@@ -67,8 +69,10 @@
 
         <Border Grid.Row="1"
                 Grid.Column="1"
+                Height="{Binding ActualHeight, ElementName=CoverColumn}"
                 Margin="0,8,0,0"
-                Style="{DynamicResource SettingCardStyle}">
+                Style="{DynamicResource SettingCardStyle}"
+                VerticalAlignment="Top">
             <ScrollViewer HorizontalScrollBarVisibility="Disabled"
                           PanningMode="VerticalOnly"
                           Style="{DynamicResource SettingScrollViewerStyle}"

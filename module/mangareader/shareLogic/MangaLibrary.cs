@@ -7,6 +7,8 @@ public sealed record MangaTitle(
     string FolderPath,
     IReadOnlyList<ChapterInfo> Chapters)
 {
+    public DateTime AddedUtc { get; init; }
+
     public int ChapterCount => Chapters.Count;
 
     public string ChapterSummary => ChapterCount == 1

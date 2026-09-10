@@ -64,6 +64,35 @@ public sealed class AutoCoverFeatureTests : IDisposable
     }
 
     [Fact]
+    public async Task AFetchUsesTheNextCoverCandidateWhenThePrimaryCannotBeDecoded()
+    {
+        var requested = new List<string>();
+        var feature = new AutoCoverFeature(
+            (url, _) =>
+            {
+                requested.Add(url);
+                return Task.FromResult(url.EndsWith("fallback.jpg", StringComparison.Ordinal)
+                    ? Jpeg(24)
+                    : "<html>not an image</html>"u8.ToArray());
+            },
+            _lister);
+        var summary = Candidate().Title with
+        {
+            CoverFallbackUrls = ["https://example.invalid/fallback.jpg"],
+        };
+
+        var outcome = await feature.SaveCoverAsync(
+            new CoverCandidate(summary, _library, Folder),
+            AutoCoverTrigger.Manual,
+            confirmOverwrite: null,
+            CancellationToken.None);
+
+        Assert.Equal(AutoCoverOutcomeKind.Published, outcome.Kind);
+        Assert.Equal([CoverUrl, "https://example.invalid/fallback.jpg"], requested);
+        Assert.True(IsPng(await File.ReadAllBytesAsync(CoverPath)));
+    }
+
+    [Fact]
     public async Task TheAutomaticTriggerSkipsATitleThatAlreadyExistsLocally()
     {
         await PublishChapterAsync();

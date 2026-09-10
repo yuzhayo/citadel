@@ -15,6 +15,14 @@ namespace Module.Mangareader;
 
 public partial class LibraryView : UserControl, IDisposable
 {
+    private static readonly LibrarySortOption[] SortOptions =
+    [
+        new("Latest added", nameof(MangaTitle.AddedUtc), ListSortDirection.Descending),
+        new("Oldest added", nameof(MangaTitle.AddedUtc), ListSortDirection.Ascending),
+        new("Title (A-Z)", nameof(MangaTitleCardModel.Title), ListSortDirection.Ascending),
+        new("Title (Z-A)", nameof(MangaTitleCardModel.Title), ListSortDirection.Descending),
+    ];
+
     private readonly LibraryScanner _scanner = new();
     private readonly MangaCoverLoader _coverLoader = new();
     private readonly ObservableCollection<MangaTitleCardModel> _cards = new();
@@ -40,6 +48,9 @@ public partial class LibraryView : UserControl, IDisposable
         _titlesView = CollectionViewSource.GetDefaultView(_cards);
         _titlesView.Filter = candidate =>
             candidate is MangaTitleCardModel card && _grouping.IsVisible(card.Manga.Title);
+        SortPicker.ItemsSource = SortOptions;
+        SortPicker.SelectedIndex = 0;
+        ApplySort(SortOptions[0]);
         TitleGrid.ItemsSource = _titlesView;
         TitleTable.ItemsSource = _titlesView;
 
@@ -356,6 +367,29 @@ public partial class LibraryView : UserControl, IDisposable
     private void ViewModeSelector_ModeRequested(object? sender, MangaViewMode mode) =>
         _viewMode.Select(mode);
 
+    private void SortPicker_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (_disposed || SortPicker.SelectedItem is not LibrarySortOption option) return;
+        ApplySort(option);
+    }
+
+    private void ApplySort(LibrarySortOption option)
+    {
+        using (_titlesView.DeferRefresh())
+        {
+            _titlesView.SortDescriptions.Clear();
+            _titlesView.SortDescriptions.Add(new SortDescription(option.PropertyPath, option.Direction));
+
+            // Added timestamps may match when folders were copied together. A
+            // deterministic title tie-breaker prevents cards from shuffling.
+            if (option.PropertyPath == nameof(MangaTitle.AddedUtc))
+            {
+                _titlesView.SortDescriptions.Add(
+                    new SortDescription(nameof(MangaTitleCardModel.Title), ListSortDirection.Ascending));
+            }
+        }
+    }
+
     private void ViewMode_Changed(object? sender, EventArgs e)
     {
         if (_disposed) return;
@@ -424,4 +458,9 @@ public partial class LibraryView : UserControl, IDisposable
         ChapterSelector.Dismiss();
         _cards.Clear();
     }
+
+    private sealed record LibrarySortOption(
+        string Label,
+        string PropertyPath,
+        ListSortDirection Direction);
 }

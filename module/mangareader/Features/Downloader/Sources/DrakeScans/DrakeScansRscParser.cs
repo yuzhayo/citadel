@@ -20,12 +20,16 @@ internal static class DrakeScansRscParser
             AddMetadata(metadata, "Rating", rating.GetDouble().ToString("0.##", CultureInfo.InvariantCulture));
         }
 
+        var coverUrl = AbsoluteAssetUrl(String(series, "coverImage"), "cover");
         return new RemoteTitleDetail(
             new RemoteTitleSummary(
                 identity,
                 title,
-                AbsoluteAssetUrl(String(series, "coverImage"), "cover"),
-                LatestChapterLabel(payload)),
+                coverUrl,
+                LatestChapterLabel(payload))
+            {
+                CoverFallbackUrls = DrakeScansContract.CoverFallbacks(coverUrl),
+            },
             String(series, "description"),
             genres,
             metadata);
@@ -313,12 +317,45 @@ internal static class DrakeScansRscParser
         var prefix = "/uploads/series/" + slug + "/";
         var file = Path.GetFileName(uri.AbsolutePath);
         if (!uri.AbsolutePath.StartsWith(prefix, StringComparison.Ordinal)
-            || !file.StartsWith("p-", StringComparison.Ordinal)
-            || !file.EndsWith(".webp", StringComparison.OrdinalIgnoreCase))
+            || !IsFullPageFileName(file))
         {
             throw new DrakeScansContractException("Drake Scans returned a non-full-page image URL.");
         }
         return uri.ToString();
+    }
+
+    private static bool IsFullPageFileName(string file)
+    {
+        if (IsModernFullPageFileName(file)) return true;
+        return IsLegacyNumberedFullPageFileName(file);
+    }
+
+    private static bool IsModernFullPageFileName(string file)
+    {
+        var extension = Path.GetExtension(file);
+        var stem = Path.GetFileNameWithoutExtension(file);
+        return extension.Equals(".webp", StringComparison.OrdinalIgnoreCase)
+            && stem.StartsWith("p-", StringComparison.Ordinal)
+            && stem.Length > 2;
+    }
+
+    private static bool IsLegacyNumberedFullPageFileName(string file)
+    {
+        var extension = Path.GetExtension(file);
+        if (!extension.Equals(".webp", StringComparison.OrdinalIgnoreCase)
+            && !extension.Equals(".jpg", StringComparison.OrdinalIgnoreCase)
+            && !extension.Equals(".jpeg", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        var stem = Path.GetFileNameWithoutExtension(file);
+        // Legacy chapters use p0001.webp / p0001.jpg rather than the newer
+        // p-{uuid}.webp convention. Keep the check specific to numbered pages
+        // so covers, thumbnails and strip assets cannot enter the manifest.
+        return stem.Length >= 5
+            && stem[0] == 'p'
+            && stem.Skip(1).All(char.IsAsciiDigit);
     }
 
     private static string? AbsoluteAssetUrl(string? value, string label)

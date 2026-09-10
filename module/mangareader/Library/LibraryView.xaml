@@ -49,7 +49,24 @@
                    FontSize="13"
                    Text="Choose a library folder to begin." />
 
-        <grouping:GroupingBar x:Name="Grouping" Grid.Row="2" />
+        <Grid Grid.Row="2">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+
+            <ComboBox x:Name="SortPicker"
+                      Width="158"
+                      Height="34"
+                      Margin="0,0,8,0"
+                      VerticalAlignment="Top"
+                      Style="{DynamicResource SettingComboBoxStyle}"
+                      AutomationProperties.Name="Sort library titles"
+                      DisplayMemberPath="Label"
+                      SelectionChanged="SortPicker_SelectionChanged" />
+
+            <grouping:GroupingBar x:Name="Grouping" Grid.Column="1" />
+        </Grid>
 
         <Grid Grid.Row="3">
             <ScrollViewer x:Name="GridScroll"

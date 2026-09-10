@@ -38,6 +38,9 @@ public sealed class DrakeScansSourceTests
         var title = Assert.Single(page.Items);
         Assert.Equal(new RemoteTitleIdentity("drake-scans", "beast-evolution", "series-1", "beast-evolution"), title.Identity);
         Assert.Equal("https://drakecomic.net/uploads/series/beast-evolution/cover.webp", title.CoverUrl);
+        Assert.Equal(
+            ["https://drakecomic.net/_next/image?url=%2Fuploads%2Fseries%2Fbeast-evolution%2Fcover.webp&w=1200&q=75"],
+            title.CoverFallbackUrls);
         Assert.Equal("Chapter 81", title.LatestChapterLabel);
         Assert.Equal(["Action", "Fantasy"], options.Select(option => option.DisplayName));
     }
@@ -122,6 +125,29 @@ public sealed class DrakeScansSourceTests
         Assert.DoesNotContain(pages, page => page.Url.Contains("/s-", StringComparison.Ordinal));
         Assert.Throws<DrakeScansContractException>(
             () => DrakeScansRscParser.ParsePages(foreign, "beast-evolution"));
+    }
+
+    [Fact]
+    public void RscManifestAcceptsLegacyNumberedFullPages()
+    {
+        const string legacy = """
+            4:["$",null,{"chapter":{"pages":[
+            {"id":"p1","pageNumber":1,
+             "imageUrl":"/uploads/series/beast-evolution/c122918/p0001.jpg"},
+            {"id":"p2","pageNumber":2,
+             "imageUrl":"/uploads/series/beast-evolution/c122918/p0002.webp"}]}}]
+            """;
+        const string thumbnail = """
+            4:["$",null,{"chapter":{"pages":[{"id":"bad","pageNumber":1,
+            "imageUrl":"/uploads/series/beast-evolution/c122918/thumbnail.jpg"}]}}]
+            """;
+
+        var pages = DrakeScansRscParser.ParsePages(legacy, "beast-evolution");
+
+        Assert.Equal(["p0001.jpg", "p0002.webp"],
+            pages.Select(page => Path.GetFileName(new Uri(page.Url).AbsolutePath)));
+        Assert.Throws<DrakeScansContractException>(
+            () => DrakeScansRscParser.ParsePages(thumbnail, "beast-evolution"));
     }
 
     [Fact]

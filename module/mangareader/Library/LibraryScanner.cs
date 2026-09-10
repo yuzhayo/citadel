@@ -63,7 +63,13 @@ public sealed class LibraryScanner
             titles.Add(new MangaTitle(
                 Path.GetFileName(folder),
                 folder,
-                chapters));
+                chapters)
+            {
+                // A title enters this folder-based Library when its directory is
+                // created. Unlike LastWriteTime, this does not move every time a
+                // chapter is downloaded into the title folder.
+                AddedUtc = Directory.GetCreationTimeUtc(folder),
+            });
         }
 
         return titles;

@@ -13,6 +13,8 @@ namespace Module.Mangareader.Features.Downloader.AutoCover;
 public sealed record CoverCandidate(RemoteTitleSummary Title, string Root, string FolderName)
 {
     public string CoverUrl => Title.CoverUrl ?? string.Empty;
+
+    public IReadOnlyList<string> CoverUrls => Title.CoverCandidates().ToArray();
 }
 
 public enum AutoCoverTrigger
@@ -81,7 +83,7 @@ public sealed class AutoCoverFeature
     {
         ArgumentNullException.ThrowIfNull(candidate);
 
-        if (string.IsNullOrWhiteSpace(candidate.CoverUrl))
+        if (candidate.CoverUrls.Count == 0)
         {
             return Fail("Title ini tidak punya URL cover dari provider.");
         }
@@ -136,33 +138,41 @@ public sealed class AutoCoverFeature
             }
         }
 
-        byte[] payload;
-        try
+        byte[]? png = null;
+        string? lastFailure = null;
+        foreach (var url in candidate.CoverUrls)
         {
-            payload = await _fetch(candidate.CoverUrl, cancellationToken).ConfigureAwait(false);
-        }
-        catch (OperationCanceledException)
-        {
-            throw;
-        }
-        catch (Exception exception)
-        {
-            return Fail("Cover tidak dapat diunduh: " + exception.GetBaseException().Message);
-        }
+            byte[] payload;
+            try
+            {
+                payload = await _fetch(url, cancellationToken).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch (Exception exception)
+            {
+                lastFailure = "Cover tidak dapat diunduh: " + exception.GetBaseException().Message;
+                continue;
+            }
 
-        byte[] png;
-        try
-        {
-            png = AsPng(payload);
+            try
+            {
+                png = AsPng(payload);
+                break;
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch (Exception exception)
+            {
+                lastFailure = "Payload cover bukan gambar yang valid: "
+                    + exception.GetBaseException().Message;
+            }
         }
-        catch (OperationCanceledException)
-        {
-            throw;
-        }
-        catch (Exception exception)
-        {
-            return Fail("Payload cover bukan gambar yang valid: " + exception.GetBaseException().Message);
-        }
+        if (png is null) return Fail(lastFailure ?? "Tidak ada kandidat cover yang dapat digunakan.");
 
         // Creating the deterministic title folder is allowed. The temporary name
         // carries no chapter extension, so a partial write can never be mistaken

@@ -37,6 +37,7 @@ public sealed class RemoteTitleCardModel : INotifyPropertyChanged
             _summary = value;
             OnPropertyChanged(nameof(Title));
             OnPropertyChanged(nameof(CoverUrl));
+            OnPropertyChanged(nameof(CoverUrls));
             OnPropertyChanged(nameof(ChapterCountText));
         }
     }
@@ -45,6 +46,8 @@ public sealed class RemoteTitleCardModel : INotifyPropertyChanged
 
     /// <summary>Empty until the screen's cover batch resolves it.</summary>
     public string CoverUrl => Summary.CoverUrl ?? string.Empty;
+
+    public IReadOnlyList<string> CoverUrls => Summary.CoverCandidates().ToArray();
 
     /// <summary>Card badge: the provider's own latest-chapter label.</summary>
     public string ChapterCountText => Summary.LatestChapterLabel ?? string.Empty;

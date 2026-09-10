@@ -70,6 +70,23 @@ public sealed record RemoteTitleSummary(
     string? CoverUrl,
     string? LatestChapterLabel)
 {
+    /// <summary>
+    /// Provider-owned alternatives for the same cover, tried only when the
+    /// primary URL cannot be fetched or decoded. Existing providers keep the
+    /// empty default and therefore retain their single-request behavior.
+    /// </summary>
+    public IReadOnlyList<string> CoverFallbackUrls { get; init; } = [];
+
+    public IEnumerable<string> CoverCandidates()
+    {
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        if (!string.IsNullOrWhiteSpace(CoverUrl) && seen.Add(CoverUrl)) yield return CoverUrl;
+        foreach (var fallback in CoverFallbackUrls)
+        {
+            if (!string.IsNullOrWhiteSpace(fallback) && seen.Add(fallback)) yield return fallback;
+        }
+    }
+
     public override string ToString() => DisplayName;
 }
 

@@ -19,6 +19,8 @@ public sealed class MangaTitleCardModel : INotifyPropertyChanged
 
     public string FolderPath => Manga.FolderPath;
 
+    public DateTime AddedUtc => Manga.AddedUtc;
+
     public string ChapterSummary => Manga.ChapterSummary;
 
     public string ChapterCountText => ChapterSummary;
