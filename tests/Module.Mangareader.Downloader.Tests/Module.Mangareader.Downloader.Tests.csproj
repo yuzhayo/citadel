@@ -82,6 +82,8 @@
              Link="Sources\MangaSourceContracts.cs" />
     <Compile Include="..\..\module\mangareader\Features\Downloader\Sources\MangaSourceRegistry.cs"
              Link="Downloader\Sources\MangaSourceRegistry.cs" />
+    <Compile Include="..\..\module\mangareader\Features\Downloader\Sources\QueueSourceReadiness.cs"
+             Link="Downloader\Sources\QueueSourceReadiness.cs" />
     <Compile Include="..\..\module\mangareader\Features\Downloader\Sources\Comix\ComixSource.cs"
              Link="Downloader\Sources\Comix\ComixSource.cs" />
     <Compile Include="..\..\module\mangareader\Features\Downloader\Sources\Comix\ComixManualUrlProbe.cs"

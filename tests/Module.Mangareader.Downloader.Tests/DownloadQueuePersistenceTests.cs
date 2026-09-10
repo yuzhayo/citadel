@@ -193,6 +193,44 @@ public sealed class DownloadQueuePersistenceTests : IDisposable
     }
 
     [Fact]
+    public async Task ResumeParksAllJobsWhenTheProviderSessionIsNotReady()
+    {
+        new DownloadQueueStore(_root).Save(
+        [
+            Job("first", DownloadJobState.Paused),
+            Job("second", DownloadJobState.Paused),
+        ]);
+        var source = new SessionBlockedSource();
+        using var feature = CreateFeature(new MangaSourceRegistry(
+        [
+            new MangaSourceRegistration(
+                source,
+                () => throw new NotSupportedException("the queue never builds a filter panel")),
+        ]));
+        var parked = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        feature.QueueSummaryChanged += (_, _) =>
+        {
+            var snapshot = feature.Snapshot();
+            if (snapshot.Count == 2 && snapshot.All(job =>
+                    job.State == DownloadJobState.Paused
+                    && job.Warning == SessionBlockedSource.BlockedReason))
+            {
+                parked.TrySetResult();
+            }
+        };
+
+        feature.ResumeAll();
+        await parked.Task.WaitAsync(TimeSpan.FromSeconds(2));
+
+        Assert.Equal(0, source.ManifestCalls);
+        Assert.All(feature.Snapshot(), job =>
+        {
+            Assert.Equal(DownloadJobState.Paused, job.State);
+            Assert.Equal(SessionBlockedSource.BlockedReason, job.Warning);
+        });
+    }
+
+    [Fact]
     public void NewBatchIsQueuedFromTheSmallestChapterNumber()
     {
         using var feature = CreateFeature(new MangaSourceRegistry([]), commitRoot: true);
@@ -262,6 +300,52 @@ public sealed class DownloadQueuePersistenceTests : IDisposable
 
         public Task<RemotePageImage> TransformPageAsync(RemotePage page, byte[] payload, CancellationToken cancellationToken) =>
             throw new NotSupportedException("the queue must not transform a page");
+    }
+
+    private sealed class SessionBlockedSource : IMangaSource, IQueueSourceReadiness
+    {
+        public const string BlockedReason =
+            "Comix belum aktif. Jalankan Start di Downloader, selesaikan challenge, lalu Resume Queue.";
+
+        public int ManifestCalls { get; private set; }
+
+        public string Id => "comix";
+
+        public string DisplayName => "Session blocked";
+
+        public MangaSourceCapabilities Capabilities { get; } = new(false, false, [], false);
+
+        public QueueSourceReadiness GetQueueReadiness() =>
+            QueueSourceReadiness.Blocked(BlockedReason);
+
+        public Task<RemoteChapterManifest> GetManifestAsync(
+            RemoteChapterIdentity chapter,
+            CancellationToken cancellationToken)
+        {
+            ManifestCalls++;
+            throw new InvalidOperationException("manifest must not be called without a ready session");
+        }
+
+        public Task<RemoteCatalogPage> BrowseAsync(RemoteBrowseRequest request, CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
+
+        public Task<IReadOnlyList<RemoteLookupOption>> LookupAsync(RemoteLookupKind kind, string query, CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
+
+        public Task<RemoteTitleDetail> GetTitleAsync(RemoteTitleIdentity title, CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
+
+        public Task<IReadOnlyList<RemoteSourceGroup>> GetGroupsAsync(RemoteTitleIdentity title, CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
+
+        public Task<IReadOnlyList<RemoteChapterSummary>> GetChaptersAsync(RemoteTitleIdentity title, RemoteGroupIdentity group, CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
+
+        public Task<IReadOnlyList<RemoteAlternateChapter>> FindAlternateGroupsAsync(RemoteChapterIdentity chapter, CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
+
+        public Task<RemotePageImage> TransformPageAsync(RemotePage page, byte[] payload, CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
     }
 
     [Fact]

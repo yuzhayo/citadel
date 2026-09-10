@@ -570,6 +570,20 @@ public sealed class DownloadQueueFeature : IDisposable
             Fail(job.JobId, $"Source '{sourceId}' tidak terdaftar.");
             return;
         }
+
+        if (source is IQueueSourceReadiness readiness)
+        {
+            var providerState = readiness.GetQueueReadiness();
+            if (!providerState.IsReady)
+            {
+                ParkQueuedSource(
+                    sourceId,
+                    providerState.BlockedReason
+                        ?? $"Source '{source.DisplayName}' belum siap untuk Queue.");
+                return;
+            }
+        }
+
         var identity = new RemoteTitleIdentity(
             job.Identity.SourceId,
             job.Identity.TitleId,
@@ -823,6 +837,32 @@ public sealed class DownloadQueueFeature : IDisposable
                 Warning = warning,
                 UpdatedUtc = DateTimeOffset.UtcNow,
             };
+        });
+
+    /// <summary>
+    /// Parks every queued job for one unavailable provider in one durable
+    /// mutation. This prevents a Resume batch from probing the same missing
+    /// prerequisite once per row while unrelated providers remain runnable.
+    /// </summary>
+    private void ParkQueuedSource(string sourceId, string reason) =>
+        Commit(jobs =>
+        {
+            for (var index = 0; index < jobs.Count; index++)
+            {
+                var current = jobs[index];
+                if (current.State != DownloadJobState.Queued
+                    || !string.Equals(current.Identity.SourceId, sourceId, StringComparison.Ordinal))
+                {
+                    continue;
+                }
+
+                jobs[index] = current with
+                {
+                    State = DownloadJobState.Paused,
+                    Warning = reason,
+                    UpdatedUtc = DateTimeOffset.UtcNow,
+                };
+            }
         });
 
     private void Fail(string jobId, string reason, DownloadJobState state = DownloadJobState.Failed) =>

@@ -70,6 +70,28 @@ public sealed class StagingContainmentTests : IDisposable
             () => _client.ResolveContained(Path.Combine(sibling, "page.png")));
     }
 
+    [Fact]
+    public async Task SessionSnapshotDoesNotWaitForAnActiveBrowserOperation()
+    {
+        var gate = (SemaphoreSlim)typeof(DownloaderPyHostClient)
+            .GetField("_gate", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!
+            .GetValue(_client)!;
+
+        await gate.WaitAsync();
+        try
+        {
+            var read = Task.Run(() => _client.HasSession);
+            var completed = await Task.WhenAny(read, Task.Delay(TimeSpan.FromMilliseconds(250)));
+
+            Assert.Same(read, completed);
+            Assert.False(await read);
+        }
+        finally
+        {
+            gate.Release();
+        }
+    }
+
     public void Dispose()
     {
         _client.Dispose();

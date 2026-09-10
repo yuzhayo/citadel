@@ -511,7 +511,7 @@ public static class ComixOptions
 /// No WPF, no queue, no archive writing.
 /// </summary>
 public sealed class ComixSource(DownloaderPyHostClient client)
-    : IMangaSource, ICatalogSnapshotSource, ICatalogGenreSnapshotSource
+    : IMangaSource, ICatalogSnapshotSource, ICatalogGenreSnapshotSource, IQueueSourceReadiness
 {
     /// <summary>
     /// Bound on one chapter listing: 100 captured pages of 20 is 2000 chapters,
@@ -525,6 +525,12 @@ public sealed class ComixSource(DownloaderPyHostClient client)
     public string Id => ComixContract.SourceId;
 
     public string DisplayName => ComixContract.DisplayName;
+
+    public QueueSourceReadiness GetQueueReadiness() =>
+        _client.HasSessionFor(ComixContract.SourceId)
+            ? QueueSourceReadiness.Ready
+            : QueueSourceReadiness.Blocked(
+                "Comix belum aktif. Jalankan Start di Downloader, selesaikan challenge, lalu Resume Queue.");
 
     string ICatalogSnapshotSource.SourceId => ComixContract.SourceId;
 

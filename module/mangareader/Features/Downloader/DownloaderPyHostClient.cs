@@ -71,20 +71,25 @@ public sealed class DownloaderPyHostClient : IDisposable
         set => Volatile.Write(ref _showBrowser, value ? 1 : 0);
     }
 
-    public bool HasSession
+    /// <summary>
+    /// Non-blocking presentation snapshot. A bootstrap owns <see cref="_gate"/>
+    /// for as long as 120 seconds, so UI code must never wait on that operation
+    /// merely to decide whether the Stop button is enabled.
+    /// </summary>
+    public bool HasSession => Volatile.Read(ref _session) is not null;
+
+    /// <summary>
+    /// Non-blocking provider-specific readiness snapshot used by Queue. This
+    /// never creates a host or waits for an in-flight bootstrap.
+    /// </summary>
+    public bool HasSessionFor(string provider)
     {
-        get
-        {
-            _gate.Wait();
-            try
-            {
-                return _session is not null;
-            }
-            finally
-            {
-                _gate.Release();
-            }
-        }
+        ArgumentException.ThrowIfNullOrWhiteSpace(provider);
+        return Volatile.Read(ref _session) is not null
+            && string.Equals(
+                Volatile.Read(ref _sessionProvider),
+                provider,
+                StringComparison.Ordinal);
     }
 
     /// <summary>
