@@ -143,16 +143,12 @@
 
                 <!-- Title detail replaces the grid; Back restores it exactly. -->
                 <Grid x:Name="DetailPanel" Visibility="Collapsed">
-                    <ScrollViewer HorizontalScrollBarVisibility="Disabled"
-                                  PanningMode="VerticalOnly"
-                                  Style="{DynamicResource SettingScrollViewerStyle}"
-                                  VerticalScrollBarVisibility="Auto">
                     <Grid>
                         <Grid.RowDefinitions>
                             <RowDefinition Height="Auto" />
                             <RowDefinition Height="Auto" />
                             <RowDefinition Height="Auto" />
-                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="*" />
                         </Grid.RowDefinitions>
 
                         <mangacomponents:MangaDetailView x:Name="Detail"
@@ -223,7 +219,6 @@
                     -->
                     <setting:SettingTable x:Name="ChapterTable"
                                           Grid.Row="3"
-                                          Height="320"
                                           Margin="0,12,0,0"
                                           AutomationProperties.Name="Chapters of the selected group"
                                           CanUserSortColumns="True">
@@ -258,6 +253,7 @@
                             <DataGridTemplateColumn CanUserSort="True"
                                                     Header="Chapter"
                                                     MinWidth="240"
+                                                    Width="*"
                                                     SortMemberPath="DisplayName">
                                 <DataGridTemplateColumn.CellTemplate>
                                     <DataTemplate>
@@ -297,7 +293,6 @@
                     </setting:SettingTable>
 
                     </Grid>
-                    </ScrollViewer>
                 </Grid>
             </Grid>
 

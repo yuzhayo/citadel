@@ -151,7 +151,7 @@ public sealed class CucumberMangaSourceTests
 
         var registry = MangaSourceRegistry.CreateDefault(browser);
 
-        Assert.Equal(["comix", "cucumber-manga"], registry.Sources.Select(source => source.Id));
+        Assert.Equal(["comix", "cucumber-manga"], registry.Sources.Take(2).Select(source => source.Id));
     }
 
     private sealed class RecordingHandler(string html) : HttpMessageHandler

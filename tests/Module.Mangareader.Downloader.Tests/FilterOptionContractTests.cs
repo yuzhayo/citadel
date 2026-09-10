@@ -91,7 +91,9 @@ public sealed class FilterOptionContractTests
     public void ThePanelDefaultsResolveToRealOptions()
     {
         Assert.Contains(ComixOptions.Sorts, option => option.Key == ComixOptions.DefaultSortKey);
-        Assert.NotEmpty(ComixOptions.DefaultRatingKeys);
+        Assert.Equal(
+            ComixOptions.Ratings.Select(option => option.Key),
+            ComixOptions.DefaultRatingKeys);
 
         foreach (var key in ComixOptions.DefaultRatingKeys)
         {

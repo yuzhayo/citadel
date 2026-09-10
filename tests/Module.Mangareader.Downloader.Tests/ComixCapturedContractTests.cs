@@ -24,7 +24,9 @@ public sealed class ComixCapturedContractTests
         "order%5Bchapter_updated_at%5D=desc"
         + "&page=1&limit=28"
         + "&content_rating%5B%5D=safe"
-        + "&content_rating%5B%5D=suggestive";
+        + "&content_rating%5B%5D=suggestive"
+        + "&content_rating%5B%5D=erotica"
+        + "&content_rating%5B%5D=pornographic";
 
     /// <summary>
     /// The bridge's own output shape, transcribed from the production smoke and
@@ -144,7 +146,7 @@ public sealed class ComixCapturedContractTests
     }
 
     [Fact]
-    public void TheDefaultFilterReproducesTheCapturedRequest()
+    public void TheDefaultFilterExplicitlyIncludesEveryCapturedRating()
     {
         Assert.Equal(28, ComixContract.PageSize);
         Assert.Equal("https://comix.ws", ComixContract.BaseUrl);
@@ -153,8 +155,8 @@ public sealed class ComixCapturedContractTests
         var wire = ComixBrowseQuery.Default.ToQueryString()
             + "&page=1&limit=" + ComixContract.PageSize.ToString(CultureInfo.InvariantCulture);
 
-        // The site sent page and limit before content_rating[]; parameter order
-        // carries no meaning, so the two are compared as sets of pairs.
+        // Parameter order carries no meaning, so the expected application
+        // default and serialized wire form are compared as sets of pairs.
         Assert.Equal(SortedPairs(CapturedQuery), SortedPairs(wire));
     }
 

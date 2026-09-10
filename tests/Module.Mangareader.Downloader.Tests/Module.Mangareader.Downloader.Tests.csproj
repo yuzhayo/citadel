@@ -78,6 +78,22 @@
              Link="Downloader\Sources\CucumberManga\CucumberMangaHtmlParser.cs" />
     <Compile Include="..\..\module\mangareader\Features\Downloader\Sources\CucumberManga\CucumberMangaSource.cs"
              Link="Downloader\Sources\CucumberManga\CucumberMangaSource.cs" />
+    <Compile Include="..\..\module\mangareader\Features\Downloader\Sources\DrakeScans\DrakeScansContract.cs"
+             Link="Downloader\Sources\DrakeScans\DrakeScansContract.cs" />
+    <Compile Include="..\..\module\mangareader\Features\Downloader\Sources\DrakeScans\DrakeScansJsonParser.cs"
+             Link="Downloader\Sources\DrakeScans\DrakeScansJsonParser.cs" />
+    <Compile Include="..\..\module\mangareader\Features\Downloader\Sources\DrakeScans\DrakeScansRscParser.cs"
+             Link="Downloader\Sources\DrakeScans\DrakeScansRscParser.cs" />
+    <Compile Include="..\..\module\mangareader\Features\Downloader\Sources\DrakeScans\DrakeScansSource.cs"
+             Link="Downloader\Sources\DrakeScans\DrakeScansSource.cs" />
+    <Page Include="..\..\module\mangareader\Features\Downloader\FilterSearch\DrakeScans\DrakeScansFilterPanel.xaml"
+          Link="Downloader\FilterSearch\DrakeScans\DrakeScansFilterPanel.xaml" />
+    <Compile Include="..\..\module\mangareader\Features\Downloader\FilterSearch\DrakeScans\DrakeScansFilterPanel.xaml.cs"
+             Link="Downloader\FilterSearch\DrakeScans\DrakeScansFilterPanel.xaml.cs">
+      <DependentUpon>DrakeScansFilterPanel.xaml</DependentUpon>
+    </Compile>
+    <Compile Include="..\..\module\mangareader\Features\Downloader\FilterSearch\DrakeScans\DrakeScansFilterContribution.cs"
+             Link="Downloader\FilterSearch\DrakeScans\DrakeScansFilterContribution.cs" />
     <Page Include="..\..\module\mangareader\Features\Downloader\FilterSearch\CucumberManga\CucumberMangaFilterPanel.xaml"
           Link="Downloader\FilterSearch\CucumberManga\CucumberMangaFilterPanel.xaml" />
     <Compile Include="..\..\module\mangareader\Features\Downloader\FilterSearch\CucumberManga\CucumberMangaFilterContribution.cs"

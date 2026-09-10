@@ -94,6 +94,7 @@ public sealed class MangaSourceRegistry : IMangaSourceDirectory
         ArgumentNullException.ThrowIfNull(client);
         var comix = new Comix.ComixSource(client);
         var cucumberManga = new CucumberManga.CucumberMangaSource();
+        var drakeScans = new DrakeScans.DrakeScansSource();
         return new MangaSourceRegistry(
         [
             new MangaSourceRegistration(
@@ -103,6 +104,9 @@ public sealed class MangaSourceRegistry : IMangaSourceDirectory
             new MangaSourceRegistration(
                 cucumberManga,
                 () => new global::Module.Mangareader.Features.Downloader.FilterSearch.CucumberManga.CucumberMangaFilterContribution()),
+            new MangaSourceRegistration(
+                drakeScans,
+                () => new global::Module.Mangareader.Features.Downloader.FilterSearch.DrakeScans.DrakeScansFilterContribution()),
         ]);
     }
 

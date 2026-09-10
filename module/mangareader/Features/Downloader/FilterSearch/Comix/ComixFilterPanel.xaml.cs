@@ -48,7 +48,7 @@ public sealed class ComixFilterContribution : IRemoteFilterContribution
 public sealed partial class ComixFilterPanel : UserControl, IRemoteFilterState
 {
     private const string IdleMessage =
-        "Defaults: latest update, Safe + Suggestive. Every filter value here was captured "
+        "Defaults: latest update, all ratings. Every filter value here was captured "
         + "live from the provider. No catalog request is sent until Search.";
 
     private readonly Func<RemoteLookupKind, string, CancellationToken, Task<IReadOnlyList<RemoteLookupOption>>> _lookup;
@@ -99,8 +99,8 @@ public sealed partial class ComixFilterPanel : UserControl, IRemoteFilterState
     private string? NumericParseError { get; set; }
 
     /// <summary>
-    /// Restores the provider-observed defaults — latest update plus Safe and
-    /// Suggestive — and clears every other draft value. Reset never fetches.
+    /// Restores the application defaults — latest update plus every explicit
+    /// rating — and clears every other draft value. Reset never fetches.
     /// </summary>
     public void Reset()
     {

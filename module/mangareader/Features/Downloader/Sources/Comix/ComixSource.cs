@@ -407,10 +407,11 @@ public static class ComixOptions
     ];
 
     /// <summary>
-    /// The ratings the site's own first browse request carried: safe and
-    /// suggestive. Captured live, not assumed.
+    /// Every rating is explicit by default, so an unedited browse never relies
+    /// on the provider's implicit content-rating fallback.
     /// </summary>
-    public static readonly IReadOnlyList<string> DefaultRatingKeys = ["safe", "suggestive"];
+    public static readonly IReadOnlyList<string> DefaultRatingKeys =
+        Ratings.Select(option => option.Key).ToArray();
 
     public static readonly IReadOnlyList<RemoteOption> Types =
     [
