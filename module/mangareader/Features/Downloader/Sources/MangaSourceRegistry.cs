@@ -53,12 +53,16 @@ public sealed record MangaSourceRegistration(
 public sealed class MangaSourceRegistry : IMangaSourceDirectory
 {
     private readonly Dictionary<string, MangaSourceRegistration> _byId;
+    private readonly Dictionary<string, IMangaSource> _allById;
     private readonly IReadOnlyList<IMangaSource> _directory;
 
-    public MangaSourceRegistry(IReadOnlyList<MangaSourceRegistration> registrations)
+    public MangaSourceRegistry(
+        IReadOnlyList<MangaSourceRegistration> registrations,
+        IReadOnlyList<IMangaSource>? auxiliarySources = null)
     {
         ArgumentNullException.ThrowIfNull(registrations);
         _byId = new Dictionary<string, MangaSourceRegistration>(StringComparer.Ordinal);
+        _allById = new Dictionary<string, IMangaSource>(StringComparer.Ordinal);
         foreach (var registration in registrations)
         {
             ArgumentNullException.ThrowIfNull(registration);
@@ -67,6 +71,18 @@ public sealed class MangaSourceRegistry : IMangaSourceDirectory
                 throw new ArgumentException(
                     "duplicate manga source id: " + registration.Id,
                     nameof(registrations));
+            }
+            _allById.Add(registration.Id, registration.Source);
+        }
+
+        foreach (var source in auxiliarySources ?? [])
+        {
+            ArgumentNullException.ThrowIfNull(source);
+            if (!_allById.TryAdd(source.Id, source))
+            {
+                throw new ArgumentException(
+                    "duplicate manga source id: " + source.Id,
+                    nameof(auxiliarySources));
             }
         }
 
@@ -82,7 +98,7 @@ public sealed class MangaSourceRegistry : IMangaSourceDirectory
     /// </summary>
     IReadOnlyList<IMangaSource> IMangaSourceDirectory.AvailableSources => _directory;
 
-    IMangaSource? IMangaSourceDirectory.FindSource(string? sourceId) => Find(sourceId)?.Source;
+    IMangaSource? IMangaSourceDirectory.FindSource(string? sourceId) => FindSource(sourceId);
 
     /// <summary>
     /// The one explicit registration point. Adding a provider means adding its
@@ -95,6 +111,7 @@ public sealed class MangaSourceRegistry : IMangaSourceDirectory
         var comix = new Comix.ComixSource(client);
         var cucumberManga = new CucumberManga.CucumberMangaSource();
         var drakeScans = new DrakeScans.DrakeScansSource();
+        var dynamicManual = new global::Module.Mangareader.Features.Downloader.ManualUrl.DynamicManualSource();
         return new MangaSourceRegistry(
         [
             new MangaSourceRegistration(
@@ -107,12 +124,18 @@ public sealed class MangaSourceRegistry : IMangaSourceDirectory
             new MangaSourceRegistration(
                 drakeScans,
                 () => new global::Module.Mangareader.Features.Downloader.FilterSearch.DrakeScans.DrakeScansFilterContribution()),
-        ]);
+        ],
+        [dynamicManual]);
     }
 
     public MangaSourceRegistration? Find(string? sourceId) =>
         sourceId is not null && _byId.TryGetValue(sourceId, out var registration)
             ? registration
+            : null;
+
+    public IMangaSource? FindSource(string? sourceId) =>
+        sourceId is not null && _allById.TryGetValue(sourceId, out var source)
+            ? source
             : null;
 
     public MangaSourceRegistration Require(string? sourceId) =>

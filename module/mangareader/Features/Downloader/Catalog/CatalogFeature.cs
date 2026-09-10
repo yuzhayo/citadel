@@ -429,7 +429,10 @@ public sealed class CatalogFeature
         RemoteSourceGroup group,
         CancellationToken cancellationToken)
     {
-        var source = CurrentSource();
+        // Detail can also be opened from Manual URL. Its identity, not the
+        // currently selected browse provider, is authoritative for chapter
+        // retrieval, so returning from Manual never mutates browse state.
+        var source = _sources.FindSource(title.SourceId);
         if (source is null) return;
 
         var generation = NextActionGeneration();
@@ -443,6 +446,79 @@ public sealed class CatalogFeature
         });
         await LoadChaptersAsync(source, title, group.Identity, generation, cancellationToken)
             .ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Opens a title already resolved by Manual URL. The existing provider
+    /// identity is retained and only groups/chapters are fetched here; the
+    /// browse selection, query, filters, and result collection stay untouched.
+    /// </summary>
+    public async Task OpenResolvedTitleAsync(
+        RemoteTitleDetail detail,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(detail);
+        var source = _sources.FindSource(detail.Summary.Identity.SourceId);
+        if (source is null)
+        {
+            Mutate(state => state with
+            {
+                ErrorMessage = $"Source '{detail.Summary.Identity.SourceId}' tidak terdaftar.",
+                IsActionBusy = false,
+            });
+            return;
+        }
+
+        var generation = NextActionGeneration();
+        Mutate(state => state with { IsActionBusy = true, ErrorMessage = null });
+        try
+        {
+            var groups = await source.GetGroupsAsync(detail.Summary.Identity, cancellationToken)
+                .ConfigureAwait(false);
+            if (IsActionStale(generation)) return;
+
+            if (groups.Count == 0)
+            {
+                Mutate(state => state with
+                {
+                    IsActionBusy = false,
+                    ErrorMessage = "Title ini tidak punya group chapter yang tersedia.",
+                });
+                return;
+            }
+
+            Mutate(state => state with
+            {
+                IsDetailOpen = true,
+                Detail = detail,
+                Groups = groups,
+                SelectedGroup = groups[0].Identity,
+                Chapters = [],
+                SelectedChapterIds = [],
+                IsActionBusy = false,
+                HasLibraryRoot = _hasLibraryRoot(),
+            });
+
+            await LoadChaptersAsync(
+                source,
+                detail.Summary.Identity,
+                groups[0].Identity,
+                generation,
+                cancellationToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            if (!IsActionStale(generation)) Mutate(state => state with { IsActionBusy = false });
+        }
+        catch (Exception exception)
+        {
+            if (IsActionStale(generation)) return;
+            Mutate(state => state with
+            {
+                ErrorMessage = exception.GetBaseException().Message,
+                IsActionBusy = false,
+            });
+        }
     }
 
     /// <summary>

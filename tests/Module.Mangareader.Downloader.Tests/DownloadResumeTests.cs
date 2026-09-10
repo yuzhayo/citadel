@@ -119,6 +119,47 @@ public sealed class DownloadResumeTests : IDisposable
         Assert.Equal(2, ChapterDownloadPipeline.PageConcurrency);
     }
 
+    [Fact]
+    public void OnlyTrailingPermanentNotFoundPagesMayBePublishedAsIncomplete()
+    {
+        var staged = new[]
+        {
+            new StagedPage(0, "page-0.png", "png"),
+            new StagedPage(1, "page-1.png", "png"),
+        };
+        var trailing404 = new PipelineResult(
+            Complete: false,
+            staged,
+            [2],
+            "1 page tetap gagal setelah recovery.",
+            ManifestConflict: false)
+        {
+            FailureEvidence =
+            [
+                new PageFailureEvidence(2, "missing-page", PageFetchOutcome.NotFound, "HTTP 404"),
+            ],
+        };
+        var transient = trailing404 with
+        {
+            FailureEvidence =
+            [
+                new PageFailureEvidence(2, "missing-page", PageFetchOutcome.NetworkFailed, "timeout"),
+            ],
+        };
+        var middle404 = trailing404 with
+        {
+            FailedPages = [1],
+            FailureEvidence =
+            [
+                new PageFailureEvidence(1, "middle-page", PageFetchOutcome.NotFound, "HTTP 404"),
+            ],
+        };
+
+        Assert.True(trailing404.CanPublishIncomplete(expectedPageCount: 3));
+        Assert.False(transient.CanPublishIncomplete(expectedPageCount: 3));
+        Assert.False(middle404.CanPublishIncomplete(expectedPageCount: 3));
+    }
+
     /// <summary>
     /// Seeds one job's staging folder with a journal and a page file, so the
     /// pipeline can decide whether to reuse it.

@@ -11,8 +11,20 @@ public sealed record ChapterDownloadProgress(
     string StatusText);
 
 /// <summary>
+/// Terminal evidence from the final recovery attempt for one missing page.
+/// Queue policy may distinguish a permanently absent page from a transient
+/// transport or decoding failure without guessing from a display string.
+/// </summary>
+public sealed record PageFailureEvidence(
+    int Ordinal,
+    string RemoteKey,
+    PageFetchOutcome Outcome,
+    string Detail);
+
+/// <summary>
 /// One chapter's staging result. <see cref="FailedPages"/> is the authority on
-/// completeness: a chapter is never publishable while it is non-empty.
+/// completeness; typed <see cref="FailureEvidence"/> lets the Queue apply its
+/// one narrow exception for permanently absent trailing pages.
 /// </summary>
 public sealed record PipelineResult(
     bool Complete,
@@ -21,9 +33,52 @@ public sealed record PipelineResult(
     string? Detail,
     bool ManifestConflict)
 {
+    public IReadOnlyList<PageFailureEvidence> FailureEvidence { get; init; } = [];
+
     public static PipelineResult Conflict(string detail) =>
         new(false, [], [], detail, ManifestConflict: true);
+
+    /// <summary>
+    /// A partial archive is safe only when every missing page is a confirmed
+    /// permanent 404/410 at the trailing edge. Missing pages in the middle and
+    /// all transient failures remain hard failures, preserving page order.
+    /// </summary>
+    public bool CanPublishIncomplete(int expectedPageCount)
+    {
+        if (Complete
+            || ManifestConflict
+            || Pages.Count == 0
+            || expectedPageCount != Pages.Count + FailureEvidence.Count
+            || FailedPages.Count != FailureEvidence.Count
+            || FailureEvidence.Any(failure => failure.Outcome != PageFetchOutcome.NotFound))
+        {
+            return false;
+        }
+
+        var orderedPages = Pages.OrderBy(page => page.Ordinal).ToArray();
+        for (var ordinal = 0; ordinal < orderedPages.Length; ordinal++)
+        {
+            if (orderedPages[ordinal].Ordinal != ordinal) return false;
+        }
+
+        var orderedFailures = FailureEvidence.OrderBy(failure => failure.Ordinal).ToArray();
+        for (var index = 0; index < orderedFailures.Length; index++)
+        {
+            var expectedOrdinal = orderedPages.Length + index;
+            if (orderedFailures[index].Ordinal != expectedOrdinal
+                || !FailedPages.Contains(expectedOrdinal))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
 }
+
+internal sealed record PageAttemptResult(
+    StagedPageRecord? Record,
+    PageFailureEvidence? Failure);
 
 /// <summary>The per-page staging journal written to a job's own job.json.</summary>
 internal sealed record JobJournal(
@@ -109,18 +164,18 @@ public sealed class ChapterDownloadPipeline
 
         var records = new Dictionary<int, StagedPageRecord>(
             (journal?.Pages ?? []).ToDictionary(record => record.Ordinal));
-        var failed = new SortedSet<int>();
+        var failures = new Dictionary<int, PageFailureEvidence>();
         var completed = 0;
 
         Report(progress, completed, manifest.PageCount, "Memulai chapter");
 
         // First pass: every expected page, continuing past failures.
         completed = await RunPassAsync(
-            manifest, referer, jobRoot, records, failed,
+            manifest, referer, jobRoot, records, failures,
             Enumerable.Range(0, manifest.PageCount).ToList(),
             progress, completed, cancellationToken).ConfigureAwait(false);
 
-        if (failed.Count > 0)
+        if (failures.Count > 0)
         {
             // Recovery pass: refresh the same chapter and retry only the
             // failures, never the pages that already validated.
@@ -135,9 +190,12 @@ public sealed class ChapterDownloadPipeline
                 return new PipelineResult(
                     false,
                     [],
-                    [.. failed],
+                    [.. failures.Keys.Order()],
                     "Recovery gagal menyegarkan manifest: " + exception.GetBaseException().Message,
-                    ManifestConflict: false);
+                    ManifestConflict: false)
+                {
+                    FailureEvidence = [.. failures.Values.OrderBy(failure => failure.Ordinal)],
+                };
             }
 
             if (!string.Equals(refreshed.ManifestHash, manifest.ManifestHash, StringComparison.Ordinal))
@@ -146,24 +204,28 @@ public sealed class ChapterDownloadPipeline
                     "Manifest berubah saat recovery; job perlu dimulai ulang.");
             }
 
-            Report(progress, completed, manifest.PageCount, $"Memulihkan {failed.Count} page gagal");
-            var retryOrdinals = failed.ToList();
-            failed.Clear();
+            Report(progress, completed, manifest.PageCount, $"Memulihkan {failures.Count} page gagal");
+            var retryOrdinals = failures.Keys.Order().ToList();
+            failures.Clear();
             completed = await RunPassAsync(
-                refreshed, referer, jobRoot, records, failed,
+                refreshed, referer, jobRoot, records, failures,
                 retryOrdinals, progress, completed, cancellationToken).ConfigureAwait(false);
         }
 
         WriteJournal(jobRoot, manifest.ManifestHash, records);
 
-        if (failed.Count > 0)
+        if (failures.Count > 0)
         {
+            var stagedPages = StagedPages(jobRoot, records);
             return new PipelineResult(
                 false,
-                [],
-                [.. failed],
-                $"{failed.Count} page tetap gagal setelah recovery.",
-                ManifestConflict: false);
+                stagedPages,
+                [.. failures.Keys.Order()],
+                $"{failures.Count} page tetap gagal setelah recovery.",
+                ManifestConflict: false)
+            {
+                FailureEvidence = [.. failures.Values.OrderBy(failure => failure.Ordinal)],
+            };
         }
 
         var staged = new List<StagedPage>(manifest.PageCount);
@@ -201,7 +263,7 @@ public sealed class ChapterDownloadPipeline
         string referer,
         string jobRoot,
         Dictionary<int, StagedPageRecord> records,
-        SortedSet<int> failed,
+        Dictionary<int, PageFailureEvidence> failures,
         IReadOnlyList<int> ordinals,
         IProgress<ChapterDownloadProgress>? progress,
         int completed,
@@ -229,13 +291,17 @@ public sealed class ChapterDownloadPipeline
                 return;
             }
 
-            var record = await AttemptPageAsync(page, ordinal, jobRoot, referer, manifest, token)
+            var attempt = await AttemptPageAsync(page, ordinal, jobRoot, referer, manifest, token)
                 .ConfigureAwait(false);
-            if (record is null)
+            if (attempt.Record is null)
             {
-                lock (failed)
+                lock (failures)
                 {
-                    failed.Add(ordinal);
+                    failures[ordinal] = attempt.Failure ?? new PageFailureEvidence(
+                        ordinal,
+                        page.RemoteKey,
+                        PageFetchOutcome.NetworkFailed,
+                        "page attempt ended without failure evidence");
                 }
 
                 Report(progress, Volatile.Read(ref counter), manifest.PageCount, $"Page {ordinal + 1} gagal");
@@ -244,7 +310,7 @@ public sealed class ChapterDownloadPipeline
 
             lock (records)
             {
-                records[ordinal] = record;
+                records[ordinal] = attempt.Record;
             }
 
             var done = Interlocked.Increment(ref counter);
@@ -259,7 +325,7 @@ public sealed class ChapterDownloadPipeline
     /// 1/2/4 second schedule. Whether a failed attempt may use the browser is
     /// decided by the transport, not here.
     /// </summary>
-    private async Task<StagedPageRecord?> AttemptPageAsync(
+    private async Task<PageAttemptResult> AttemptPageAsync(
         RemotePage page,
         int ordinal,
         string jobRoot,
@@ -271,6 +337,11 @@ public sealed class ChapterDownloadPipeline
         Directory.CreateDirectory(Path.GetDirectoryName(basePath)!);
         var rawPath = basePath + ".raw";
         var rawRelative = Path.GetRelativePath(_stagingRoot, rawPath);
+        var lastFailure = new PageFailureEvidence(
+            ordinal,
+            page.RemoteKey,
+            PageFetchOutcome.NetworkFailed,
+            "page request did not complete");
 
         for (var attempt = 0; attempt <= _retryDelays.Count; attempt++)
         {
@@ -293,11 +364,17 @@ public sealed class ChapterDownloadPipeline
             }
             catch (Exception exception) when (exception is IOException or InvalidOperationException)
             {
+                lastFailure = lastFailure with { Detail = exception.GetBaseException().Message };
                 continue;
             }
 
             if (!fetch.Succeeded || fetch.StoredPath is null)
             {
+                lastFailure = new PageFailureEvidence(
+                    ordinal,
+                    page.RemoteKey,
+                    fetch.Outcome,
+                    fetch.Detail ?? fetch.Outcome.ToString());
                 continue;
             }
 
@@ -309,6 +386,7 @@ public sealed class ChapterDownloadPipeline
             }
             catch (IOException)
             {
+                lastFailure = lastFailure with { Detail = "staged page could not be read" };
                 continue;
             }
 
@@ -334,6 +412,13 @@ public sealed class ChapterDownloadPipeline
                 {
                     // An unknown algorithm or corrupt output is a visible page
                     // failure, never a silent pass-through of scrambled bytes.
+                    lastFailure = new PageFailureEvidence(
+                        ordinal,
+                        page.RemoteKey,
+                        exception is InvalidDataException
+                            ? PageFetchOutcome.Challenge
+                            : PageFetchOutcome.NetworkFailed,
+                        exception.GetBaseException().Message);
                     continue;
                 }
             }
@@ -347,6 +432,7 @@ public sealed class ChapterDownloadPipeline
             }
             catch (IOException)
             {
+                lastFailure = lastFailure with { Detail = "validated page could not be staged" };
                 continue;
             }
             finally
@@ -355,21 +441,32 @@ public sealed class ChapterDownloadPipeline
             }
 
             TryDelete(rawPath);
-            return new StagedPageRecord(
-                ordinal,
-                page.RemoteKey,
-                Path.GetRelativePath(jobRoot, finalPath),
-                page.ExpectedBytes,
-                bytes.Length,
-                Convert.ToHexString(SHA256.HashData(bytes)),
-                format,
-                transformed,
-                Validated: true);
+            return new PageAttemptResult(
+                new StagedPageRecord(
+                    ordinal,
+                    page.RemoteKey,
+                    Path.GetRelativePath(jobRoot, finalPath),
+                    page.ExpectedBytes,
+                    bytes.Length,
+                    Convert.ToHexString(SHA256.HashData(bytes)),
+                    format,
+                    transformed,
+                    Validated: true),
+                null);
         }
 
         TryDelete(rawPath);
-        return null;
+        return new PageAttemptResult(null, lastFailure);
     }
+
+    private static IReadOnlyList<StagedPage> StagedPages(
+        string jobRoot,
+        Dictionary<int, StagedPageRecord> records) =>
+        [.. records.OrderBy(pair => pair.Key).Select(pair =>
+            new StagedPage(
+                pair.Key,
+                Path.Combine(jobRoot, pair.Value.RelativePath),
+                pair.Value.Format))];
 
     private static bool IsReusable(string absolutePath, StagedPageRecord record)
     {

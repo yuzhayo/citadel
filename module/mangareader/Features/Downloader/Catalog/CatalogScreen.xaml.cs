@@ -13,6 +13,7 @@ using System.Windows.Media.Imaging;
 using Citadel.Setting.Components;
 using Module.Mangareader.Features.Downloader.AutoCover;
 using Module.Mangareader.Features.Downloader.Lister;
+using Module.Mangareader.Features.Downloader.ManualUrl;
 using Module.Mangareader.Features.Downloader.Queue;
 using Module.Mangareader.Sources;
 using Module.Mangareader.Features.Downloader.Sources;
@@ -65,6 +66,7 @@ public partial class CatalogScreen : UserControl, IDisposable
     private bool _settingGroup;
     private bool _browseActive;
     private bool _stopping;
+    private bool _manualDetail;
     private bool _disposed;
 
     public CatalogScreen()
@@ -94,6 +96,12 @@ public partial class CatalogScreen : UserControl, IDisposable
 
     /// <summary>The only entry point to Download List.</summary>
     public event EventHandler? OpenDownloadList;
+
+    /// <summary>Requests the route host to show the dedicated Manual URL input screen.</summary>
+    public event EventHandler? OpenManualUrl;
+
+    /// <summary>Returns from a manually opened detail to its dedicated input screen.</summary>
+    public event EventHandler? ReturnToManualUrl;
 
     /// <summary>
     /// Announces that a queue item was added for this title, carrying one
@@ -175,6 +183,38 @@ public partial class CatalogScreen : UserControl, IDisposable
         await StartCatalogAsync();
     }
 
+    private void ManualButton_Click(object sender, RoutedEventArgs e) =>
+        OpenManualUrl?.Invoke(this, EventArgs.Empty);
+
+    /// <summary>
+    /// Opens a detail resolved by Manual URL while leaving the current browse
+    /// state intact. The same detail/queue presentation is reused; only the
+    /// provider controls are hidden for this route.
+    /// </summary>
+    public async Task<string?> OpenManualTitleAsync(ManualUrlResolution resolution)
+    {
+        ArgumentNullException.ThrowIfNull(resolution);
+        if (_disposed || _catalog is null) return "Downloader belum siap.";
+
+        _manualDetail = true;
+        await RunActionAsync(async token =>
+        {
+            await _catalog.OpenResolvedTitleAsync(resolution.Title, token);
+            if (_catalog.State.IsDetailOpen)
+            {
+                await RefreshListerAsync(token);
+                await LoadDetailCoverAsync(resolution.Title.Summary, token);
+            }
+        });
+
+        var state = _catalog.State;
+        if (state.IsDetailOpen) return null;
+
+        _manualDetail = false;
+        Render(state);
+        return state.ErrorMessage ?? "URL tidak dapat membuka title.";
+    }
+
     private async Task StartCatalogAsync()
     {
         if (_disposed || _catalog is null || _context is null || _browseActive) return;
@@ -230,9 +270,25 @@ public partial class CatalogScreen : UserControl, IDisposable
     private void BackButton_Click(object sender, RoutedEventArgs e)
     {
         if (_catalog is null) return;
+        var returnToManual = _manualDetail;
         var anchor = _catalog.State.ResultsScrollOffset;
         _catalog.Back();
 
+        ClearDetailPresentation();
+        _manualDetail = false;
+        Render(_catalog.State);
+
+        if (returnToManual)
+        {
+            ReturnToManualUrl?.Invoke(this, EventArgs.Empty);
+            return;
+        }
+
+        Dispatcher.BeginInvoke(() => ResultsScroll.ScrollToVerticalOffset(anchor));
+    }
+
+    private void ClearDetailPresentation()
+    {
         // The detail and its cover belong to the title being left; releasing them
         // here means a later title can never inherit this one's cover.
         _detailAdapter = null;
@@ -247,8 +303,6 @@ public partial class CatalogScreen : UserControl, IDisposable
         _chapterSetKey = null;
 
         RenderLocalAvailability();
-
-        Dispatcher.BeginInvoke(() => ResultsScroll.ScrollToVerticalOffset(anchor));
     }
 
     private async void GroupPicker_SelectionChanged(object sender, SelectionChangedEventArgs e)
@@ -414,6 +468,7 @@ public partial class CatalogScreen : UserControl, IDisposable
 
     private void Render(CatalogState state)
     {
+        ProviderControlsPanel.Visibility = _manualDetail ? Visibility.Collapsed : Visibility.Visible;
         RenderRequestButtons(state);
         LoadMoreButton.IsEnabled = !state.IsBusy && !_stopping && state.CanLoadMore;
         SourcePicker.IsEnabled = !state.IsBusy;
@@ -457,6 +512,7 @@ public partial class CatalogScreen : UserControl, IDisposable
         SearchButton.Content = _browseActive ? "Searching…" : "Search";
         SearchButton.IsEnabled = !processBusy
             && !state.IsActionBusy;
+        ManualButton.IsEnabled = !processBusy && !state.IsActionBusy;
         StopButton.IsEnabled = !_stopping
             && (hasSession || _browseActive);
     }

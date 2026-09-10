@@ -2,15 +2,15 @@
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:catalog="clr-namespace:Module.Mangareader.Features.Downloader.Catalog"
+             xmlns:manual="clr-namespace:Module.Mangareader.Features.Downloader.ManualUrl"
              Background="{DynamicResource Bg}"
              Foreground="{DynamicResource Fg}"
              UseLayoutRounding="True"
              SnapsToDevicePixels="True">
-    <!-- One routed child: the online Catalog. The Queue screen is hosted once
-         as a top-level tab by the MangaReader parent; this host only relays
-         the request to navigate there. Hiding a screen never disposes the
-         queue or the provider session. -->
+    <!-- Queue remains a top-level MangaReader tab. This host only routes
+         Downloader Catalog and the dedicated Manual URL entry screen. -->
     <Grid>
         <catalog:CatalogScreen x:Name="CatalogScreen" />
+        <manual:ManualUrlScreen x:Name="ManualUrlScreen" Visibility="Collapsed" />
     </Grid>
 </UserControl>

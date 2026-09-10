@@ -24,6 +24,24 @@ public sealed record CbzSourceManifest(
     int PageCount,
     string ManifestHash);
 
+/// <summary>A permanently absent page recorded inside an incomplete CBZ.</summary>
+public sealed record CbzMissingPage(
+    int Ordinal,
+    int PageNumber,
+    string RemoteKey,
+    string Outcome,
+    string Detail);
+
+/// <summary>
+/// Machine-readable evidence that a CBZ intentionally contains every valid
+/// page available from the provider but not every page declared by its HTML.
+/// </summary>
+public sealed record CbzIncompleteManifest(
+    int Version,
+    int ExpectedPageCount,
+    int DownloadedPageCount,
+    IReadOnlyList<CbzMissingPage> MissingPages);
+
 /// <summary>One staged page ready to be packaged, in manifest order.</summary>
 public sealed record StagedPage(int Ordinal, string AbsolutePath, string Format);
 
@@ -48,7 +66,9 @@ public sealed record PublicationOutcome(
 public sealed class CbzChapterPublisher
 {
     public const int SourceManifestVersion = 1;
+    public const int IncompleteManifestVersion = 1;
     public const string SourceManifestEntryName = "META-INF/citadel-source.json";
+    public const string IncompleteManifestEntryName = "META-INF/citadel-incomplete.json";
 
     private readonly ArchiveValidator _validator;
     private readonly IArchiveLockCoordinator _locks;
@@ -75,7 +95,69 @@ public sealed class CbzChapterPublisher
         ArgumentNullException.ThrowIfNull(identity);
         ArgumentNullException.ThrowIfNull(target);
         return Task.Run(
-            () => Publish(identity, groupDisplayName, manifestHash, pages, target, cancellationToken),
+            () => Publish(
+                identity,
+                groupDisplayName,
+                manifestHash,
+                pages,
+                incomplete: null,
+                target,
+                cancellationToken),
+            cancellationToken);
+    }
+
+    /// <summary>
+    /// Publishes a readable partial CBZ only for trailing pages whose final
+    /// recovery result is a permanent 404/410. The stricter validation is
+    /// repeated here so no caller can use this entry point for transient or
+    /// middle-of-chapter loss.
+    /// </summary>
+    public Task<PublicationOutcome> PublishIncompleteAsync(
+        RemoteChapterIdentity identity,
+        string groupDisplayName,
+        string manifestHash,
+        IReadOnlyList<StagedPage> pages,
+        int expectedPageCount,
+        IReadOnlyList<PageFailureEvidence> failures,
+        DownloadTarget target,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(identity);
+        ArgumentNullException.ThrowIfNull(pages);
+        ArgumentNullException.ThrowIfNull(failures);
+        ArgumentNullException.ThrowIfNull(target);
+
+        var orderedFailures = failures.OrderBy(failure => failure.Ordinal).ToArray();
+        if (pages.Count == 0
+            || expectedPageCount != pages.Count + orderedFailures.Length
+            || orderedFailures.Length == 0
+            || orderedFailures.Any(failure => failure.Outcome != PageFetchOutcome.NotFound)
+            || orderedFailures.Where((failure, index) => failure.Ordinal != pages.Count + index).Any())
+        {
+            return Task.FromResult(PublicationOutcome.Conflict(
+                "CBZ incomplete hanya boleh diterbitkan untuk trailing page yang permanen tidak ditemukan."));
+        }
+
+        var incomplete = new CbzIncompleteManifest(
+            IncompleteManifestVersion,
+            expectedPageCount,
+            pages.Count,
+            [.. orderedFailures.Select(failure => new CbzMissingPage(
+                failure.Ordinal,
+                failure.Ordinal + 1,
+                failure.RemoteKey,
+                failure.Outcome.ToString(),
+                failure.Detail))]);
+
+        return Task.Run(
+            () => Publish(
+                identity,
+                groupDisplayName,
+                manifestHash,
+                pages,
+                incomplete,
+                target,
+                cancellationToken),
             cancellationToken);
     }
 
@@ -84,10 +166,18 @@ public sealed class CbzChapterPublisher
         string groupDisplayName,
         string manifestHash,
         IReadOnlyList<StagedPage> pages,
+        CbzIncompleteManifest? incomplete,
         DownloadTarget target,
         CancellationToken cancellationToken)
     {
         var warnings = new List<string>();
+
+        if (incomplete is not null)
+        {
+            warnings.Add(
+                $"Incomplete {incomplete.DownloadedPageCount}/{incomplete.ExpectedPageCount}: "
+                + $"{incomplete.MissingPages.Count} trailing page tidak tersedia permanen.");
+        }
 
         // 1. Completeness against the manifest: every ordinal exactly once.
         if (pages.Count == 0)
@@ -151,7 +241,7 @@ public sealed class CbzChapterPublisher
         string? backupCandidate = null;
         try
         {
-            WriteZip(temporaryPath, pages, sourceManifest, cancellationToken);
+            WriteZip(temporaryPath, pages, sourceManifest, incomplete, cancellationToken);
 
             // 4. Validate the built archive before it can become the final file.
             var validation = _validator.Validate(temporaryPath);
@@ -161,7 +251,7 @@ public sealed class CbzChapterPublisher
                     $"Arsip yang dibangun tidak sehat ({validation.State}): {validation.Detail}");
             }
 
-            VerifyArchiveEntries(temporaryPath, pages.Count, sourceManifest);
+            VerifyArchiveEntries(temporaryPath, pages.Count, sourceManifest, incomplete);
 
             IReadOnlyList<ReleasedArchiveProcess> released = [];
             string? backupPath = null;
@@ -215,6 +305,7 @@ public sealed class CbzChapterPublisher
         string path,
         IReadOnlyList<StagedPage> pages,
         CbzSourceManifest manifest,
+        CbzIncompleteManifest? incomplete,
         CancellationToken cancellationToken)
     {
         using var archive = ZipFile.Open(path, ZipArchiveMode.Create);
@@ -232,9 +323,19 @@ public sealed class CbzChapterPublisher
         }
 
         cancellationToken.ThrowIfCancellationRequested();
-        var provenance = archive.CreateEntry(SourceManifestEntryName, CompressionLevel.Optimal);
-        using var writer = new StreamWriter(provenance.Open(), new UTF8Encoding(false));
-        writer.Write(JsonSerializer.Serialize(manifest, new JsonSerializerOptions { WriteIndented = true }));
+        WriteJsonEntry(archive, SourceManifestEntryName, manifest);
+        if (incomplete is not null)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            WriteJsonEntry(archive, IncompleteManifestEntryName, incomplete);
+        }
+    }
+
+    private static void WriteJsonEntry<T>(ZipArchive archive, string name, T value)
+    {
+        var entry = archive.CreateEntry(name, CompressionLevel.Optimal);
+        using var writer = new StreamWriter(entry.Open(), new UTF8Encoding(false));
+        writer.Write(JsonSerializer.Serialize(value, new JsonSerializerOptions { WriteIndented = true }));
     }
 
     /// <summary>
@@ -245,11 +346,13 @@ public sealed class CbzChapterPublisher
     private static void VerifyArchiveEntries(
         string path,
         int expectedPages,
-        CbzSourceManifest expectedManifest)
+        CbzSourceManifest expectedManifest,
+        CbzIncompleteManifest? expectedIncomplete)
     {
         using var archive = ZipFile.OpenRead(path);
         var imageEntries = archive.Entries
-            .Where(entry => !string.Equals(entry.FullName, SourceManifestEntryName, StringComparison.Ordinal))
+            .Where(entry => !string.Equals(entry.FullName, SourceManifestEntryName, StringComparison.Ordinal)
+                && !string.Equals(entry.FullName, IncompleteManifestEntryName, StringComparison.Ordinal))
             .ToList();
 
         if (imageEntries.Count != expectedPages)
@@ -292,6 +395,32 @@ public sealed class CbzChapterPublisher
         {
             throw new InvalidDataException(
                 "Provenance di dalam arsip tidak cocok dengan identitas job.");
+        }
+
+        var incompleteEntry = archive.GetEntry(IncompleteManifestEntryName);
+        if (expectedIncomplete is null)
+        {
+            if (incompleteEntry is not null)
+            {
+                throw new InvalidDataException("Arsip lengkap tidak boleh membawa metadata incomplete.");
+            }
+            return;
+        }
+
+        if (incompleteEntry is null)
+        {
+            throw new InvalidDataException("Metadata incomplete tidak ada di arsip.");
+        }
+
+        using var incompleteStream = incompleteEntry.Open();
+        var embeddedIncomplete = JsonSerializer.Deserialize<CbzIncompleteManifest>(incompleteStream);
+        if (embeddedIncomplete is null
+            || embeddedIncomplete.Version != expectedIncomplete.Version
+            || embeddedIncomplete.ExpectedPageCount != expectedIncomplete.ExpectedPageCount
+            || embeddedIncomplete.DownloadedPageCount != expectedIncomplete.DownloadedPageCount
+            || !embeddedIncomplete.MissingPages.SequenceEqual(expectedIncomplete.MissingPages))
+        {
+            throw new InvalidDataException("Metadata incomplete di dalam arsip tidak cocok dengan job.");
         }
     }
 

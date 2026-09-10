@@ -1,5 +1,6 @@
 using System.Windows.Controls;
 using Module.Mangareader.Features.Downloader.AutoCover;
+using Module.Mangareader.Features.Downloader.ManualUrl;
 
 namespace Module.Mangareader.Features.Downloader;
 
@@ -36,8 +37,13 @@ public partial class DownloaderView : UserControl, IDisposable
 
         _context = context;
         CatalogScreen.UseContext(context);
+        ManualUrlScreen.UseContext(context);
         CatalogScreen.OpenDownloadList += CatalogScreen_OpenDownloadList;
         CatalogScreen.CoverCandidateAvailable += CatalogScreen_CoverCandidateAvailable;
+        CatalogScreen.OpenManualUrl += CatalogScreen_OpenManualUrl;
+        CatalogScreen.ReturnToManualUrl += CatalogScreen_ReturnToManualUrl;
+        ManualUrlScreen.BackRequested += ManualUrlScreen_BackRequested;
+        ManualUrlScreen.TitleResolved += ManualUrlScreen_TitleResolved;
     }
 
     /// <summary>
@@ -48,6 +54,40 @@ public partial class DownloaderView : UserControl, IDisposable
 
     private void CatalogScreen_OpenDownloadList(object? sender, EventArgs e) =>
         OpenDownloadQueue?.Invoke(this, EventArgs.Empty);
+
+    private void CatalogScreen_OpenManualUrl(object? sender, EventArgs e) => ShowManualUrl();
+
+    private void CatalogScreen_ReturnToManualUrl(object? sender, EventArgs e) => ShowManualUrl();
+
+    private void ManualUrlScreen_BackRequested(object? sender, EventArgs e) => ShowCatalog();
+
+    private async void ManualUrlScreen_TitleResolved(object? sender, ManualUrlResolution resolution)
+    {
+        if (_disposed) return;
+        var failure = await CatalogScreen.OpenManualTitleAsync(resolution);
+        if (_disposed) return;
+
+        if (failure is null)
+        {
+            ShowCatalog();
+        }
+        else
+        {
+            ManualUrlScreen.ReportError(failure);
+        }
+    }
+
+    private void ShowManualUrl()
+    {
+        CatalogScreen.Visibility = System.Windows.Visibility.Collapsed;
+        ManualUrlScreen.Visibility = System.Windows.Visibility.Visible;
+    }
+
+    private void ShowCatalog()
+    {
+        ManualUrlScreen.Visibility = System.Windows.Visibility.Collapsed;
+        CatalogScreen.Visibility = System.Windows.Visibility.Visible;
+    }
 
     /// <summary>
     /// Relays one immutable cover candidate to Auto Cover. This host decides
@@ -90,6 +130,10 @@ public partial class DownloaderView : UserControl, IDisposable
 
         CatalogScreen.OpenDownloadList -= CatalogScreen_OpenDownloadList;
         CatalogScreen.CoverCandidateAvailable -= CatalogScreen_CoverCandidateAvailable;
+        CatalogScreen.OpenManualUrl -= CatalogScreen_OpenManualUrl;
+        CatalogScreen.ReturnToManualUrl -= CatalogScreen_ReturnToManualUrl;
+        ManualUrlScreen.BackRequested -= ManualUrlScreen_BackRequested;
+        ManualUrlScreen.TitleResolved -= ManualUrlScreen_TitleResolved;
 
         // Take the field, clear it, then cancel and dispose: an automatic cover
         // still in flight must stop with its host, and nothing afterwards can hand
@@ -100,6 +144,7 @@ public partial class DownloaderView : UserControl, IDisposable
         lifetime?.Dispose();
 
         CatalogScreen.Dispose();
+        ManualUrlScreen.Dispose();
         _context = null;
     }
 }

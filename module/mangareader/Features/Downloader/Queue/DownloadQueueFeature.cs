@@ -564,14 +564,12 @@ public sealed class DownloadQueueFeature : IDisposable
         }
 
         var sourceId = job.Identity.SourceId;
-        var registrationEntry = _sources.Find(sourceId);
-        if (registrationEntry is null)
+        var source = _sources.FindSource(sourceId);
+        if (source is null)
         {
             Fail(job.JobId, $"Source '{sourceId}' tidak terdaftar.");
             return;
         }
-
-        var source = registrationEntry.Source;
         var identity = new RemoteTitleIdentity(
             job.Identity.SourceId,
             job.Identity.TitleId,
@@ -644,7 +642,8 @@ public sealed class DownloadQueueFeature : IDisposable
             return;
         }
 
-        if (!result.Complete)
+        var publishIncomplete = result.CanPublishIncomplete(manifest.PageCount);
+        if (!result.Complete && !publishIncomplete)
         {
             await EnterFallbackOrFailAsync(job, source, chapterIdentity, result, linked.Token)
                 .ConfigureAwait(false);
@@ -663,13 +662,23 @@ public sealed class DownloadQueueFeature : IDisposable
         PublicationOutcome outcome;
         try
         {
-            outcome = await publisher.PublishAsync(
-                chapterIdentity,
-                current.GroupDisplayName,
-                manifest.ManifestHash,
-                result.Pages,
-                current.Target,
-                linked.Token).ConfigureAwait(false);
+            outcome = publishIncomplete
+                ? await publisher.PublishIncompleteAsync(
+                    chapterIdentity,
+                    current.GroupDisplayName,
+                    manifest.ManifestHash,
+                    result.Pages,
+                    manifest.PageCount,
+                    result.FailureEvidence,
+                    current.Target,
+                    linked.Token).ConfigureAwait(false)
+                : await publisher.PublishAsync(
+                    chapterIdentity,
+                    current.GroupDisplayName,
+                    manifest.ManifestHash,
+                    result.Pages,
+                    current.Target,
+                    linked.Token).ConfigureAwait(false);
         }
         catch (OperationCanceledException)
         {
@@ -694,7 +703,7 @@ public sealed class DownloadQueueFeature : IDisposable
             {
                 State = DownloadJobState.Completed,
                 PublishedPath = publishedPath,
-                CompletedPages = manifest.PageCount,
+                CompletedPages = result.Pages.Count,
                 Warning = outcome.Warnings.Count == 0 ? null : string.Join(" ", outcome.Warnings),
                 UpdatedUtc = DateTimeOffset.UtcNow,
             };

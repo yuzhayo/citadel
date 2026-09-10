@@ -19,7 +19,7 @@
             <!-- Query and provider-process lifecycle keep separate cards on one
                  row. Provider-owned filters use a third card below with the same
                  compact shared-card settings. -->
-            <Grid>
+            <Grid x:Name="ProviderControlsPanel">
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto" />
                     <RowDefinition Height="Auto" />
@@ -51,9 +51,16 @@
                         <setting:SettingButton x:Name="SearchButton"
                                                MinWidth="88"
                                                Height="34"
+                                               Margin="0,0,8,0"
                                                Content="Search"
                                                Click="SearchButton_Click"
                                                AutomationProperties.Name="Search catalog with current filters" />
+                        <setting:SettingButton x:Name="ManualButton"
+                                               MinWidth="88"
+                                               Height="34"
+                                               Content="Manual"
+                                               Click="ManualButton_Click"
+                                               AutomationProperties.Name="Open manual title URL" />
                     </WrapPanel>
                 </setting:SettingActionCard>
 

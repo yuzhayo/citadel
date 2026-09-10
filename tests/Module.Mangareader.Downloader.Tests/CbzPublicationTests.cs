@@ -1,5 +1,6 @@
 using System.IO;
 using System.IO.Compression;
+using System.Text.Json;
 using System.Windows;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
@@ -73,6 +74,74 @@ public sealed class CbzPublicationTests : IDisposable
         Assert.False(outcome.Published);
         Assert.False(File.Exists(target.FilePath));
         Assert.NotNull(outcome.ConflictReason);
+    }
+
+    [Fact]
+    public async Task TrailingNotFoundPagePublishesValidatedCbzWithIncompleteMetadata()
+    {
+        var pages = await StagePagesAsync(2);
+        var target = Target("0002 - Chapter 2 [Official].cbz");
+        var failures = new[]
+        {
+            new PageFailureEvidence(
+                2,
+                "https://example.test/page-3.png",
+                PageFetchOutcome.NotFound,
+                "HTTP 404"),
+        };
+
+        var outcome = await new CbzChapterPublisher().PublishIncompleteAsync(
+            ChapterIdentity(),
+            "Official",
+            "sha256:test",
+            pages,
+            expectedPageCount: 3,
+            failures,
+            target,
+            CancellationToken.None);
+
+        Assert.True(outcome.Published, outcome.ConflictReason);
+        Assert.NotNull(outcome.Path);
+        Assert.Contains(outcome.Warnings, warning => warning.Contains("Incomplete 2/3", StringComparison.Ordinal));
+
+        using var archive = ZipFile.OpenRead(outcome.Path!);
+        var entry = archive.GetEntry(CbzChapterPublisher.IncompleteManifestEntryName);
+        Assert.NotNull(entry);
+        using var stream = entry.Open();
+        var metadata = JsonSerializer.Deserialize<CbzIncompleteManifest>(stream);
+        Assert.NotNull(metadata);
+        Assert.Equal(3, metadata.ExpectedPageCount);
+        Assert.Equal(2, metadata.DownloadedPageCount);
+        var missing = Assert.Single(metadata.MissingPages);
+        Assert.Equal(3, missing.PageNumber);
+        Assert.Equal("NotFound", missing.Outcome);
+        Assert.Equal("HTTP 404", missing.Detail);
+
+        var images = archive.Entries.Where(item =>
+            item.Name.Length > 0
+            && !item.FullName.StartsWith("META-INF/", StringComparison.Ordinal)).ToArray();
+        Assert.Equal(2, images.Length);
+    }
+
+    [Fact]
+    public async Task TransientFailureCannotBePublishedAsIncomplete()
+    {
+        var pages = await StagePagesAsync(2);
+        var target = Target("0002 - Chapter 2 [Official].cbz");
+
+        var outcome = await new CbzChapterPublisher().PublishIncompleteAsync(
+            ChapterIdentity(),
+            "Official",
+            "sha256:test",
+            pages,
+            expectedPageCount: 3,
+            [new PageFailureEvidence(2, "page-3", PageFetchOutcome.NetworkFailed, "timeout")],
+            target,
+            CancellationToken.None);
+
+        Assert.False(outcome.Published);
+        Assert.False(File.Exists(target.FilePath));
+        Assert.Contains("permanen", outcome.ConflictReason, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]

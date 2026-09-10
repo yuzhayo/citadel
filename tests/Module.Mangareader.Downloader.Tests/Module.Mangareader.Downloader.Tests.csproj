@@ -44,6 +44,18 @@
     </Compile>
     <Compile Include="..\..\module\mangareader\Features\Downloader\Catalog\CatalogFeature.cs"
              Link="Downloader\Catalog\CatalogFeature.cs" />
+    <Compile Include="..\..\module\mangareader\Features\Downloader\ManualUrl\ManualUrlContracts.cs"
+             Link="Downloader\ManualUrl\ManualUrlContracts.cs" />
+    <Compile Include="..\..\module\mangareader\Features\Downloader\ManualUrl\ManualUrlFeature.cs"
+             Link="Downloader\ManualUrl\ManualUrlFeature.cs" />
+    <Compile Include="..\..\module\mangareader\Features\Downloader\ManualUrl\ManualUrlProbeRegistry.cs"
+             Link="Downloader\ManualUrl\ManualUrlProbeRegistry.cs" />
+    <Compile Include="..\..\module\mangareader\Features\Downloader\ManualUrl\DynamicManualHtmlParser.cs"
+             Link="Downloader\ManualUrl\DynamicManualHtmlParser.cs" />
+    <Compile Include="..\..\module\mangareader\Features\Downloader\ManualUrl\DynamicManualSource.cs"
+             Link="Downloader\ManualUrl\DynamicManualSource.cs" />
+    <Compile Include="..\..\module\mangareader\Features\Downloader\ManualUrl\DynamicManualUrlProbe.cs"
+             Link="Downloader\ManualUrl\DynamicManualUrlProbe.cs" />
     <Compile Include="..\..\module\mangareader\Features\Downloader\FilterSearch\FilterSearchFeature.cs"
              Link="Downloader\FilterSearch\FilterSearchFeature.cs" />
     <Compile Include="..\..\module\mangareader\Features\Downloader\FilterSearch\Comix\ComixFilterSearchPolicy.cs"
@@ -72,6 +84,8 @@
              Link="Downloader\Sources\MangaSourceRegistry.cs" />
     <Compile Include="..\..\module\mangareader\Features\Downloader\Sources\Comix\ComixSource.cs"
              Link="Downloader\Sources\Comix\ComixSource.cs" />
+    <Compile Include="..\..\module\mangareader\Features\Downloader\Sources\Comix\ComixManualUrlProbe.cs"
+             Link="Downloader\Sources\Comix\ComixManualUrlProbe.cs" />
     <Compile Include="..\..\module\mangareader\Features\Downloader\Sources\Comix\ComixPageDecoder.cs"
              Link="Downloader\Sources\Comix\ComixPageDecoder.cs" />
     <Compile Include="..\..\module\mangareader\Features\Downloader\Sources\CucumberManga\CucumberMangaHtmlParser.cs"
@@ -86,6 +100,8 @@
              Link="Downloader\Sources\DrakeScans\DrakeScansRscParser.cs" />
     <Compile Include="..\..\module\mangareader\Features\Downloader\Sources\DrakeScans\DrakeScansSource.cs"
              Link="Downloader\Sources\DrakeScans\DrakeScansSource.cs" />
+    <Compile Include="..\..\module\mangareader\Features\Downloader\Sources\DrakeScans\DrakeScansManualUrlProbe.cs"
+             Link="Downloader\Sources\DrakeScans\DrakeScansManualUrlProbe.cs" />
     <Page Include="..\..\module\mangareader\Features\Downloader\FilterSearch\DrakeScans\DrakeScansFilterPanel.xaml"
           Link="Downloader\FilterSearch\DrakeScans\DrakeScansFilterPanel.xaml" />
     <Compile Include="..\..\module\mangareader\Features\Downloader\FilterSearch\DrakeScans\DrakeScansFilterPanel.xaml.cs"
