@@ -303,3 +303,13 @@ Phase 1-4 dari §8 **SELESAI** dan terverifikasi: `dotnet test Citadel.slnx` hij
   parent masih menjangkau internal feature.
 
 **Belum dikerjakan:** C12 penuh, C14+D22, B2, D9, C6/C8, D1, D6.
+
+### Catatan B2 (2026-09-11)
+
+Konversi manifest test per-file menjadi wildcard DICOBALALU DI-REVERT: proyek test WPF
+membutuhkan pasangan Page untuk setiap code-behind .xaml.cs (bentuk tiga baris
+DependentUpon), sehingga wildcard buta menghasilkan duplikasi atau kekurangan item.
+B2 tetap terbuka sebagai langkah tersendiri yang harus menangani bentuk DependentUpon
+secara eksplisit. Ia optimasi (mengurangi jumlah file yang tersentuh saat menambah
+feature), bukan perbaikan, jadi tidak menghalangi langkah lain.
+Keadaan repo = checkpoint 9bc33ac; suite 929 test hijau; working tree bersih.
