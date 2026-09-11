@@ -31,3 +31,14 @@ jobs:
       - name: Build and test
         shell: pwsh
         run: dotnet test Citadel.slnx --configuration Release --no-restore --nologo
+
+      # Citizens are deliberately absent from Citadel.slnx (plug-and-play), which
+      # used to let a broken citizen pass CI silently. Compile each one here (C6).
+      - name: Build citizens
+        shell: pwsh
+        run: |
+          dotnet build module/ftf/Module.FTF.csproj -v q --nologo
+          dotnet build module/proxy/Module.Proxy.csproj -v q --nologo
+          dotnet build module/blank/Module.Blank.csproj -v q --nologo
+          dotnet build module/camoprof/Module.Camoprof.csproj -v q --nologo
+          dotnet build module/mangareader/Module.Mangareader.csproj -v q --nologo
