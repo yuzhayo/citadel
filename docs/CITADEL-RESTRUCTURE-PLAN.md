@@ -388,3 +388,27 @@ paling sensitif dan tidak bergantung pada yang lain.
 4. **Minta screenshot untuk kriteria V.** Phase 3, 4, 6 wajib punya sebelum/sesudah.
 5. **Tanya satu angka:** "menambah feature X menyentuh berapa file?" Jawaban yang
    benar setelah phase terkait: **folder baru + satu baris katalog**.
+
+
+## Aturan pelaksanaan (ditambahkan 2026-09-11, setelah insiden B2)
+
+Latar belakang: langkah B2 (manifest test per-file menjadi wildcard) dikerjakan
+tanpa metode tertulis lebih dulu. Eksekusinya menjadi rangkaian percobaan regex
+di working tree, dua kali menghasilkan keadaan merah, sebelum di-revert. Itu
+percobaan, bukan pelaksanaan rencana, dan tidak boleh terulang.
+
+Aturan wajib untuk setiap langkah berikutnya:
+
+1. Tulis METODE konkret sebelum menyentuh file: daftar file yang berubah,
+   transformasi persis yang akan dilakukan, bentuk khusus yang harus ditangani
+   (misalnya pasangan Page/Compile dan DependentUpon untuk proyek WPF), cara
+   verifikasi, dan cara rollback.
+2. Kalau saat eksekusi muncul sesuatu yang tidak ada di metode tertulis,
+   BERHENTI. Jangan iterasi ad-hoc di working tree. Perbarui metode dulu, baru
+   lanjut.
+3. Satu langkah = satu diff terkendali = suite hijau = commit checkpoint.
+   Tidak ada langkah yang menumpuk beberapa percobaan sekaligus.
+4. Langkah yang bersifat optimasi (bukan perbaikan atas kerusakan nyata) boleh
+   ditunda tanpa menghalangi langkah lain; penundaan dicatat, bukan dipaksakan.
+5. Checkpoint adalah sumber kebenaran: 5f845aa (steps 1-4), 9bc33ac (step 5).
+   Keadaan merah apa pun yang tidak terencana langsung di-revert ke checkpoint.
