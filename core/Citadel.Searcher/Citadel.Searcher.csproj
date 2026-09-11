@@ -11,7 +11,7 @@
     drag Core's logging along with it. App supplies a logging callback instead.
   -->
   <ItemGroup>
-    <ProjectReference Include="..\..\core\Citadel.Contract\Citadel.Contract.csproj" />
+    <ProjectReference Include="..\Citadel.Contract\Citadel.Contract.csproj" />
   </ItemGroup>
 
   <ItemGroup>

@@ -1,6 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
-  <Import Project="..\Citizen.targets" />
+  <Import Project="..\..\core\Citizen.targets" />
 
   <!--
     Shared C# source (PyHost transport + RuntimeSetup + CredenzPath), compiled

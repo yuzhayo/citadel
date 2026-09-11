@@ -9,6 +9,6 @@
     is built directly (`dotnet build module/blank/Module.Blank.csproj`), which is
     what makes "add a screen without editing anything outside module/" true.
   -->
-  <Import Project="..\Citizen.targets" />
+  <Import Project="..\..\core\Citizen.targets" />
 
 </Project>

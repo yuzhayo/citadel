@@ -3,7 +3,7 @@
   <Project Path="core/Citadel.Contract/Citadel.Contract.csproj" />
   <Project Path="core/Citadel.Ui/Citadel.Ui.csproj" />
   <Project Path="setting/Citadel.Setting.csproj" />
-  <Project Path="module/Citadel.Searcher/Citadel.Searcher.csproj" />
+  <Project Path="core/Citadel.Searcher/Citadel.Searcher.csproj" />
   <Project Path="core/Citadel.Shell/Citadel.Shell.csproj" />
   <Project Path="tests/Citadel.Core.Tests/Citadel.Core.Tests.csproj" />
   <Project Path="tests/Citadel.Ui.Tests/Citadel.Ui.Tests.csproj" />

@@ -28,7 +28,7 @@
     <ProjectReference Include="..\Citadel.Contract\Citadel.Contract.csproj" />
     <ProjectReference Include="..\Citadel.Ui\Citadel.Ui.csproj" />
     <ProjectReference Include="..\..\setting\Citadel.Setting.csproj" />
-    <ProjectReference Include="..\..\module\Citadel.Searcher\Citadel.Searcher.csproj" />
+    <ProjectReference Include="..\Citadel.Searcher\Citadel.Searcher.csproj" />
   </ItemGroup>
 
   <ItemGroup>

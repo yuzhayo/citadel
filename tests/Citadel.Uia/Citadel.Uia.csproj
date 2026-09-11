@@ -23,7 +23,7 @@
     <ProjectReference Include="..\..\core\Citadel.Ui\Citadel.Ui.csproj" />
     <ProjectReference Include="..\..\setting\Citadel.Setting.csproj" />
     <ProjectReference Include="..\..\core\Citadel.Shell\Citadel.Shell.csproj" />
-    <ProjectReference Include="..\..\module\Citadel.Searcher\Citadel.Searcher.csproj" />
+    <ProjectReference Include="..\..\core\Citadel.Searcher\Citadel.Searcher.csproj" />
   </ItemGroup>
 
   <!--

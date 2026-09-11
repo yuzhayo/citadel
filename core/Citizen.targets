@@ -1,7 +1,7 @@
 <Project>
 
   <!--
-    Shared build logic for every screen folder. It lives at module/ root because
+    Shared build logic for every screen folder. It lives in core/ because
     it is shared by every screen and owned by none; a shared
     build file inside one screen's folder would break the promise that deleting
     that folder is clean.
