@@ -13,8 +13,8 @@ import path from "node:path";
 
 // Core libraries never reference module projects. Key = project, value = what it may see.
 const ALLOWED = {
-  "Citadel.Core": [],
-  "Citadel.Contract": ["Citadel.Core"],
+  "Citadel.Core": ["Citadel.Contract"],
+  "Citadel.Contract": [],
   "Citadel.Ui": ["Citadel.Core"],
   "Citadel.Setting": ["Citadel.Core", "Citadel.Contract"],
   // Shell hosts App, the composition root — the single place allowed to know

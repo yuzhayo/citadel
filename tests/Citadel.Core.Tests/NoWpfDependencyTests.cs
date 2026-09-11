@@ -4,9 +4,10 @@ using System.Reflection.PortableExecutable;
 namespace Citadel.Core.Tests;
 
 /// <summary>
-/// The invariant behind the whole stage: Citadel.Core references
-/// nothing. Verified from the built assembly's metadata, not assumed
-/// from the csproj.
+/// The invariant behind the whole stage, as of D6: Citadel.Contract is the leaf
+/// (references no Citadel project) and Citadel.Core references exactly one
+/// Citadel project — Citadel.Contract, which owns Lifetime and Log. Verified
+/// from the built assemblies' metadata, not assumed from the csproj.
 /// </summary>
 public class NoWpfDependencyTests
 {
@@ -23,7 +24,7 @@ public class NoWpfDependencyTests
     [Fact]
     public void CitadelCore_ReferencesNoWpf()
     {
-        var references = ReadAssemblyReferences(FindCoreAssembly());
+        var references = ReadAssemblyReferences(FindAssembly("Citadel.Core"));
 
         Assert.DoesNotContain(
             references,
@@ -31,13 +32,23 @@ public class NoWpfDependencyTests
     }
 
     [Fact]
-    public void CitadelCore_ReferencesNoOtherCitadelProject()
+    public void CitadelCore_ReferencesOnlyCitadelContract()
     {
-        var references = ReadAssemblyReferences(FindCoreAssembly());
+        var references = ReadAssemblyReferences(FindAssembly("Citadel.Core"))
+            .Where(r => r.StartsWith("Citadel", StringComparison.OrdinalIgnoreCase))
+            .ToList();
 
-        Assert.DoesNotContain(
-            references,
-            r => r.StartsWith("Citadel", StringComparison.OrdinalIgnoreCase));
+        Assert.Equal(["Citadel.Contract"], references);
+    }
+
+    [Fact]
+    public void CitadelContract_IsTheLeafAndReferencesNoCitadelProject()
+    {
+        var references = ReadAssemblyReferences(FindAssembly("Citadel.Contract"))
+            .Where(r => r.StartsWith("Citadel", StringComparison.OrdinalIgnoreCase))
+            .ToList();
+
+        Assert.Empty(references);
     }
 
     private static List<string> ReadAssemblyReferences(string dllPath)
@@ -50,7 +61,7 @@ public class NoWpfDependencyTests
             .ToList();
     }
 
-    private static string FindCoreAssembly()
+    private static string FindAssembly(string projectName)
     {
         var baseDir = new DirectoryInfo(AppContext.BaseDirectory);
         var config = baseDir.Parent!.Name; // Debug/Release sits above the TFM folder
@@ -63,7 +74,7 @@ public class NoWpfDependencyTests
         Assert.True(root is not null, "Citadel.slnx not found above the test output");
 
         var dll = System.IO.Path.Combine(
-            root!.FullName, "core", "Citadel.Core", "bin", config, "net10.0-windows", "Citadel.Core.dll");
+            root!.FullName, "core", projectName, "bin", config, "net10.0-windows", projectName + ".dll");
         Assert.True(File.Exists(dll), $"expected {dll}");
         return dll;
     }

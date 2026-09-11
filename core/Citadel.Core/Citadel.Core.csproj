@@ -6,4 +6,7 @@
     <InternalsVisibleTo Include="Citadel.Core.Tests" />
   </ItemGroup>
 
+  <ItemGroup>
+    <ProjectReference Include="..\Citadel.Contract\Citadel.Contract.csproj" />
+  </ItemGroup>
 </Project>

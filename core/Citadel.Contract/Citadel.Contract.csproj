@@ -12,8 +12,5 @@
     <RootNamespace>Citadel.Core.Modules</RootNamespace>
   </PropertyGroup>
 
-  <ItemGroup>
-    <ProjectReference Include="..\Citadel.Core\Citadel.Core.csproj" />
-  </ItemGroup>
 
 </Project>
