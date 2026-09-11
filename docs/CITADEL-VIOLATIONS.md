@@ -1456,3 +1456,31 @@ kini hanya komposisi + navigasi + lifecycle. Perilaku identik; suite 929 hijau.
 Sisa C14 yang BENAR-BENAR terbuka (bukan bagian plan ini): parent masih
 mengonstruksi seluruh fitur inline tanpa katalog/gate seragam seperti Reader. Itu
 refactor interface besar dan tercatat terpisah, bukan sebagai pelanggaran mendesak.
+
+
+## KOREKSI BESAR: BUG-1 BUKAN bug (2026-09-11)
+
+Entri BUG-1 di atas SALAH KLASIFIKASI dan dinyatakan dicabut oleh bagian ini.
+
+Fakta sebenarnya: catch yang tampak "mati" pada throttle 429/502/503 adalah
+SAFETY NET yang disengaja. Provider Comix punya toggle on/off untuk menyelesaikan
+challenge manual lewat headed browser; otomatisasi yang BERHENTI saat di-throttle
+adalah perilaku yang menyerahkan kendali ke manusia itu. Karena catch mengikat
+tipe namespace yang salah, produksi berhenti pada throttle (safety net aktif)
+sementara test hijau karena test melempar tipe namespace lain.
+
+"Perbaikan" saya (menyatukan tipe sehingga catch cocok) MENGHILANGKAN safety net:
+sync menjadi retry otomatis 4x per page dan terus mem-page saat di-throttle.
+Itu mengubah challenge sementara menjadi hammering berkelanjutan dan berkontribusi
+pada block Cloudflare terhadap IP real owner. Ini regresi yang saya sebabkan,
+bukan perbaikan.
+
+Koreksi yang sudah masuk: commit 30dd644. Fetch menjadi satu percobaan dan
+throttle langsung dipropagasikan sehingga sync BERHENTI; test menegaskan
+calls==1 dan state Error pada 429 maupun 503, serta Stop membangunkan polite
+delay segera. Retry otomatis terhadap throttle kini dilarang oleh test.
+
+Pelajaran prosedural yang mengikat: sebelum menyebut sesuatu "bug", verifikasi
+PERILAKU PRODUKSI yang diinginkannya, bukan hanya inkonsistensi kode/test.
+Test yang hijau dengan inkonsistensi namespace bisa berarti perilaku produksi
+yang sengaja berbeda, bukan kerusakan.

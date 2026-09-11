@@ -552,3 +552,20 @@ reader), 5 (reader buka/tutup + zoom/dim/drawer), 6 (CatalogMirror start/stop),
 7 (handoff Catalog ke Queue), 8 lanjutan (membuka keempat sub-screen), 9 (tray
 hide/restore/exit), 10 (resize min/maks). Instance staging dibiarkan hidup agar
 owner bisa langsung mengkliknya.
+
+
+## Koreksi safety-net dan dampaknya ke plan (2026-09-11)
+
+- Step 1 semula melabel "BUG-1" dan membuat sync retry throttle otomatis. Label itu
+  salah: perilaku berhenti-pada-throttle adalah safety net untuk penyelesaian
+  challenge manual lewat toggle headed browser provider.
+- Commit 30dd644 mengembalikan safety net: fetch satu percobaan, throttle langsung
+  berhenti; test mengunci perilaku itu (calls==1, state Error; Stop membangunkan
+  polite delay).
+- Dampak ke plan: langkah "deteksi block Cloudflare sebagai stop terminal" tetap
+  bernilai sebagai LAPISAN TAMBAHAN (mengenali halaman block 403/challenge dan
+  melaporkannya ke UI), tetapi BUKAN pengganti safety net ini dan tidak boleh
+  memperkenalkan retry apa pun terhadap throttle.
+- Status smoke: instance staging masih hidup untuk poin klik manusia; block IP
+  owner berarti poin 6 (CatalogMirror sync) TIDAK BOLEH dijalankan melawan
+  comix.ws sampai block luruh dan owner mengizinkan.
