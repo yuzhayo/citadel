@@ -453,3 +453,31 @@ Aturan wajib untuk setiap langkah berikutnya:
    dijadwalkan sebagai step tersendiri; ia refactor interface besar.
 6. D1 (kernel keluar dari module/) dan D6 (contract tipis) adalah keputusan owner,
    belum menjadi step eksekusi.
+
+
+## Review steps 7-9 (2026-09-11)
+
+- Step 7 (guard camoprof): checkpoint 50f9c63. Baseline scan: 1 tepi lintas-feature
+  (ProfileActions->AddProfile, kontrak saja) dan 0 tipe bernama sama; keduanya jadi
+  allow-list tertulis. Test 56 menjadi 58, hijau.
+- Step 8 (C6/C8): C6 masuk CI (step Build citizens). C8 diperkuat di hook
+  check-project-refs dan DIVERIFIKASI dengan payload sintetis: proyek core baru
+  ber-referensi = block; module baru = lolos; Citadel.Shell nyata = lolos.
+- Step 9: docs/SMOKE-CHECKLIST.md dibuat sebagai syarat keluar wajib step refactor.
+- Audit diff a3962f1..1582068: NOL kode produksi. Hanya 1 file test baru, 1 workflow
+  CI, dan docs. Suite 9/9 proyek hijau (931 test).
+- Perilaku app tidak berubah sejak a3962f1 (yang sudah diverifikasi behavior-identik
+  kecuali perbaikan BUG-1 yang disengaja).
+- Smoke checklist BELUM dieksekusi (butuh live run). Restructure belum boleh
+  dinyatakan selesai sebelum checklist lulus penuh.
+
+### Temuan review baru (gap 7): penegakan batas tidak ter-version-control
+.gitignore hanya melacak .agents/skills/citadel-shared-ui/SKILL.md. Akibatnya
+hook check-project-refs.mjs dan gate-on-stop.mjs, serta skill
+citadel-feature-modularity, hanya ada di mesin ini: clone baru atau agent di
+environment lain TIDAK mendapatkan penegakan batas maupun kontrak modularity, dan
+perubahan C8 pada hook belum masuk version control. Klaim "Level A machine-enforced"
+karena itu benar hanya untuk harness lokal ini.
+Rekomendasi (keputusan owner, karena mengubah .gitignore): un-ignore
+.agents/hooks/ dan .agents/skills/citadel-feature-modularity/ agar penegakan dan
+kontrak ikut repo.
