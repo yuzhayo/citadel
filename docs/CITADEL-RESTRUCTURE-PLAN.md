@@ -505,3 +505,20 @@ kontrak ikut repo.
   14 tidak dijalankan sebelum smoke tersedia.
 - Step 15 = eksekusi smoke oleh owner (atau sesi run terpisah), lalu step 14,
   lalu smoke ulang sebagai pintu keluar keseluruhan.
+
+
+## Smoke parsial oleh mesin (2026-09-11)
+
+- App DI-LAUNCH dari build Debug terbaru (memuat steps 1-13): proses hidup stabil
+  sekitar empat menit tanpa crash, lalu instance uji dimatikan bersih (PID uji
+  12468; instance owner 14652 dibiarkan berjalan).
+- Screenshot desktop menunjukkan window reader merender konten dengan benar
+  (pada instance owner yang masih build lama).
+- YANG TIDAK BISA diverifikasi mesin: poin 2-10 checklist (buka tiap tab, refresh
+  Library, history, reader, sync start/stop, handoff queue, Settings + sub-screen,
+  tray hide/restore/exit, resize). Semuanya butuh mata manusia.
+- Konsekuensi sesuai Opsi A: owner menjalankan SMOKE CHECKLIST poin 1-10 terhadap
+  build BARU (tutup instance lama 14652 dulu, lalu jalankan
+  core/Citadel.Shell/bin/Debug/net10.0-windows/Citadel.Shell.exe atau build Release).
+  Setelah owner melaporkan lulus, Step 14 dikerjakan, lalu smoke diulang sebagai
+  pintu keluar keseluruhan.
