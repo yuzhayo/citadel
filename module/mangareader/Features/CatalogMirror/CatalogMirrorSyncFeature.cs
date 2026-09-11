@@ -32,16 +32,8 @@ public sealed class CatalogMirrorSyncFeature(
     /// </summary>
     public static readonly TimeSpan DefaultPoliteDelay = TimeSpan.FromMilliseconds(1000);
 
-    /// <summary>Base backoff step for typed 429/502/503 retries (doubled per attempt).</summary>
-    public static readonly TimeSpan DefaultRetryBaseDelay = TimeSpan.FromSeconds(2);
-
-    private const int MaxFetchAttempts = 4;
-
     /// <summary>Tunable pacing; tests set it to zero. Never negative.</summary>
     public TimeSpan PoliteDelay { get; set; } = DefaultPoliteDelay;
-
-    /// <summary>Tunable retry base; tests shrink it. Never negative.</summary>
-    public TimeSpan RetryBaseDelay { get; set; } = DefaultRetryBaseDelay;
 
     /// <summary>Immutable progress snapshot, updated on every transition.</summary>
     public CatalogSyncProgress Current
@@ -253,7 +245,7 @@ public sealed class CatalogMirrorSyncFeature(
                 CatalogSnapshotPage fetched;
                 try
                 {
-                    var result = await FetchWithBackoffAsync(
+                    var result = await FetchPageAsync(
                             partition, page, generation, refresh, cancellationToken)
                         .ConfigureAwait(false);
                     if (result is null)
@@ -382,52 +374,29 @@ public sealed class CatalogMirrorSyncFeature(
     }
 
     /// <summary>
-    /// One page with bounded retries for typed provider backpressure
-    /// (429/502/503): exponential base doubling with full jitter, same page,
-    /// checkpoint unadvanced. Returns null when stopped or superseded while
-    /// waiting. Anything else propagates at once.
+    /// One page, one attempt. A typed throttle/challenge (429/502/503) propagates
+    /// at once and therefore STOPS the automated sync: that stop is the safety
+    /// net which hands control back to the human, who solves the challenge in
+    /// the provider's headed browser via the source toggle and then resumes.
+    /// Retrying a throttle automatically is what turns a temporary challenge
+    /// into sustained hammering and an IP block, so there is deliberately no
+    /// retry here. Anything non-throttle also propagates at once.
     /// </summary>
-    private async Task<CatalogSnapshotPage?> FetchWithBackoffAsync(
+    private async Task<CatalogSnapshotPage?> FetchPageAsync(
         CatalogSnapshotPartition partition,
         int page,
         int generation,
         bool refresh,
         CancellationToken cancellationToken)
     {
-        Exception? lastError = null;
-        var wait = RetryBaseDelay < TimeSpan.Zero ? TimeSpan.Zero : RetryBaseDelay;
-        for (var attempt = 0; attempt < MaxFetchAttempts; attempt++)
+        if (!IsCurrent(generation) || Volatile.Read(ref _stopRequested) != 0)
         {
-            if (!IsCurrent(generation) || Volatile.Read(ref _stopRequested) != 0)
-            {
-                return null;
-            }
-
-            try
-            {
-                return await _source
-                    .GetSnapshotPageAsync(partition, page, cancellationToken, refresh)
-                    .ConfigureAwait(false);
-            }
-            // Typed backpressure only: v1 serves one source, so its contract
-            // exception is the only throttle signal. Never message-sniffed;
-            // a second source would bring its own typed signal here.
-            catch (ComixContractException exception)
-                when (exception.HttpStatus is 429 or 502 or 503)
-            {
-                lastError = exception;
-                var capped = TimeSpan.FromMilliseconds(
-                    Math.Min(wait.TotalMilliseconds * Math.Pow(2, attempt), 30_000));
-                var jittered = TimeSpan.FromMilliseconds(
-                    Random.Shared.NextDouble() * Math.Max(capped.TotalMilliseconds, 1));
-                if (!await WaitInterruptiblyAsync(jittered, generation).ConfigureAwait(false))
-                {
-                    return null;
-                }
-            }
+            return null;
         }
 
-        throw lastError ?? new CatalogSnapshotException("Snapshot page failed without a recorded error.");
+        return await _source
+            .GetSnapshotPageAsync(partition, page, cancellationToken, refresh)
+            .ConfigureAwait(false);
     }
 
     /// <summary>

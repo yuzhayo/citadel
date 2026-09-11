@@ -215,7 +215,7 @@ public sealed class CatalogMirrorSyncTests : IDisposable
     }
 
     [Fact]
-    public async Task BackpressureRetriesTheSamePageThenCompletes()
+    public async Task ThrottleStopsAutomationSoTheHumanCanSolveTheChallenge()
     {
         var calls = 0;
         var source = new FakeSource((partition, _) =>
@@ -228,28 +228,29 @@ public sealed class CatalogMirrorSyncTests : IDisposable
 
             return Task.FromResult(Page([Item("a")], page: 1, hasMore: false, total: 1));
         });
-        // Single-partition source keeps the scenario to one page.
         var single = new SinglePartitionSource(source);
         var feature = new CatalogMirrorSyncFeature(single, Store());
         feature.PoliteDelay = TimeSpan.Zero;
-        feature.RetryBaseDelay = TimeSpan.FromMilliseconds(1);
 
         await feature.StartAsync(CancellationToken.None);
 
-        Assert.Equal(CatalogSyncState.Ready, feature.Current.State);
-        Assert.Equal(3, calls);
+        // Safety net: a throttle stops the automated sync on the FIRST throttle
+        // instead of retrying, so the human can solve the challenge in the
+        // provider's headed browser and resume. Retrying here is what turned a
+        // temporary challenge into sustained hammering and an IP block.
+        Assert.Equal(1, calls);
+        Assert.Equal(CatalogSyncState.Error, feature.Current.State);
+        Assert.Null(await Store().TryLoadManifestAsync());
     }
 
     [Fact]
     public void ContractExceptionIsTheSingleSharedModuleType()
     {
-        // BUG-1 regression. Two same-named ComixContractException types lived in
-        // two feature namespaces; a cross-feature using then bound the sync
-        // throttle catch to a type the Catalog provider never throws, so the
-        // 429/502/503 backoff was dead code while every test stayed green. One
-        // shared module-level type makes that defect unrepresentable; if a second
-        // same-named type ever returns, this fails instead of the retry silently
-        // never firing.
+        // Two same-named ComixContractException types once lived in two feature
+        // namespaces; a cross-feature using bound the throttle handler to a type
+        // the Catalog provider never throws, which silently disabled the stop-on-
+        // throttle safety net while every test stayed green. One shared module-level
+        // type keeps the safety net wired; a second same-named type fails here.
         var assembly = typeof(CatalogMirrorSyncFeature).Assembly;
         var matches = assembly.GetTypes().Where(t => t.Name == "ComixContractException").ToArray();
 
@@ -259,7 +260,7 @@ public sealed class CatalogMirrorSyncTests : IDisposable
     }
 
     [Fact]
-    public async Task PersistentBackpressureFailsResumableAfterFourAttempts()
+    public async Task ThrottleOn503AlsoStopsOnFirstAttempt()
     {
         var calls = 0;
         var source = new FakeSource((_, _) =>
@@ -269,27 +270,26 @@ public sealed class CatalogMirrorSyncTests : IDisposable
         });
         var feature = new CatalogMirrorSyncFeature(new SinglePartitionSource(source), Store());
         feature.PoliteDelay = TimeSpan.Zero;
-        feature.RetryBaseDelay = TimeSpan.FromMilliseconds(1);
 
         await feature.StartAsync(CancellationToken.None);
 
+        Assert.Equal(1, calls);
         Assert.Equal(CatalogSyncState.Error, feature.Current.State);
-        Assert.Equal(4, calls);
         Assert.Null(await Store().TryLoadManifestAsync());
     }
 
     [Fact]
-    public async Task StopWakesBackoffImmediately()
+    public async Task StopWakesThePoliteDelayImmediately()
     {
         var calls = 0;
-        var source = new FakeSource((_, _) =>
+        var source = new FakeSource((partition, _) =>
         {
             calls++;
-            throw new ComixContractException("slow down") { HttpStatus = 429 };
+            return Task.FromResult(Page(
+                [Item(partition.Key + "-" + calls)], page: calls, hasMore: calls < 2, total: 2));
         });
         var feature = new CatalogMirrorSyncFeature(new SinglePartitionSource(source), Store());
-        feature.PoliteDelay = TimeSpan.Zero;
-        feature.RetryBaseDelay = TimeSpan.FromMinutes(1);
+        feature.PoliteDelay = TimeSpan.FromMinutes(1);
 
         var run = feature.StartAsync(CancellationToken.None);
         await WaitForAsync(() => calls >= 1);
@@ -298,10 +298,9 @@ public sealed class CatalogMirrorSyncTests : IDisposable
         await run;
 
         Assert.Equal(CatalogSyncState.Stopped, feature.Current.State);
-        Assert.Equal(1, calls);
         Assert.True(
             Stopwatch.GetElapsedTime(elapsed) < TimeSpan.FromSeconds(5),
-            "stop waited out the backoff");
+            "stop waited out the polite delay");
     }
 
     [Fact]
