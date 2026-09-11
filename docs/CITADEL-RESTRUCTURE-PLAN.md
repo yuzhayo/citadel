@@ -522,3 +522,33 @@ kontrak ikut repo.
   core/Citadel.Shell/bin/Debug/net10.0-windows/Citadel.Shell.exe atau build Release).
   Setelah owner melaporkan lulus, Step 14 dikerjakan, lalu smoke diulang sebagai
   pintu keluar keseluruhan.
+
+
+## Smoke lewat workflow rilis yang benar (2026-09-11)
+
+Koreksi atas percobaan smoke pertama: menjalankan exe Debug secara langsung BUKAN
+workflow yang didukung. RELEASE.md menyatakan app membutuhkan published assemblies,
+Components/, dan folder citizen di sebelahnya; karena itu smoke dijalankan lewat
+tools/Build-Release.ps1 lalu exe di artifacts/publish/win-x64/.
+
+Hasil mesin (screenshot citadel_smoke3.png):
+- Shell staging hidup berdampingan dengan instalasi Velopack (identitas single-
+  instance berbeda per path exe).
+- Sidebar menampilkan grup ENTERTAINMENT (Manga Reader) dan AUTOMATION (CamoProf,
+  FTF, Proxy) plus Blank dan Settings.
+- Settings: "5 screens installed" dengan tabel route/order lengkap; PROBLEMS =
+  "Nothing failed."; kartu CUSTOMISE (Appearance, Module layout, Sidebar groups,
+  Gallery) dan SCREEN FOLDER ("Update modules") hadir; UPDATES menonaktifkan aksi
+  karena build unpackaged, sesuai RELEASE.md.
+- Ini memverifikasi poin 1, sebagian poin 2 (daftar tab), dan kehadiran poin 8
+  SETELAH step 10-13, termasuk pemindahan kernel di step 13.
+
+Catatan build: vpk packaging menolak karena Releases/ sudah memuat 2.2.6; itu
+batasan versi/channel lokal, bukan kegagalan kode. Staging tree tetap lengkap dan
+dipakai untuk smoke.
+
+Sisa poin smoke yang butuh klik manusia: 3 (refresh Library), 4 (history setelah
+reader), 5 (reader buka/tutup + zoom/dim/drawer), 6 (CatalogMirror start/stop),
+7 (handoff Catalog ke Queue), 8 lanjutan (membuka keempat sub-screen), 9 (tray
+hide/restore/exit), 10 (resize min/maks). Instance staging dibiarkan hidup agar
+owner bisa langsung mengkliknya.
