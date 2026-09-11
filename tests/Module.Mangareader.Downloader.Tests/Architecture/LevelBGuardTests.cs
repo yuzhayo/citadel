@@ -24,20 +24,20 @@ public sealed class LevelBGuardTests
         "Catalog->CatalogMirror",
     ];
 
-    // Documented pre-existing duplication (CITADEL-VIOLATIONS C12): the Comix
-    // wire-contract vocabulary is declared in BOTH the Catalog and the Downloader
-    // provider folders. Same-name-in-two-namespaces is exactly the BUG-1 hazard
-    // class, so these are enumerated here as debt whose fix is moving them into
-    // shareLogic/Sources as one declaration. Any NEW same-named type still fails.
+    // C12 status 2026-09-11: the four pure-data Comix types (ComixGenreMode,
+    // ComixSortOption, ComixScrambleHeader, ComixScrambleHeaders) now live once in
+    // shareLogic/Sources/ComixContracts.cs. These three remain per-provider by
+    // design, not accident: ComixOptions embeds ComixContract's ordering constants
+    // AND each provider's own captured rating default (Downloader = all four
+    // ratings, Catalog = the site's first-browse two), and ComixBrowseQuery.Default
+    // binds that default, so the three fork together. Merging them means extracting
+    // the constant table and parameterizing the default — a design change needing
+    // an owner decision. Until then they are the only accepted same-named types.
     private static readonly HashSet<string> AcceptedDuplicateTypeNames =
     [
-        "ComixScrambleHeader",
-        "ComixScrambleHeaders",
         "ComixContract",
-        "ComixGenreMode",
-        "ComixBrowseQuery",
-        "ComixSortOption",
         "ComixOptions",
+        "ComixBrowseQuery",
     ];
 
     private static string ModuleRoot()

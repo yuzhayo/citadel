@@ -78,6 +78,8 @@
              Link="Downloader\Queue\ChapterDownloadPipeline.cs" />
     <Compile Include="..\..\module\mangareader\Features\Downloader\Queue\CbzChapterPublisher.cs"
              Link="Downloader\Queue\CbzChapterPublisher.cs" />
+    <Compile Include="..\..\module\mangareader\shareLogic\Sources\ComixContracts.cs"
+             Link="Sources\ComixContracts.cs" />
     <Compile Include="..\..\module\mangareader\shareLogic\Sources\MangaSourceContracts.cs"
              Link="Sources\MangaSourceContracts.cs" />
     <Compile Include="..\..\module\mangareader\Features\Downloader\Sources\MangaSourceRegistry.cs"

@@ -1,5 +1,7 @@
 using Module.Mangareader.Features.Downloader.Sources.Comix;
 
+using Module.Mangareader.Sources;
+
 namespace Module.Mangareader.Features.Downloader.FilterSearch.Comix;
 
 /// <summary>

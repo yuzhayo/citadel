@@ -8,348 +8,6 @@ using Module.Mangareader.Features.Catalog.Runtime;
 using Module.Mangareader.Sources;
 
 namespace Module.Mangareader.Features.Catalog.Sources.Comix;
-
-/// <summary>
-/// The whole Comix wire contract in one place: routes, query keys and response
-/// field names. Every entry is captured evidence, never an inference.
-///
-/// 2026-09-05 captured the browse route, its response shape and the
-/// <c>order</c>/<c>content_rating[]</c>/<c>types[]</c>/<c>keyword</c>/<c>page</c>/
-/// <c>limit</c> keys from one live request that answered 200. 2026-09-06 captured
-/// the remaining browse keys, the 13 sorts with their order columns, the
-/// <c>tags/search</c> author/artist lookup, and the full option taxonomy —
-/// 4 demographics, 4 types, 5 statuses, 31 genres and 9 formats — read from the
-/// taxonomy the browse page renders into its own document.
-///
-/// Anything without an entry here is refused visibly rather than sent under an
-/// invented name or value.
-/// </summary>
-public static class ComixContract
-{
-    /// <summary>
-    /// Feeds the chapter manifest hash, so it identifies the page and manifest
-    /// contract and deliberately does not track the browse query contract above.
-    /// Raising it for a new query key would invalidate staged resume data and the
-    /// provenance embedded in already published archives while changing no
-    /// behavior, so it moves only when the manifest or page contract moves.
-    /// </summary>
-    public const int Version = 2;
-
-    public const string SourceId = "comix";
-    public const string DisplayName = "Comix";
-
-    /// <summary>The host that answers. Captured live: 200 in ~0.4 s.</summary>
-    public const string BaseUrl = "https://comix.ws";
-
-    /// <summary>Referer required by image downloads.</summary>
-    public const string ImageReferer = "https://comix.ws/";
-
-    /// <summary>
-    /// Captured: the shape of the title page path the provider reports in
-    /// <c>url</c>, <c>/title/{hid}-{slug}</c>. Only this shape is resolved against
-    /// <see cref="BaseUrl"/>, so a tampered payload cannot aim a canonical url at
-    /// another origin through a protocol-relative or unrelated relative value.
-    /// </summary>
-    public const string TitlePagePathPrefix = "/title/";
-
-    /// <summary>Captured: the browse list the Catalog Start button drives.</summary>
-    public const string RouteBrowse = "/api/v1/manga";
-
-    /// <summary>
-    /// Captured live through the page client: 200, decrypted, and it carries the
-    /// detail fields the browse item does not (genres, authors, first/latest
-    /// chapter url). The rendered title page never calls it, which is why an
-    /// earlier network-only capture missed it.
-    /// </summary>
-    public const string RouteTitle = "/api/v1/manga/{0}";
-
-    /// <summary>
-    /// Captured live through the page client: 200 and decrypted
-    /// (<c>{items, meta}</c>). The raw network body is encrypted (<c>{"e":…}</c>);
-    /// the site's own interceptor is what decrypts it, so this route is only
-    /// usable through that client.
-    /// </summary>
-    public const string RouteChapters = "/api/v1/manga/{0}/chapters";
-
-    /// <summary>
-    /// Captured live through the page client: 200, decrypted, and it carries the
-    /// page manifest under <c>pages.items</c>.
-    /// </summary>
-    public const string RouteChapter = "/api/v1/chapters/{0}";
-
-    /// <summary>Captured query keys, exactly as the site sent them.</summary>
-    public const string KeyOrder = "order[{0}]";
-    public const string KeyPage = "page";
-    public const string KeyLimit = "limit";
-    public const string KeyContentRating = "content_rating[]";
-    public const string KeyTypes = "types[]";
-    public const string KeyKeyword = "keyword";
-
-    /// <summary>
-    /// Browse query keys captured live on 2026-09-06 through the page client.
-    /// Every one of these is provider evidence; a filter with no key here is
-    /// refused visibly rather than sent under an invented name.
-    /// </summary>
-    public const string KeyStatuses = "statuses[]";
-    public const string KeyDemographics = "demographics[]";
-    public const string KeyGenresIn = "genres_in[]";
-    public const string KeyGenresMode = "genres_mode";
-    public const string KeyMinimumChapter = "min_chap";
-    public const string KeyYearFrom = "year_from";
-    public const string KeyYearTo = "year_to";
-    public const string KeyAuthors = "authors[]";
-    public const string KeyArtists = "artists[]";
-
-    /// <summary>The two captured genre-matching modes.</summary>
-    public const string GenresModeAnd = "and";
-    public const string GenresModeOr = "or";
-
-    /// <summary>
-    /// Captured author/artist lookup route and its query keys. Only the author
-    /// and artist tag types were captured; a genre or format lookup has no
-    /// recorded endpoint and is refused instead of guessed.
-    /// </summary>
-    public const string RouteTagsSearch = "/api/v1/tags/search";
-    public const string KeyTagType = "type";
-    public const string KeyQuery = "q";
-    public const string TagTypeAuthor = "author";
-    public const string TagTypeArtist = "artist";
-    public const int LookupLimit = 20;
-
-    /// <summary>The captured order column for "latest update".</summary>
-    public const string OrderLatestColumn = "chapter_updated_at";
-    public const string OrderDescending = "desc";
-    public const string OrderAscending = "asc";
-
-    /// <summary>The captured chapter order column and page size.</summary>
-    public const string OrderNumberColumn = "number";
-    public const int ChapterPageSize = 20;
-
-    /// <summary>Captured browse page size.</summary>
-    public const int PageSize = 28;
-
-    /// <summary>
-    /// Captured browse payload root. The site's own client already unwrapped the
-    /// envelope, so C# reads <c>items</c> and <c>meta</c> from the root.
-    /// </summary>
-    public const string FieldItems = "items";
-    public const string FieldMeta = "meta";
-
-    /// <summary>The two captured pagination fields the adapter reads.</summary>
-    public const string MetaTotal = "total";
-    public const string MetaHasNext = "hasNext";
-
-    /// <summary>Captured title item fields.</summary>
-    public const string FieldId = "id";
-    public const string FieldHid = "hid";
-    public const string FieldTitle = "title";
-    public const string FieldAltTitles = "altTitles";
-    public const string FieldType = "type";
-    public const string FieldItemStatus = "status";
-    public const string FieldOriginalLanguage = "originalLanguage";
-    public const string FieldPoster = "poster";
-    public const string PosterMedium = "medium";
-    public const string PosterLarge = "large";
-    public const string FieldLatestChapter = "latestChapter";
-    public const string FieldChapterUpdatedAtFormatted = "chapterUpdatedAtFormatted";
-    public const string FieldUpdatedAtFormatted = "updatedAtFormatted";
-    public const string FieldYear = "year";
-    public const string FieldSynopsis = "synopsis";
-
-    /// <summary>Captured detail-only fields on <c>/manga/{hid}</c>.</summary>
-    public const string FieldUrl = "url";
-    public const string FieldGenres = "genres";
-    public const string FieldAuthors = "authors";
-    public const string FieldArtists = "artists";
-
-    /// <summary>
-    /// Every captured option list entry is the same triple, so one set of names
-    /// reads genres, demographics, formats, authors, artists and publishers.
-    /// </summary>
-    public const string OptionId = "id";
-    public const string OptionTitle = "title";
-    public const string OptionSlug = "slug";
-
-    /// <summary>Captured chapter item fields.</summary>
-    public const string FieldChapterId = "id";
-    public const string FieldNumber = "number";
-    public const string FieldChapterName = "name";
-    public const string FieldGroupId = "groupId";
-    public const string FieldGroup = "group";
-    public const string FieldGroupName = "name";
-
-    /// <summary>Captured manifest page container on <c>/chapters/{id}</c>.</summary>
-    public const string FieldPages = "pages";
-    public const string FieldPagesBaseUrl = "baseUrl";
-    public const string FieldPageUrl = "url";
-}
-
-public enum ComixGenreMode
-{
-    And,
-    Or,
-}
-
-/// <summary>
-/// One immutable browse query, produced by the Comix filter feature and carried
-/// opaquely by Catalog. Nothing outside Comix reads its fields.
-/// </summary>
-public sealed record ComixBrowseQuery : IRemoteBrowseFilter
-{
-    public static readonly ComixBrowseQuery Default = new()
-    {
-        SortKey = ComixOptions.DefaultSortKey,
-        Ratings = ComixOptions.DefaultRatingKeys,
-    };
-
-    public string SourceId => ComixContract.SourceId;
-
-    public string? Search { get; init; }
-
-    public string SortKey { get; init; } = ComixOptions.DefaultSortKey;
-
-    public IReadOnlyList<string> Ratings { get; init; } = [];
-
-    public IReadOnlyList<string> Types { get; init; } = [];
-
-    public IReadOnlyList<string> Genres { get; init; } = [];
-
-    public ComixGenreMode GenreMode { get; init; } = ComixGenreMode.And;
-
-    public IReadOnlyList<string> Demographics { get; init; } = [];
-
-    public IReadOnlyList<string> Statuses { get; init; } = [];
-
-    public int? MinimumChapter { get; init; }
-
-    public int? YearFrom { get; init; }
-
-    public int? YearTo { get; init; }
-
-    public string? AuthorKey { get; init; }
-
-    public string? ArtistKey { get; init; }
-
-    /// <summary>
-    /// Local validation only. An invalid range blocks Start; it never reaches the
-    /// provider and never produces a silent default. An unrecognized sort is
-    /// refused for the same reason: its order column would have to be guessed.
-    ///
-    /// Every filter value this query can carry was captured live, so there is no
-    /// longer an "uncaptured" class to refuse. A new filter must arrive with its
-    /// own captured evidence before it is added here.
-    /// </summary>
-    public string? ValidationError
-    {
-        get
-        {
-            if (MinimumChapter is < 0)
-            {
-                return "Minimum chapter cannot be negative.";
-            }
-
-            if (YearFrom is not null && (YearFrom < 1900 || YearFrom > 2999))
-            {
-                return "Release year must be between 1900 and 2999.";
-            }
-
-            if (YearTo is not null && (YearTo < 1900 || YearTo > 2999))
-            {
-                return "Release year must be between 1900 and 2999.";
-            }
-
-            if (YearFrom is { } from && YearTo is { } to && from > to)
-            {
-                return "The 'from' release year cannot be later than the 'to' year.";
-            }
-
-            if (ComixOptions.FindSort(SortKey) is null)
-            {
-                return $"Sort '{SortKey}' tidak ada di tabel sort yang ditangkap dari Comix.";
-            }
-
-            return null;
-        }
-    }
-
-    /// <summary>
-    /// The captured browse wire form: one <c>order[&lt;captured field&gt;]=asc|desc</c>
-    /// for the chosen sort, then one repeated key per multi-value filter, the
-    /// numeric ranges, and the resolved author/artist ids. Genres and formats
-    /// share <c>genres_in[]</c>, and <c>genres_mode</c> is only sent when at least
-    /// one of them is chosen. Page, limit and keyword are request-level and added
-    /// by the adapter.
-    /// </summary>
-    public string ToQueryString()
-    {
-        var sort = ComixOptions.FindSort(SortKey);
-        var query = new StringBuilder();
-        Append(
-            query,
-            string.Format(
-                CultureInfo.InvariantCulture,
-                ComixContract.KeyOrder,
-                sort?.OrderField ?? ComixContract.OrderLatestColumn),
-            sort?.Direction ?? ComixContract.OrderDescending);
-
-        AppendMany(query, ComixContract.KeyContentRating, Ratings);
-        AppendMany(query, ComixContract.KeyTypes, Types);
-        AppendMany(query, ComixContract.KeyStatuses, Statuses);
-        AppendMany(query, ComixContract.KeyDemographics, Demographics);
-        AppendMany(query, ComixContract.KeyGenresIn, Genres);
-        if (Genres.Count > 0)
-        {
-            Append(
-                query,
-                ComixContract.KeyGenresMode,
-                GenreMode == ComixGenreMode.Or
-                    ? ComixContract.GenresModeOr
-                    : ComixContract.GenresModeAnd);
-        }
-
-        Append(query, ComixContract.KeyMinimumChapter, MinimumChapter?.ToString(CultureInfo.InvariantCulture));
-        Append(query, ComixContract.KeyYearFrom, YearFrom?.ToString(CultureInfo.InvariantCulture));
-        Append(query, ComixContract.KeyYearTo, YearTo?.ToString(CultureInfo.InvariantCulture));
-        Append(query, ComixContract.KeyAuthors, AuthorKey);
-        Append(query, ComixContract.KeyArtists, ArtistKey);
-        return query.ToString();
-    }
-
-    private static void Append(StringBuilder query, string key, string? value)
-    {
-        if (string.IsNullOrWhiteSpace(value)) return;
-        if (query.Length > 0) query.Append('&');
-        query.Append(Uri.EscapeDataString(key))
-            .Append('=')
-            .Append(Uri.EscapeDataString(value));
-    }
-
-    private static void AppendMany(StringBuilder query, string key, IReadOnlyList<string> values)
-    {
-        foreach (var value in values)
-        {
-            Append(query, key, value);
-        }
-    }
-}
-
-/// <summary>
-/// One captured sort choice: the label the user picks, the exact order column the
-/// site accepted, and its direction. All thirteen were recorded from the live
-/// provider; none is derived from its own label.
-/// </summary>
-public sealed record ComixSortOption(string Key, string DisplayName, string OrderField, string Direction)
-{
-    public override string ToString() => DisplayName;
-}
-
-/// <summary>
-/// Provider option catalogs. Only values with recorded evidence are listed;
-/// display titles are always non-empty so an object-backed list never falls
-/// back to a record's ToString for its accessible name. Options that the
-/// provider resolves remotely (genres, formats, authors, artists) are fetched
-/// through <see cref="IMangaSource.LookupAsync"/> instead of being hardcoded.
-/// </summary>
 public static class ComixOptions
 {
     public const string DefaultSortKey = "latest";
@@ -491,6 +149,311 @@ public static class ComixOptions
         new("93171", "Web Comic"),
     ];
 }
+
+public static class ComixContract
+{
+    /// <summary>
+    /// Feeds the chapter manifest hash, so it identifies the page and manifest
+    /// contract and deliberately does not track the browse query contract above.
+    /// Raising it for a new query key would invalidate staged resume data and the
+    /// provenance embedded in already published archives while changing no
+    /// behavior, so it moves only when the manifest or page contract moves.
+    /// </summary>
+    public const int Version = 2;
+
+    public const string SourceId = "comix";
+    public const string DisplayName = "Comix";
+
+    /// <summary>The host that answers. Captured live: 200 in ~0.4 s.</summary>
+    public const string BaseUrl = "https://comix.ws";
+
+    /// <summary>Referer required by image downloads.</summary>
+    public const string ImageReferer = "https://comix.ws/";
+
+    /// <summary>
+    /// Captured: the shape of the title page path the provider reports in
+    /// <c>url</c>, <c>/title/{hid}-{slug}</c>. Only this shape is resolved against
+    /// <see cref="BaseUrl"/>, so a tampered payload cannot aim a canonical url at
+    /// another origin through a protocol-relative or unrelated relative value.
+    /// </summary>
+    public const string TitlePagePathPrefix = "/title/";
+
+    /// <summary>Captured: the browse list the Catalog Start button drives.</summary>
+    public const string RouteBrowse = "/api/v1/manga";
+
+    /// <summary>
+    /// Captured live through the page client: 200, decrypted, and it carries the
+    /// detail fields the browse item does not (genres, authors, first/latest
+    /// chapter url). The rendered title page never calls it, which is why an
+    /// earlier network-only capture missed it.
+    /// </summary>
+    public const string RouteTitle = "/api/v1/manga/{0}";
+
+    /// <summary>
+    /// Captured live through the page client: 200 and decrypted
+    /// (<c>{items, meta}</c>). The raw network body is encrypted (<c>{"e":â€¦}</c>);
+    /// the site's own interceptor is what decrypts it, so this route is only
+    /// usable through that client.
+    /// </summary>
+    public const string RouteChapters = "/api/v1/manga/{0}/chapters";
+
+    /// <summary>
+    /// Captured live through the page client: 200, decrypted, and it carries the
+    /// page manifest under <c>pages.items</c>.
+    /// </summary>
+    public const string RouteChapter = "/api/v1/chapters/{0}";
+
+    /// <summary>Captured query keys, exactly as the site sent them.</summary>
+    public const string KeyOrder = "order[{0}]";
+    public const string KeyPage = "page";
+    public const string KeyLimit = "limit";
+    public const string KeyContentRating = "content_rating[]";
+    public const string KeyTypes = "types[]";
+    public const string KeyKeyword = "keyword";
+
+    /// <summary>
+    /// Browse query keys captured live on 2026-09-06 through the page client.
+    /// Every one of these is provider evidence; a filter with no key here is
+    /// refused visibly rather than sent under an invented name.
+    /// </summary>
+    public const string KeyStatuses = "statuses[]";
+    public const string KeyDemographics = "demographics[]";
+    public const string KeyGenresIn = "genres_in[]";
+    public const string KeyGenresMode = "genres_mode";
+    public const string KeyMinimumChapter = "min_chap";
+    public const string KeyYearFrom = "year_from";
+    public const string KeyYearTo = "year_to";
+    public const string KeyAuthors = "authors[]";
+    public const string KeyArtists = "artists[]";
+
+    /// <summary>The two captured genre-matching modes.</summary>
+    public const string GenresModeAnd = "and";
+    public const string GenresModeOr = "or";
+
+    /// <summary>
+    /// Captured author/artist lookup route and its query keys. Only the author
+    /// and artist tag types were captured; a genre or format lookup has no
+    /// recorded endpoint and is refused instead of guessed.
+    /// </summary>
+    public const string RouteTagsSearch = "/api/v1/tags/search";
+    public const string KeyTagType = "type";
+    public const string KeyQuery = "q";
+    public const string TagTypeAuthor = "author";
+    public const string TagTypeArtist = "artist";
+    public const int LookupLimit = 20;
+
+    /// <summary>The captured order column for "latest update".</summary>
+    public const string OrderLatestColumn = "chapter_updated_at";
+    public const string OrderDescending = "desc";
+    public const string OrderAscending = "asc";
+
+    /// <summary>The captured chapter order column and page size.</summary>
+    public const string OrderNumberColumn = "number";
+    public const int ChapterPageSize = 20;
+
+    /// <summary>Captured browse page size.</summary>
+    public const int PageSize = 28;
+
+    /// <summary>
+    /// Captured browse payload root. The site's own client already unwrapped the
+    /// envelope, so C# reads <c>items</c> and <c>meta</c> from the root.
+    /// </summary>
+    public const string FieldItems = "items";
+    public const string FieldMeta = "meta";
+
+    /// <summary>The two captured pagination fields the adapter reads.</summary>
+    public const string MetaTotal = "total";
+    public const string MetaHasNext = "hasNext";
+
+    /// <summary>Captured title item fields.</summary>
+    public const string FieldId = "id";
+    public const string FieldHid = "hid";
+    public const string FieldTitle = "title";
+    public const string FieldAltTitles = "altTitles";
+    public const string FieldType = "type";
+    public const string FieldItemStatus = "status";
+    public const string FieldOriginalLanguage = "originalLanguage";
+    public const string FieldPoster = "poster";
+    public const string PosterMedium = "medium";
+    public const string PosterLarge = "large";
+    public const string FieldLatestChapter = "latestChapter";
+    public const string FieldChapterUpdatedAtFormatted = "chapterUpdatedAtFormatted";
+    public const string FieldUpdatedAtFormatted = "updatedAtFormatted";
+    public const string FieldYear = "year";
+    public const string FieldSynopsis = "synopsis";
+
+    /// <summary>Captured detail-only fields on <c>/manga/{hid}</c>.</summary>
+    public const string FieldUrl = "url";
+    public const string FieldGenres = "genres";
+    public const string FieldAuthors = "authors";
+    public const string FieldArtists = "artists";
+
+    /// <summary>
+    /// Every captured option list entry is the same triple, so one set of names
+    /// reads genres, demographics, formats, authors, artists and publishers.
+    /// </summary>
+    public const string OptionId = "id";
+    public const string OptionTitle = "title";
+    public const string OptionSlug = "slug";
+
+    /// <summary>Captured chapter item fields.</summary>
+    public const string FieldChapterId = "id";
+    public const string FieldNumber = "number";
+    public const string FieldChapterName = "name";
+    public const string FieldGroupId = "groupId";
+    public const string FieldGroup = "group";
+    public const string FieldGroupName = "name";
+
+    /// <summary>Captured manifest page container on <c>/chapters/{id}</c>.</summary>
+    public const string FieldPages = "pages";
+    public const string FieldPagesBaseUrl = "baseUrl";
+    public const string FieldPageUrl = "url";
+}
+
+public sealed record ComixBrowseQuery : IRemoteBrowseFilter
+{
+    public static readonly ComixBrowseQuery Default = new()
+    {
+        SortKey = ComixOptions.DefaultSortKey,
+        Ratings = ComixOptions.DefaultRatingKeys,
+    };
+
+    public string SourceId => ComixContract.SourceId;
+
+    public string? Search { get; init; }
+
+    public string SortKey { get; init; } = ComixOptions.DefaultSortKey;
+
+    public IReadOnlyList<string> Ratings { get; init; } = [];
+
+    public IReadOnlyList<string> Types { get; init; } = [];
+
+    public IReadOnlyList<string> Genres { get; init; } = [];
+
+    public ComixGenreMode GenreMode { get; init; } = ComixGenreMode.And;
+
+    public IReadOnlyList<string> Demographics { get; init; } = [];
+
+    public IReadOnlyList<string> Statuses { get; init; } = [];
+
+    public int? MinimumChapter { get; init; }
+
+    public int? YearFrom { get; init; }
+
+    public int? YearTo { get; init; }
+
+    public string? AuthorKey { get; init; }
+
+    public string? ArtistKey { get; init; }
+
+    /// <summary>
+    /// Local validation only. An invalid range blocks Start; it never reaches the
+    /// provider and never produces a silent default. An unrecognized sort is
+    /// refused for the same reason: its order column would have to be guessed.
+    ///
+    /// Every filter value this query can carry was captured live, so there is no
+    /// longer an "uncaptured" class to refuse. A new filter must arrive with its
+    /// own captured evidence before it is added here.
+    /// </summary>
+    public string? ValidationError
+    {
+        get
+        {
+            if (MinimumChapter is < 0)
+            {
+                return "Minimum chapter cannot be negative.";
+            }
+
+            if (YearFrom is not null && (YearFrom < 1900 || YearFrom > 2999))
+            {
+                return "Release year must be between 1900 and 2999.";
+            }
+
+            if (YearTo is not null && (YearTo < 1900 || YearTo > 2999))
+            {
+                return "Release year must be between 1900 and 2999.";
+            }
+
+            if (YearFrom is { } from && YearTo is { } to && from > to)
+            {
+                return "The 'from' release year cannot be later than the 'to' year.";
+            }
+
+            if (ComixOptions.FindSort(SortKey) is null)
+            {
+                return $"Sort '{SortKey}' tidak ada di tabel sort yang ditangkap dari Comix.";
+            }
+
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// The captured browse wire form: one <c>order[&lt;captured field&gt;]=asc|desc</c>
+    /// for the chosen sort, then one repeated key per multi-value filter, the
+    /// numeric ranges, and the resolved author/artist ids. Genres and formats
+    /// share <c>genres_in[]</c>, and <c>genres_mode</c> is only sent when at least
+    /// one of them is chosen. Page, limit and keyword are request-level and added
+    /// by the adapter.
+    /// </summary>
+    public string ToQueryString()
+    {
+        var sort = ComixOptions.FindSort(SortKey);
+        var query = new StringBuilder();
+        Append(
+            query,
+            string.Format(
+                CultureInfo.InvariantCulture,
+                ComixContract.KeyOrder,
+                sort?.OrderField ?? ComixContract.OrderLatestColumn),
+            sort?.Direction ?? ComixContract.OrderDescending);
+
+        AppendMany(query, ComixContract.KeyContentRating, Ratings);
+        AppendMany(query, ComixContract.KeyTypes, Types);
+        AppendMany(query, ComixContract.KeyStatuses, Statuses);
+        AppendMany(query, ComixContract.KeyDemographics, Demographics);
+        AppendMany(query, ComixContract.KeyGenresIn, Genres);
+        if (Genres.Count > 0)
+        {
+            Append(
+                query,
+                ComixContract.KeyGenresMode,
+                GenreMode == ComixGenreMode.Or
+                    ? ComixContract.GenresModeOr
+                    : ComixContract.GenresModeAnd);
+        }
+
+        Append(query, ComixContract.KeyMinimumChapter, MinimumChapter?.ToString(CultureInfo.InvariantCulture));
+        Append(query, ComixContract.KeyYearFrom, YearFrom?.ToString(CultureInfo.InvariantCulture));
+        Append(query, ComixContract.KeyYearTo, YearTo?.ToString(CultureInfo.InvariantCulture));
+        Append(query, ComixContract.KeyAuthors, AuthorKey);
+        Append(query, ComixContract.KeyArtists, ArtistKey);
+        return query.ToString();
+    }
+
+    private static void Append(StringBuilder query, string key, string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value)) return;
+        if (query.Length > 0) query.Append('&');
+        query.Append(Uri.EscapeDataString(key))
+            .Append('=')
+            .Append(Uri.EscapeDataString(value));
+    }
+
+    private static void AppendMany(StringBuilder query, string key, IReadOnlyList<string> values)
+    {
+        foreach (var value in values)
+        {
+            Append(query, key, value);
+        }
+    }
+}
+
+
+
+
+
+
 
 /// <summary>
 /// The Comix adapter: routes, page-context calls, parsing and normalization.

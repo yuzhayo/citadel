@@ -3,64 +3,11 @@ using System.Windows;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 
+using Module.Mangareader.Sources;
+
 namespace Module.Mangareader.Features.Downloader.Sources.Comix;
 
-/// <summary>
-/// The scramble descriptors Comix sends beside a scrambled page. Values come
-/// from response headers only; nothing here guesses a variant that was not
-/// declared.
-/// </summary>
-public sealed record ComixScrambleHeader(long Seed, int Grid, int Algorithm, int? Hash);
 
-public static class ComixScrambleHeaders
-{
-    public const string SeedHeader = "x-scramble-seed";
-    public const string GridHeader = "x-scramble-grid";
-    public const string AlgorithmHeader = "x-scramble-algo";
-    public const string HashHeader = "x-scramble-hash";
-
-    /// <summary>
-    /// Reads the declared scramble header set. Returns null when the payload
-    /// was not declared scrambled, and throws when it was declared but cannot
-    /// be parsed — an unparseable variant must fail visibly, not silently pass
-    /// scrambled bytes through as a page.
-    /// </summary>
-    public static ComixScrambleHeader? Parse(IReadOnlyDictionary<string, string>? headers)
-    {
-        if (headers is null) return null;
-
-        var seed = Find(headers, SeedHeader);
-        var grid = Find(headers, GridHeader);
-        var algorithm = Find(headers, AlgorithmHeader);
-        if (seed is null && grid is null && algorithm is null) return null;
-
-        var hash = Find(headers, HashHeader);
-        return new ComixScrambleHeader(
-            ParseRequired(seed, SeedHeader),
-            (int)ParseRequired(grid, GridHeader),
-            (int)ParseRequired(algorithm, AlgorithmHeader),
-            hash is null ? null : (int)ParseRequired(hash, HashHeader));
-    }
-
-    private static string? Find(IReadOnlyDictionary<string, string> headers, string key)
-    {
-        foreach (var pair in headers)
-        {
-            if (string.Equals(pair.Key, key, StringComparison.OrdinalIgnoreCase))
-            {
-                return string.IsNullOrWhiteSpace(pair.Value) ? null : pair.Value.Trim();
-            }
-        }
-
-        return null;
-    }
-
-    private static long ParseRequired(string? raw, string header) =>
-        long.TryParse(raw, out var value)
-            ? value
-            : throw new InvalidDataException(
-                $"Comix scramble header '{header}' is absent or not numeric.");
-}
 
 /// <summary>
 /// Comix page descrambling, kept entirely inside the Comix boundary: the queue
