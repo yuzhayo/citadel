@@ -81,11 +81,11 @@ public partial class MangaReaderView : UserControl, IContentHeaderActionProvider
             new UpdateMatcher(
                 probe,
                 sources,
-                folderName => ReadConfirmedMapping(index, folderName)),
+                folderName => MangaReaderHandoffs.ReadConfirmedMapping(index, folderName)),
             probe,
             sources,
             () => _libraryRoot.CurrentRoot,
-            request => EnqueueUpdate(request, _queue)));
+            request => MangaReaderHandoffs.EnqueueUpdate(request, _queue)));
 
         DownloaderTab.UseContext(
             new DownloaderContext(sources, _queue, _downloaderBrowser, _libraryRoot, index, lister, autoCover));
@@ -113,63 +113,18 @@ public partial class MangaReaderView : UserControl, IContentHeaderActionProvider
             catalogSources,
             new CatalogGenreStore(catalogStore.Database));
 
-        async Task<CatalogLocalAvailabilityResult> CheckCatalogAvailability(
-            CatalogLocalAvailabilityRequest request, CancellationToken token)
-        {
-            var summary = new RemoteTitleSummary(
-                new RemoteTitleIdentity(
-                    request.SourceId, request.TitleId, request.TitleHid, Slug: string.Empty),
-                request.TitleDisplayName,
-                CoverUrl: null,
-                LatestChapterLabel: null);
-            var listed = await lister.ListAsync(summary, token).ConfigureAwait(false);
-            return new CatalogLocalAvailabilityResult(request.Chapters.Select(chapter =>
-                new CatalogChapterAvailability(
-                    chapter.ChapterId,
-                    ListerFeature.IsLocallyAvailable(
-                        listed,
-                        new RemoteChapterIdentity(
-                            request.SourceId,
-                            summary.Identity,
-                            chapter.ChapterId,
-                            chapter.ChapterNumber,
-                            new RemoteGroupIdentity(request.SourceId, request.GroupId))))).ToArray());
-        }
-
-        string? ConfirmQueueTarget(CatalogQueueTargetRequest request)
-        {
-            var root = _libraryRoot.CurrentRoot;
-            if (string.IsNullOrWhiteSpace(root)) return null;
-            var identity = new RemoteTitleIdentity(
-                request.SourceId, request.TitleId, request.TitleHid, Slug: string.Empty);
-            var existing = index.FindUsableMapping(root, identity);
-            if (existing is not null) return existing.FolderName;
-
-            var suggested = DownloadQueueFeature.SanitizeFolder(request.TitleDisplayName);
-            if (!Directory.Exists(Path.Combine(root, suggested))) return suggested;
-
-            var claimed = SettingDialog.Confirm(
-                Window.GetWindow(CatalogTab),
-                "Catalog",
-                $"Folder '{suggested}' sudah ada di Library tetapi tidak dipetakan ke title ini.\n\nGunakan folder itu untuk '{request.TitleDisplayName}'?",
-                "Use folder");
-            if (claimed) return suggested;
-
-            var distinct = $"{suggested} [{request.TitleHid}]";
-            return Directory.Exists(Path.Combine(root, distinct)) ? null : distinct;
-        }
-
         var catalogDetail = new CatalogMirrorDetailFeature(
             catalogSources,
             new CatalogEnrichmentStore(catalogPaths),
             new CatalogMirrorCoverCache(catalogPaths, _coverClient),
-            CheckCatalogAvailability);
+            (request, token) => MangaReaderHandoffs.CheckCatalogAvailability(lister, request, token));
         var catalogLoad = new CatalogMirrorLoadFeature(catalogStore);
         var catalogFeature = new CatalogMirrorFeature(
             catalogLoad, catalogSync, catalogGenreSync, catalogDetail);
         _catalogContext = new CatalogContext(catalogFeature, catalogBrowser, catalogSources);
         CatalogTab.UseContext(_catalogContext);
-        CatalogTab.UseQueueTarget(ConfirmQueueTarget);
+        CatalogTab.UseQueueTarget(request => MangaReaderHandoffs.ConfirmQueueTarget(
+            _libraryRoot, index, () => Window.GetWindow(CatalogTab), request));
         CatalogTab.QueueHandoffRequested += CatalogTab_QueueHandoffRequested;
 
         // The queue screen is a top-level tab with the narrow dependency only:
@@ -220,39 +175,18 @@ public partial class MangaReaderView : UserControl, IContentHeaderActionProvider
     {
         if (_disposed || handoff is null) return;
 
-        try
+        var error = MangaReaderHandoffs.QueueHandoff(handoff, _queue);
+        if (error is null)
         {
-            var title = new RemoteTitleSummary(
-                new RemoteTitleIdentity(
-                    handoff.SourceId, handoff.TitleId, handoff.TitleHid, Slug: string.Empty),
-                handoff.TitleDisplayName,
-                CoverUrl: null,
-                LatestChapterLabel: null);
-            var group = new RemoteSourceGroup(
-                new RemoteGroupIdentity(handoff.SourceId, handoff.GroupId),
-                handoff.GroupDisplayName);
-            // OrderIndex is the provider list order, preserved through the
-            // selection: the handoff chapters arrive in state order.
-            var chapters = handoff.Chapters.Select((candidate, order) => new RemoteChapterSummary(
-                new RemoteChapterIdentity(
-                    handoff.SourceId,
-                    title.Identity,
-                    candidate.ChapterId,
-                    candidate.ChapterNumber,
-                    group.Identity),
-                candidate.DisplayName,
-                OrderIndex: order)).ToArray();
-            _queue.QueueChapters(title, group, chapters, handoff.TargetFolder);
             QueueTabItem.IsSelected = true;
+            return;
         }
-        catch (QueuePersistenceException exception)
-        {
-            SettingDialog.Confirm(
-                Window.GetWindow(CatalogTab),
-                "Queue",
-                "Queue tidak dapat disimpan: " + exception.Message,
-                "OK");
-        }
+
+        SettingDialog.Confirm(
+            Window.GetWindow(CatalogTab),
+            "Queue",
+            "Queue tidak dapat disimpan: " + error,
+            "OK");
     }
 
     public FrameworkElement CreateContentHeaderAction()
@@ -319,63 +253,6 @@ public partial class MangaReaderView : UserControl, IContentHeaderActionProvider
 
         _readerWindow = reader;
         reader.Show();
-    }
-
-    /// <summary>
-    /// Routes one confirmed folder mapping from the Downloader's index into the
-    /// neutral shape Library's Update Checker reads. Translation only — the root
-    /// never decides which mapping is correct.
-    /// </summary>
-    private static ConfirmedTitleMapping? ReadConfirmedMapping(
-        DownloadSourceIndex index,
-        string folderName)
-    {
-        var mapping = index.Load().Mappings.FirstOrDefault(candidate =>
-            string.Equals(candidate.FolderName, folderName, StringComparison.OrdinalIgnoreCase));
-        return mapping is null
-            ? null
-            : new ConfirmedTitleMapping(
-                mapping.SourceId,
-                mapping.TitleId,
-                mapping.TitleHid,
-                mapping.FolderName);
-    }
-
-    /// <summary>
-    /// Routes one immutable update selection to the existing queue command and
-    /// reports the queue's own answer. A queue that cannot be written down must
-    /// not accept the job, so that failure is reported rather than swallowed.
-    /// </summary>
-    private static UpdateHandoffResult EnqueueUpdate(
-        UpdateDownloadRequest request,
-        DownloadQueueFeature queue)
-    {
-        try
-        {
-            var result = queue.QueueChapters(
-                new RemoteTitleSummary(
-                    request.Title,
-                    request.TitleDisplayName,
-                    CoverUrl: null,
-                    LatestChapterLabel: null),
-                new RemoteSourceGroup(request.Group, request.GroupDisplayName),
-                request.Chapters,
-                request.LocalFolderName);
-            // The neutral handoff carries one skip total. Both of the queue's skip
-            // reasons mean "this chapter was not queued", so the translation adds them
-            // rather than dropping one on the floor.
-            return new UpdateHandoffResult(
-                result.Queued,
-                result.SkippedAlreadyPublished + result.SkippedAlreadyQueued,
-                result.Blocked);
-        }
-        catch (QueuePersistenceException exception)
-        {
-            return new UpdateHandoffResult(
-                0,
-                0,
-                "Queue tidak dapat disimpan: " + exception.Message);
-        }
     }
 
     private void DisposeView()

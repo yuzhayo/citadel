@@ -1435,3 +1435,24 @@ hasilnya lebih spesifik dari dugaan**:
   hanya kontrak) sengaja belum ditegakkan karena C14/D22 belum diperbaiki.
 - **Belum disentuh:** A1-A13 selain yang disebut, B1-B7, C1-C2, C4-C15 selain yang
   disebut, D1-D26.
+
+
+### Koreksi framing C14/D22 (2026-09-11, setelah analisa baris-per-baris)
+
+Membaca MangaReaderView.xaml.cs penuh mengubah vonis: lima blok yang semula
+dilabel "logika feature di parent" ternyata KEBIJAKAN LINTAS-FEATURE (masing-masing
+menyentuh 2-3 owner: CatalogMirror, Downloader, Library, UI bersama). FM-5
+menempatkan kalkulasi satu-feature di feature, tetapi kebijakan lintas-feature di
+composition root. Memindahkannya ke dalam satu feature justru menciptakan tepi
+lintas-feature baru yang ditolak guard Level-B. Jadi parent TIDAK melanggar FM-5
+dengan memegangnya; pelanggarannya hanya ST-1 (satu file memegang komposisi DAN
+aturan koordinasi).
+
+Tindakan yang diambil (plan tertulis: docs/CITADEL-PLAN-C14.md): aturan koordinasi
+dipisah ke module/mangareader/MangaReaderHandoffs.cs (5 method statis, dependensi
+eksplisit sebagai parameter, badan verbatim). Parent turun 412 menjadi 289 baris dan
+kini hanya komposisi + navigasi + lifecycle. Perilaku identik; suite 929 hijau.
+
+Sisa C14 yang BENAR-BENAR terbuka (bukan bagian plan ini): parent masih
+mengonstruksi seluruh fitur inline tanpa katalog/gate seragam seperti Reader. Itu
+refactor interface besar dan tercatat terpisah, bukan sebagai pelanggaran mendesak.
