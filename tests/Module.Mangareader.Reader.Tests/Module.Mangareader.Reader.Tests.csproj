@@ -22,121 +22,23 @@
     citizen, while the CBZ decoder is replaced through IReaderChapterLoader.
   -->
   <ItemGroup>
-    <Compile Include="..\..\module\mangareader\Reader\ReaderCore\ReaderActivityHub.cs"
-             Link="Reader\ReaderCore\ReaderActivityHub.cs" />
-    <Compile Include="..\..\module\mangareader\Reader\ReaderCore\FrameContentHost.cs"
-             Link="Reader\ReaderCore\FrameContentHost.cs" />
-    <Compile Include="..\..\module\mangareader\Reader\ReaderCore\ReaderChapterNavigationHub.cs"
-             Link="Reader\ReaderCore\ReaderChapterNavigationHub.cs" />
-    <Compile Include="..\..\module\mangareader\Reader\CbzReaderChapterLoader.cs"
-             Link="Reader\CbzReaderChapterLoader.cs" />
-    <Compile Include="..\..\module\mangareader\Reader\Features\AutoScroll\ReaderAutoScrollController.cs"
-             Link="Reader\Features\AutoScroll\ReaderAutoScrollController.cs" />
-    <Compile Include="..\..\module\mangareader\Reader\Features\AutoScroll\ReaderAutoScrollPolicy.cs"
-             Link="Reader\Features\AutoScroll\ReaderAutoScrollPolicy.cs" />
-    <Compile Include="..\..\module\mangareader\Reader\Features\ChapterLoading\ChapterLoadingFeature.cs"
-             Link="Reader\Features\ChapterLoading\ChapterLoadingFeature.cs" />
-    <Compile Include="..\..\module\mangareader\Reader\Features\ChapterLoading\ChapterCoordinator.cs"
-             Link="Reader\Features\ChapterLoading\ChapterCoordinator.cs" />
-    <Compile Include="..\..\module\mangareader\Reader\Features\ChapterLoading\ChapterPreloader.cs"
-             Link="Reader\Features\ChapterLoading\ChapterPreloader.cs" />
-    <Compile Include="..\..\module\mangareader\Reader\Features\ChapterLoading\ChapterNavigator.cs"
-             Link="Reader\Features\ChapterLoading\ChapterNavigator.cs" />
-    <Compile Include="..\..\module\mangareader\Reader\Features\ChapterNavigation\ReaderChapterNavigation.cs"
-             Link="Reader\Features\ChapterNavigation\ReaderChapterNavigation.cs" />
-    <Compile Include="..\..\module\mangareader\Reader\Features\Chrome\ReaderChromeController.cs"
-             Link="Reader\Features\Chrome\ReaderChromeController.cs" />
-    <Compile Include="..\..\module\mangareader\Reader\Features\Dim\ReaderDimController.cs"
-             Link="Reader\Features\Dim\ReaderDimController.cs" />
-    <Page Include="..\..\module\mangareader\Reader\Features\Drawer\ReaderDrawer.xaml"
-          Link="Reader\Features\Drawer\ReaderDrawer.xaml" />
-    <Compile Include="..\..\module\mangareader\Reader\Features\Drawer\ReaderDrawer.xaml.cs"
-             Link="Reader\Features\Drawer\ReaderDrawer.xaml.cs">
-      <DependentUpon>ReaderDrawer.xaml</DependentUpon>
-    </Compile>
-    <Compile Include="..\..\module\mangareader\Reader\ReaderCore\ReaderDrawerContributions.cs"
-             Link="Reader\ReaderCore\ReaderDrawerContributions.cs" />
-    <Compile Include="..\..\module\mangareader\Reader\Features\Drawer\ReaderDrawerPolicy.cs"
-             Link="Reader\Features\Drawer\ReaderDrawerPolicy.cs" />
-    <Compile Include="..\..\module\mangareader\Reader\ReaderFeatureCatalog.cs"
-             Link="Reader\ReaderFeatureCatalog.cs" />
-    <Compile Include="..\..\module\mangareader\Reader\ReaderDefaultFeatureCatalog.cs"
-             Link="Reader\ReaderDefaultFeatureCatalog.cs" />
-    <Compile Include="..\..\module\mangareader\Reader\ReaderFeatureContract.cs"
-             Link="Reader\ReaderFeatureContract.cs" />
-    <Compile Include="..\..\module\mangareader\Reader\ReaderFeatureHost.cs"
-             Link="Reader\ReaderFeatureHost.cs" />
-    <Compile Include="..\..\module\mangareader\Reader\Features\Fullscreen\ReaderFullscreenGeometry.cs"
-             Link="Reader\Features\Fullscreen\ReaderFullscreenGeometry.cs" />
-    <Compile Include="..\..\module\mangareader\Reader\Features\Fullscreen\ReaderFullscreenController.cs"
-             Link="Reader\Features\Fullscreen\ReaderFullscreenController.cs" />
-    <Page Include="..\..\module\mangareader\Reader\Features\Overlay\ReaderOverlay.xaml"
-          Link="Reader\Features\Overlay\ReaderOverlay.xaml" />
-    <Compile Include="..\..\module\mangareader\Reader\Features\Overlay\ReaderOverlay.xaml.cs"
-             Link="Reader\Features\Overlay\ReaderOverlay.xaml.cs">
-      <DependentUpon>ReaderOverlay.xaml</DependentUpon>
-    </Compile>
-    <Compile Include="..\..\module\mangareader\Reader\ReaderInputPolicy.cs"
-             Link="Reader\ReaderInputPolicy.cs" />
-    <Compile Include="..\..\module\mangareader\Reader\ReaderCore\ReaderInputRouter.cs"
-             Link="Reader\ReaderCore\ReaderInputRouter.cs" />
-    <Compile Include="..\..\module\mangareader\Reader\Features\Pin\ReaderPinController.cs"
-             Link="Reader\Features\Pin\ReaderPinController.cs" />
-    <Compile Include="..\..\module\mangareader\Reader\ReaderCore\ReaderPreferencesStore.cs"
-             Link="Reader\ReaderCore\ReaderPreferencesStore.cs" />
-    <Compile Include="..\..\module\mangareader\Reader\Features\Reset\ReaderResetController.cs"
-             Link="Reader\Features\Reset\ReaderResetController.cs" />
-    <Compile Include="..\..\module\mangareader\Reader\ReaderCore\ReaderSessionState.cs"
-             Link="Reader\ReaderCore\ReaderSessionState.cs" />
-    <Page Include="..\..\module\mangareader\Reader\Features\Toast\ReaderToast.xaml"
-          Link="Reader\Features\Toast\ReaderToast.xaml" />
-    <Compile Include="..\..\module\mangareader\Reader\Features\Toast\ReaderToast.xaml.cs"
-             Link="Reader\Features\Toast\ReaderToast.xaml.cs">
-      <DependentUpon>ReaderToast.xaml</DependentUpon>
-    </Compile>
-    <Compile Include="..\..\module\mangareader\Reader\ReaderValuePolicy.cs"
-             Link="Reader\ReaderValuePolicy.cs" />
-    <Compile Include="..\..\module\mangareader\Reader\ReaderViewportNavigator.cs"
-             Link="Reader\ReaderViewportNavigator.cs" />
-    <Compile Include="..\..\module\mangareader\Reader\ReaderViewportStepPolicy.cs"
-             Link="Reader\ReaderViewportStepPolicy.cs" />
-    <Compile Include="..\..\module\mangareader\Reader\Features\Zoom\ReaderZoomController.cs"
-             Link="Reader\Features\Zoom\ReaderZoomController.cs" />
 
-    <Compile Include="..\..\module\mangareader\shareLogic\MangaLibrary.cs"
-             Link="ShareLogic\MangaLibrary.cs" />
-    <Compile Include="..\..\module\mangareader\shareLogic\ChapterLoadingContracts.cs"
-             Link="ShareLogic\ChapterLoadingContracts.cs" />
-    <Compile Include="..\..\module\mangareader\shareLogic\ChapterSurfaceModel.cs"
-             Link="ShareLogic\ChapterSurfaceModel.cs" />
-    <Compile Include="..\..\module\mangareader\shareLogic\CbzChapterLoader.cs"
-             Link="ShareLogic\CbzChapterLoader.cs" />
-    <Compile Include="..\..\module\mangareader\shareLogic\ChapterRenderCache.cs"
-             Link="ShareLogic\ChapterRenderCache.cs" />
-    <Compile Include="..\..\module\mangareader\shareLogic\NaturalStringComparer.cs"
-             Link="ShareLogic\NaturalStringComparer.cs" />
-    <Compile Include="..\..\module\mangareader\shareLogic\Archive\ArchiveFormat.cs"
-             Link="ShareLogic\Archive\ArchiveFormat.cs" />
-    <Compile Include="..\..\module\mangareader\shareLogic\Archive\ArchiveSignatureDetector.cs"
-             Link="ShareLogic\Archive\ArchiveSignatureDetector.cs" />
-    <Compile Include="..\..\module\mangareader\shareLogic\Archive\CoverArchiveWriter.cs"
-             Link="ShareLogic\Archive\CoverArchiveWriter.cs" />
-    <Compile Include="..\..\module\mangareader\shareLogic\Archive\ArchivePageReader.cs"
-             Link="ShareLogic\Archive\ArchivePageReader.cs" />
-    <Compile Include="..\..\module\mangareader\shareLogic\Archive\RarArchiveEngine.cs"
-             Link="ShareLogic\Archive\RarArchiveEngine.cs" />
     <None Include="..\..\module\mangareader\Features\Rar\Rar.exe"
           Link="Features\Rar\Rar.exe"
           CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\..\module\mangareader\Features\Rar\rarreg.key"
           Link="Features\Rar\rarreg.key"
           CopyToOutputDirectory="PreserveNewest" />
-    <Compile Include="..\..\module\mangareader\shareLogic\OpenChapterRequestedEventArgs.cs"
-             Link="ShareLogic\OpenChapterRequestedEventArgs.cs" />
   </ItemGroup>
 
   <ItemGroup>
     <Using Include="Xunit" />
   </ItemGroup>
 
+  <ItemGroup>
+    <Compile Include="..\..\module\mangareader\Reader\**\*.cs" Link="Reader\%(RecursiveDir)%(Filename)%(Extension)" />
+    <Page Include="..\..\module\mangareader\Reader\**\*.xaml" Link="Reader\%(RecursiveDir)%(Filename)%(Extension)" />
+    <Compile Include="..\..\module\mangareader\shareLogic\**\*.cs" Link="shareLogic\%(RecursiveDir)%(Filename)%(Extension)" />
+    <Page Include="..\..\module\mangareader\shareLogic\**\*.xaml" Link="shareLogic\%(RecursiveDir)%(Filename)%(Extension)" />
+  </ItemGroup>
 </Project>
