@@ -412,3 +412,44 @@ Aturan wajib untuk setiap langkah berikutnya:
    ditunda tanpa menghalangi langkah lain; penundaan dicatat, bukan dipaksakan.
 5. Checkpoint adalah sumber kebenaran: 5f845aa (steps 1-4), 9bc33ac (step 5).
    Keadaan merah apa pun yang tidak terencana langsung di-revert ke checkpoint.
+
+
+## Review pekerjaan + gap plan (2026-09-11)
+
+### Keputusan owner
+- ftf dan proxy DIBIARKAN sebagai placeholder. Tidak ada pemulihan .pyc dan tidak ada
+  pensiun module. D9 tertutup sebagai keputusan, bukan sebagai pekerjaan.
+
+### Verdict review (steps 1-6, checkpoint 5f845aa / 9bc33ac / a3962f1)
+- Semua citizen (ftf, proxy, blank, camoprof, mangareader) dan Citadel.Shell
+  COMPILE; suite penuh 9 proyek test hijau (929 test), termasuk 3 guard Level-B.
+- Perubahan PERILAKU yang disengaja hanya SATU: BUG-1. Sebelumnya backoff
+  429/502/503 pada sync CatalogMirror adalah kode mati (throttle langsung jatuh ke
+  jalur gagal); sekarang ia retry dengan backoff. Ini perbaikan, bukan regresi.
+- Seluruh perubahan lain behavior-identik:
+  - Rar: mekanisme pindah file (RarArchiveEngine), logika sama, konsumen dipointkan.
+  - Comix: 4 tipe murni-data disatukan; 3 tipe pembawa default rating sengaja tetap
+    per-provider sehingga default browse kedua provider tidak berubah.
+  - Handoffs: pemindahan verbatim; parent hanya komposisi+navigasi+lifecycle.
+- Tidak ada perubahan pada: namespace feature, interface/delegate contract,
+  perilaku shared-UI, discovery module, graf dependensi antar proyek.
+- Kejujuran verifikasi: pembuktian lewat build + 929 test + 237 test Uia yang
+  menjalankan shell in-process. TIDAK ada verifikasi live menjalankan app WPF;
+  itu gap yang diakui (lihat gap 4).
+
+### Gap plan yang teridentifikasi
+1. Guard Level-B baru ada untuk mangareader. camoprof BELUM punya; tepi internalnya
+   (parent meng-hardwire 9 subsistem, sharedLogic lokal meng-hardcode nama plugin)
+   belum dijaga mesin. Perlu step: guard camoprof.
+2. C6/C8 masih terbuka: ftf/proxy/blank tidak dikompilasi CI, dan hook tidak menjaga
+   proyek core/setting baru yang belum masuk tabel ALLOWED. Meski ftf/proxy jadi
+   placeholder, memasukkannya ke compile-gate tetap bernilai agar placeholder tidak
+   rusak diam-diam.
+3. B2 tertunda (manifest test per-file). Optimasi, bukan perbaikan.
+4. Tidak ada langkah ACCEPTANCE live: plan belum mewajibkan smoke menjalankan app
+   (buka tiap tab, sync, queue) setelah refactor. Test tidak membuktikan UI.
+   Ditambahkan sebagai syarat keluar wajib untuk step refactor berikutnya.
+5. Sisa C14 (katalog/gate seragam untuk tab mangareader dan camoprof) belum
+   dijadwalkan sebagai step tersendiri; ia refactor interface besar.
+6. D1 (kernel keluar dari module/) dan D6 (contract tipis) adalah keputusan owner,
+   belum menjadi step eksekusi.
