@@ -30,124 +30,6 @@
     registry entry constructs it.
   -->
   <ItemGroup>
-    <Page Include="..\..\module\mangareader\Features\Downloader\FilterSearch\Comix\ComixFilterPanel.xaml"
-          Link="Downloader\FilterSearch\Comix\ComixFilterPanel.xaml" />
-    <Compile Include="..\..\module\mangareader\Features\Downloader\FilterSearch\Comix\ComixFilterPanel.xaml.cs"
-             Link="Downloader\FilterSearch\Comix\ComixFilterPanel.xaml.cs">
-      <DependentUpon>ComixFilterPanel.xaml</DependentUpon>
-    </Compile>
-    <Page Include="..\..\module\mangareader\Components\MangaMultiSelectFilter.xaml"
-          Link="Components\MangaMultiSelectFilter.xaml" />
-    <Compile Include="..\..\module\mangareader\Components\MangaMultiSelectFilter.xaml.cs"
-             Link="Components\MangaMultiSelectFilter.xaml.cs">
-      <DependentUpon>MangaMultiSelectFilter.xaml</DependentUpon>
-    </Compile>
-    <Compile Include="..\..\module\mangareader\Features\Downloader\Catalog\CatalogFeature.cs"
-             Link="Downloader\Catalog\CatalogFeature.cs" />
-    <Compile Include="..\..\module\mangareader\Features\Downloader\ManualUrl\ManualUrlContracts.cs"
-             Link="Downloader\ManualUrl\ManualUrlContracts.cs" />
-    <Compile Include="..\..\module\mangareader\Features\Downloader\ManualUrl\ManualUrlFeature.cs"
-             Link="Downloader\ManualUrl\ManualUrlFeature.cs" />
-    <Compile Include="..\..\module\mangareader\Features\Downloader\ManualUrl\ManualUrlProbeRegistry.cs"
-             Link="Downloader\ManualUrl\ManualUrlProbeRegistry.cs" />
-    <Compile Include="..\..\module\mangareader\Features\Downloader\ManualUrl\DynamicManualHtmlParser.cs"
-             Link="Downloader\ManualUrl\DynamicManualHtmlParser.cs" />
-    <Compile Include="..\..\module\mangareader\Features\Downloader\ManualUrl\DynamicManualSource.cs"
-             Link="Downloader\ManualUrl\DynamicManualSource.cs" />
-    <Compile Include="..\..\module\mangareader\Features\Downloader\ManualUrl\DynamicManualUrlProbe.cs"
-             Link="Downloader\ManualUrl\DynamicManualUrlProbe.cs" />
-    <Compile Include="..\..\module\mangareader\Features\Downloader\FilterSearch\FilterSearchFeature.cs"
-             Link="Downloader\FilterSearch\FilterSearchFeature.cs" />
-    <Compile Include="..\..\module\mangareader\Features\Downloader\FilterSearch\Comix\ComixFilterSearchPolicy.cs"
-             Link="Downloader\FilterSearch\Comix\ComixFilterSearchPolicy.cs" />
-    <Compile Include="..\..\module\mangareader\Features\Downloader\DownloadSourceIndex.cs"
-             Link="Downloader\DownloadSourceIndex.cs" />
-    <Compile Include="..\..\module\mangareader\Features\Downloader\DownloaderPathContainment.cs"
-             Link="Downloader\DownloaderPathContainment.cs" />
-    <Compile Include="..\..\module\mangareader\Features\Downloader\DownloaderPyHostClient.cs"
-             Link="Downloader\DownloaderPyHostClient.cs" />
-    <Compile Include="..\..\module\mangareader\Features\Downloader\Queue\DownloadQueueModels.cs"
-             Link="Downloader\Queue\DownloadQueueModels.cs" />
-    <Compile Include="..\..\module\mangareader\Features\Downloader\Queue\DownloadQueueStore.cs"
-             Link="Downloader\Queue\DownloadQueueStore.cs" />
-    <Compile Include="..\..\module\mangareader\Features\Downloader\Queue\DownloadQueueFeature.cs"
-             Link="Downloader\Queue\DownloadQueueFeature.cs" />
-    <Compile Include="..\..\module\mangareader\Features\Downloader\Queue\PageTransport.cs"
-             Link="Downloader\Queue\PageTransport.cs" />
-    <Compile Include="..\..\module\mangareader\Features\Downloader\Queue\ChapterDownloadPipeline.cs"
-             Link="Downloader\Queue\ChapterDownloadPipeline.cs" />
-    <Compile Include="..\..\module\mangareader\Features\Downloader\Queue\CbzChapterPublisher.cs"
-             Link="Downloader\Queue\CbzChapterPublisher.cs" />
-    <Compile Include="..\..\module\mangareader\shareLogic\Sources\ComixContracts.cs"
-             Link="Sources\ComixContracts.cs" />
-    <Compile Include="..\..\module\mangareader\shareLogic\Sources\MangaSourceContracts.cs"
-             Link="Sources\MangaSourceContracts.cs" />
-    <Compile Include="..\..\module\mangareader\Features\Downloader\Sources\MangaSourceRegistry.cs"
-             Link="Downloader\Sources\MangaSourceRegistry.cs" />
-    <Compile Include="..\..\module\mangareader\Features\Downloader\Sources\QueueSourceReadiness.cs"
-             Link="Downloader\Sources\QueueSourceReadiness.cs" />
-    <Compile Include="..\..\module\mangareader\Features\Downloader\Sources\Comix\ComixSource.cs"
-             Link="Downloader\Sources\Comix\ComixSource.cs" />
-    <Compile Include="..\..\module\mangareader\Features\Downloader\Sources\Comix\ComixManualUrlProbe.cs"
-             Link="Downloader\Sources\Comix\ComixManualUrlProbe.cs" />
-    <Compile Include="..\..\module\mangareader\Features\Downloader\Sources\Comix\ComixPageDecoder.cs"
-             Link="Downloader\Sources\Comix\ComixPageDecoder.cs" />
-    <Compile Include="..\..\module\mangareader\Features\Downloader\Sources\CucumberManga\CucumberMangaHtmlParser.cs"
-             Link="Downloader\Sources\CucumberManga\CucumberMangaHtmlParser.cs" />
-    <Compile Include="..\..\module\mangareader\Features\Downloader\Sources\CucumberManga\CucumberMangaSource.cs"
-             Link="Downloader\Sources\CucumberManga\CucumberMangaSource.cs" />
-    <Compile Include="..\..\module\mangareader\Features\Downloader\Sources\DrakeScans\DrakeScansContract.cs"
-             Link="Downloader\Sources\DrakeScans\DrakeScansContract.cs" />
-    <Compile Include="..\..\module\mangareader\Features\Downloader\Sources\DrakeScans\DrakeScansJsonParser.cs"
-             Link="Downloader\Sources\DrakeScans\DrakeScansJsonParser.cs" />
-    <Compile Include="..\..\module\mangareader\Features\Downloader\Sources\DrakeScans\DrakeScansRscParser.cs"
-             Link="Downloader\Sources\DrakeScans\DrakeScansRscParser.cs" />
-    <Compile Include="..\..\module\mangareader\Features\Downloader\Sources\DrakeScans\DrakeScansSource.cs"
-             Link="Downloader\Sources\DrakeScans\DrakeScansSource.cs" />
-    <Compile Include="..\..\module\mangareader\Features\Downloader\Sources\DrakeScans\DrakeScansManualUrlProbe.cs"
-             Link="Downloader\Sources\DrakeScans\DrakeScansManualUrlProbe.cs" />
-    <Page Include="..\..\module\mangareader\Features\Downloader\FilterSearch\DrakeScans\DrakeScansFilterPanel.xaml"
-          Link="Downloader\FilterSearch\DrakeScans\DrakeScansFilterPanel.xaml" />
-    <Compile Include="..\..\module\mangareader\Features\Downloader\FilterSearch\DrakeScans\DrakeScansFilterPanel.xaml.cs"
-             Link="Downloader\FilterSearch\DrakeScans\DrakeScansFilterPanel.xaml.cs">
-      <DependentUpon>DrakeScansFilterPanel.xaml</DependentUpon>
-    </Compile>
-    <Compile Include="..\..\module\mangareader\Features\Downloader\FilterSearch\DrakeScans\DrakeScansFilterContribution.cs"
-             Link="Downloader\FilterSearch\DrakeScans\DrakeScansFilterContribution.cs" />
-    <Page Include="..\..\module\mangareader\Features\Downloader\FilterSearch\CucumberManga\CucumberMangaFilterPanel.xaml"
-          Link="Downloader\FilterSearch\CucumberManga\CucumberMangaFilterPanel.xaml" />
-    <Compile Include="..\..\module\mangareader\Features\Downloader\FilterSearch\CucumberManga\CucumberMangaFilterContribution.cs"
-             Link="Downloader\FilterSearch\CucumberManga\CucumberMangaFilterContribution.cs">
-      <DependentUpon>CucumberMangaFilterPanel.xaml</DependentUpon>
-    </Compile>
-    <Compile Include="..\..\module\mangareader\shareLogic\Sources\CatalogSnapshotContracts.cs"
-             Link="Sources\CatalogSnapshotContracts.cs" />
-    <Compile Include="..\..\module\mangareader\Features\CatalogMirror\CatalogMirrorContracts.cs"
-             Link="CatalogMirror\CatalogMirrorContracts.cs" />
-    <Compile Include="..\..\module\mangareader\Features\CatalogMirror\CatalogMirrorPaths.cs"
-             Link="CatalogMirror\CatalogMirrorPaths.cs" />
-    <Compile Include="..\..\module\mangareader\Features\CatalogMirror\CatalogSnapshotStore.cs"
-             Link="CatalogMirror\CatalogSnapshotStore.cs" />
-    <Compile Include="..\..\module\mangareader\Features\CatalogMirror\CatalogEnrichmentStore.cs"
-             Link="CatalogMirror\CatalogEnrichmentStore.cs" />
-    <Compile Include="..\..\module\mangareader\Features\CatalogMirror\CatalogMirrorQuery.cs"
-             Link="CatalogMirror\CatalogMirrorQuery.cs" />
-    <Compile Include="..\..\module\mangareader\Features\CatalogMirror\CatalogMirrorLoadFeature.cs"
-             Link="CatalogMirror\CatalogMirrorLoadFeature.cs" />
-    <Compile Include="..\..\module\mangareader\Features\CatalogMirror\CatalogMirrorCoverCache.cs"
-             Link="CatalogMirror\CatalogMirrorCoverCache.cs" />
-    <Compile Include="..\..\module\mangareader\Features\CatalogMirror\CatalogMirrorSyncFeature.cs"
-             Link="CatalogMirror\CatalogMirrorSyncFeature.cs" />
-    <Compile Include="..\..\module\mangareader\Features\CatalogMirror\CatalogGenreStore.cs"
-             Link="CatalogMirror\CatalogGenreStore.cs" />
-    <Compile Include="..\..\module\mangareader\Features\CatalogMirror\CatalogGenreSyncFeature.cs"
-             Link="CatalogMirror\CatalogGenreSyncFeature.cs" />
-    <Compile Include="..\..\module\mangareader\Features\CatalogMirror\CatalogMirrorDatabase.cs"
-             Link="CatalogMirror\CatalogMirrorDatabase.cs" />
-    <Compile Include="..\..\module\mangareader\Features\CatalogMirror\CatalogMirrorDetailFeature.cs"
-             Link="CatalogMirror\CatalogMirrorDetailFeature.cs" />
-    <Compile Include="..\..\module\mangareader\Features\CatalogMirror\CatalogMirrorFeature.cs"
-             Link="CatalogMirror\CatalogMirrorFeature.cs" />
     <Compile Include="..\..\module\mangareader\Library\LibraryRootContext.cs"
              Link="Library\LibraryRootContext.cs" />
     <Compile Include="..\..\module\mangareader\Library\LibraryPathStore.cs"
@@ -162,20 +44,6 @@
              Link="CoverBuilder\CoverSourceLoader.cs" />
     <Compile Include="..\..\module\mangareader\CoverBuilder\CoverBuilderService.cs"
              Link="CoverBuilder\CoverBuilderService.cs" />
-    <Compile Include="..\..\module\mangareader\shareLogic\MangaLibrary.cs"
-             Link="ShareLogic\MangaLibrary.cs" />
-    <Compile Include="..\..\module\mangareader\shareLogic\LocalTitleProbe.cs"
-             Link="ShareLogic\LocalTitleProbe.cs" />
-    <Compile Include="..\..\module\mangareader\shareLogic\ChapterNumberText.cs"
-             Link="ShareLogic\ChapterNumberText.cs" />
-    <Compile Include="..\..\module\mangareader\Features\Downloader\Lister\ListerFeature.cs"
-             Link="Downloader\Lister\ListerFeature.cs" />
-    <Compile Include="..\..\module\mangareader\Features\Downloader\AutoCover\AutoCoverFeature.cs"
-             Link="Downloader\AutoCover\AutoCoverFeature.cs" />
-    <Compile Include="..\..\module\mangareader\shareLogic\NaturalStringComparer.cs"
-             Link="ShareLogic\NaturalStringComparer.cs" />
-    <Compile Include="..\..\module\mangareader\shareLogic\Archive\*.cs"
-             Link="Archive\%(Filename)%(Extension)" />
     <Compile Include="..\..\module\sharedLogic\cs\**\*.cs"
              Link="SharedCs\%(Filename)%(Extension)" />
   </ItemGroup>
@@ -184,4 +52,17 @@
     <Using Include="Xunit" />
   </ItemGroup>
 
+  <ItemGroup>
+    <Compile Include="..\..\module\mangareader\Features\Downloader\**\*.cs" Link="Downloader\%(RecursiveDir)%(Filename)%(Extension)" />
+    <Page Include="..\..\module\mangareader\Features\Downloader\**\*.xaml" Link="Downloader\%(RecursiveDir)%(Filename)%(Extension)" />
+    <Compile Include="..\..\module\mangareader\Features\CatalogMirror\**\*.cs" Link="CatalogMirror\%(RecursiveDir)%(Filename)%(Extension)" />
+    <Page Include="..\..\module\mangareader\Features\CatalogMirror\**\*.xaml" Link="CatalogMirror\%(RecursiveDir)%(Filename)%(Extension)" />
+    <Compile Include="..\..\module\mangareader\shareLogic\**\*.cs" Link="ShareLogic\%(RecursiveDir)%(Filename)%(Extension)" />
+    <Compile Include="..\..\module\mangareader\Components\**\*.cs" Link="Components\%(RecursiveDir)%(Filename)%(Extension)" />
+    <Page Include="..\..\module\mangareader\Components\**\*.xaml" Link="Components\%(RecursiveDir)%(Filename)%(Extension)" />
+    <Compile Include="..\..\module\mangareader\Features\Catalog\**\*.cs" Link="Catalog\%(RecursiveDir)%(Filename)%(Extension)" />
+    <Page Include="..\..\module\mangareader\Features\Catalog\**\*.xaml" Link="Catalog\%(RecursiveDir)%(Filename)%(Extension)" />
+    <Page Include="..\..\module\mangareader\MangaTitleCard.xaml" Link="MangaTitleCard.xaml" />
+    <Compile Include="..\..\module\mangareader\MangaTitleCard.xaml.cs" Link="MangaTitleCard.xaml.cs" />
+  </ItemGroup>
 </Project>
