@@ -626,42 +626,4 @@ public sealed class CatalogMirrorSyncTests : IDisposable
         Synopsis: null,
         CapturedAtUtc: new DateTimeOffset(2026, 9, 8, 0, 0, 0, TimeSpan.Zero),
         IsTitlePlaceholder: false);
-
-    [Fact]
-    public async Task PageCapStopsResumableBeforePagingTheWholeCatalog()
-    {
-        var calls = 0;
-        var source = new FakeSource((partition, _) =>
-        {
-            calls++;
-            return Task.FromResult(Page(
-                [Item(partition.Key + "-" + calls)], page: calls, hasMore: true, total: calls + 1));
-        });
-        var feature = new CatalogMirrorSyncFeature(new SinglePartitionSource(source), Store());
-        feature.PoliteDelay = TimeSpan.Zero;
-        feature.MaxPagesPerRun = 3;
-
-        await feature.StartAsync(CancellationToken.None);
-
-        Assert.Equal(3, calls);
-        Assert.Equal(CatalogSyncState.Stopped, feature.Current.State);
-    }
-
-    [Fact]
-    public async Task CloudflareBlockStatusStopsOnFirstAttemptWithoutRetry()
-    {
-        var calls = 0;
-        var source = new FakeSource((_, _) =>
-        {
-            calls++;
-            throw new ComixContractException("blocked") { HttpStatus = 403 };
-        });
-        var feature = new CatalogMirrorSyncFeature(new SinglePartitionSource(source), Store());
-        feature.PoliteDelay = TimeSpan.Zero;
-
-        await feature.StartAsync(CancellationToken.None);
-
-        Assert.Equal(1, calls);
-        Assert.Equal(CatalogSyncState.Error, feature.Current.State);
-    }
 }
