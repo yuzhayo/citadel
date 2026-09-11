@@ -11,14 +11,20 @@ Releases/
 *.user
 *.suo
 
-# Local agent tooling and configuration; only the project UI contract skill is
-# versioned so every agent receives the same component boundary.
+# Local agent tooling and configuration; the project UI contract skill, the
+# modularity contract skill, and the boundary-enforcement hooks are versioned so
+# every agent and every clone receives the same boundaries (gap 7, 2026-09-11).
 !.agents/
 .agents/*
 !.agents/skills/
 .agents/skills/*
 !.agents/skills/citadel-shared-ui/
 !.agents/skills/citadel-shared-ui/SKILL.md
+!.agents/skills/citadel-feature-modularity/
+!.agents/skills/citadel-feature-modularity/SKILL.md
+!.agents/hooks/
+!.agents/hooks/check-project-refs.mjs
+!.agents/hooks/gate-on-stop.mjs
 .claude/
 .qoder/
 .mcp.json
