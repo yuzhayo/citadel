@@ -481,3 +481,27 @@ karena itu benar hanya untuk harness lokal ini.
 Rekomendasi (keputusan owner, karena mengubah .gitignore): un-ignore
 .agents/hooks/ dan .agents/skills/citadel-feature-modularity/ agar penegakan dan
 kontrak ikut repo.
+
+
+## Status steps 10-13 (2026-09-11)
+
+- Step 10 (gap 7): bde227f. Hook + skill modularity kini ter-version-control;
+  hook sintetis pasca-commit tetap block untuk proyek core baru ber-referensi.
+- Step 11 (D6): 8b6031e + e028fbe. Lifetime + Log pindah ke Citadel.Contract dengan
+  namespace tetap; tepi dibalik Core->Contract; Contract = daun. Test invariant
+  metadata assembly diperbarui ke graf baru (Core tepat satu referensi Citadel;
+  Contract nol). Suite 9/9.
+- Step 12 (B2): 907f071 + 97186da. Wildcard untuk Downloader.Tests dan Reader.Tests
+  (proyek yang memang mengompilasi view). Library/History/Camoprof SENGAJA tetap
+  kurasi: proyek test mereka non-WPF dan tidak mereferensikan Citadel.Setting,
+  sehingga meng-glob view akan mengubah hakikat proyek tersebut. Keputusan ini
+  tercatat, bukan kegagalan metode.
+- Step 13 (D1): a313f06. Citadel.Searcher dan Citizen.targets pindah ke core/.
+  Pelajaran tercatat: core/ dan module/ sama-sama satu level di bawah root, jadi
+  kedalaman CitadelRoot tidak berubah; percobaan mengubahnya sempat merusak semua
+  citizen dan segera dikembalikan dalam langkah yang sama.
+- Step 14 BELUM dieksekusi: syarat keluarannya adalah SMOKE CHECKLIST lulus penuh,
+  dan smoke hanya bisa dijalankan live (app WPF). Sesuai aturan pelaksanaan, step
+  14 tidak dijalankan sebelum smoke tersedia.
+- Step 15 = eksekusi smoke oleh owner (atau sesi run terpisah), lalu step 14,
+  lalu smoke ulang sebagai pintu keluar keseluruhan.
