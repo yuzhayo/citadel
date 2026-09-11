@@ -125,7 +125,7 @@ public sealed class ComixDetailContractTests
         // confirmed folder mapping and a queued job would name different titles.
         Assert.Equal(Title, detail.Summary.Identity);
         Assert.Equal("Lucky Bitch", detail.Summary.DisplayName);
-        Assert.Equal("https://static.comix.ws/9e8f/i/a/97/6a57b776ce3ac@280.jpg", detail.Summary.CoverUrl);
+        Assert.Equal("https://static.comix.ws/9e8f/i/a/97/6a57b776ce3ac.jpg", detail.Summary.CoverUrl);
         Assert.Equal("Ch. 20", detail.Summary.LatestChapterLabel);
         Assert.StartsWith("Jeong-im", detail.Description!, StringComparison.Ordinal);
 

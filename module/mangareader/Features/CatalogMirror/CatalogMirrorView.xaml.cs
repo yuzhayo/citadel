@@ -44,6 +44,9 @@ public partial class CatalogMirrorView : UserControl, IDisposable
 
     private readonly ObservableCollection<CatalogMirrorCardModel> _resultCards = [];
     private readonly Dictionary<(string SourceId, string TitleId), CatalogMirrorCardModel> _resultCardsByIdentity = [];
+    private readonly ViewModePreferenceStore _viewModeStore = new(
+        "Catalog.ViewMode",
+        "catalog-view-mode.json");
     private CatalogMirrorFeature? _feature;
     private CatalogContext? _context;
     private CancellationTokenSource? _onlineStart;
@@ -61,6 +64,7 @@ public partial class CatalogMirrorView : UserControl, IDisposable
     private bool _hasRenderedResults;
     private bool _ready;
     private bool _suppressDetailEvents;
+    private MangaViewMode _viewMode;
     private double _savedScrollOffset;
     private bool _disposed;
 
@@ -68,6 +72,11 @@ public partial class CatalogMirrorView : UserControl, IDisposable
     {
         InitializeComponent();
         ResultsList.ItemsSource = _resultCards;
+        ResultsTable.ItemsSource = _resultCards;
+        _viewMode = _viewModeStore.Load(out _);
+        ViewModeSelector.Mode = _viewMode;
+        ViewModeSelector.ModeRequested += ViewModeSelector_ModeRequested;
+        ApplyViewMode();
     }
 
     /// <summary>
@@ -143,6 +152,7 @@ public partial class CatalogMirrorView : UserControl, IDisposable
         {
             _feature.StateChanged -= Feature_StateChanged;
         }
+        ViewModeSelector.ModeRequested -= ViewModeSelector_ModeRequested;
     }
 
     private void Feature_StateChanged(object? sender, CatalogMirrorState state)
@@ -393,6 +403,7 @@ public partial class CatalogMirrorView : UserControl, IDisposable
             _renderedPage = null;
             ClearResultCards();
             ResultsScroll.Visibility = Visibility.Collapsed;
+            ResultsTable.Visibility = Visibility.Collapsed;
             EmptyPanel.Visibility = Visibility.Visible;
             EmptyTitle.Text = "No snapshot yet";
             EmptyDetail.Text =
@@ -405,6 +416,7 @@ public partial class CatalogMirrorView : UserControl, IDisposable
             _renderedPage = state.Results;
             ClearResultCards();
             ResultsScroll.Visibility = Visibility.Collapsed;
+            ResultsTable.Visibility = Visibility.Collapsed;
             EmptyPanel.Visibility = Visibility.Visible;
             EmptyTitle.Text = "No titles match";
             EmptyDetail.Text = "Loosen the search or filters. Nothing was requested from the network.";
@@ -412,7 +424,7 @@ public partial class CatalogMirrorView : UserControl, IDisposable
         }
 
         EmptyPanel.Visibility = Visibility.Collapsed;
-        ResultsScroll.Visibility = Visibility.Visible;
+        ApplyViewMode();
 
         // Same page object (e.g. a status-only sync tick) needs no collection
         // work. A new staged page is reconciled into the existing collection,
@@ -597,6 +609,25 @@ public partial class CatalogMirrorView : UserControl, IDisposable
         {
             StatusLine.Text = "Open failed: " + exception.GetBaseException().Message;
         }
+    }
+
+    private void TitleRow_OpenClick(object sender, RoutedEventArgs e) => TitleCard_Click(sender, e);
+
+    private void ViewModeSelector_ModeRequested(object? sender, MangaViewMode mode)
+    {
+        if (_disposed || _viewMode == mode) return;
+        _viewMode = mode;
+        _viewModeStore.Save(mode, out _);
+        ApplyViewMode();
+    }
+
+    private void ApplyViewMode()
+    {
+        if (_disposed) return;
+        var list = _viewMode == MangaViewMode.List;
+        ViewModeSelector.Mode = _viewMode;
+        ResultsScroll.Visibility = list ? Visibility.Collapsed : Visibility.Visible;
+        ResultsTable.Visibility = list ? Visibility.Visible : Visibility.Collapsed;
     }
 
     private void DetailBackButton_Click(object sender, RoutedEventArgs e)

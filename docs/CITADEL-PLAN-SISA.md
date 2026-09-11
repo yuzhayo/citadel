@@ -1,8 +1,8 @@
 # PLAN SISA — metode tertulis untuk B2, sisa C14, D1, D6, gap 7, smoke
 
-**Status: METODE TERTULIS, BELUM DIEKSEKUSI.** Aturan pelaksanaan berlaku: satu
-langkah = satu diff terkendali + verifikasi + checkpoint; muncul hal tak terduga =
-berhenti dan perbarui metode, bukan iterasi di working tree.
+**Status: ARSIP METODE.** Steps 10-13 sudah dieksekusi dan checkpoint-nya tercatat
+di `CITADEL-RESTRUCTURE-PLAN.md`; dokumen ini bukan runbook aktif. Smoke visual
+yang masih memerlukan operator tetap mengikuti `SMOKE-CHECKLIST.md`.
 
 Urutan eksekusi yang diusulkan (risiko rendah dulu): gap 7 → D6 → B2 → D1 →
 sisa C14 → smoke sebagai pintu keluar keseluruhan.

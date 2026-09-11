@@ -178,7 +178,7 @@ public sealed class ComixCapturedContractTests
         Assert.Equal("3750", first.Identity.TitleId);
         Assert.Equal("comix", first.Identity.SourceId);
         Assert.Equal("Murim's Youngest Miracle Demon Doctor", first.DisplayName);
-        Assert.Equal("https://static.comix.ws/aac8/i/7/55/68e116d7407a6@280.jpg", first.CoverUrl);
+        Assert.Equal("https://static.comix.ws/aac8/i/7/55/68e116d7407a6.jpg", first.CoverUrl);
         Assert.Equal("Ch. 90", first.LatestChapterLabel);
 
         // The second item has no large poster, so medium is what a card shows.

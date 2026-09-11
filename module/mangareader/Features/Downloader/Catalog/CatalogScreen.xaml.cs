@@ -43,6 +43,9 @@ public partial class CatalogScreen : UserControl, IDisposable
     private const int CoverPixelWidth = 320;
 
     private readonly ObservableCollection<RemoteTitleCardModel> _cards = [];
+    private readonly ViewModePreferenceStore _viewModeStore = new(
+        "Downloader.Catalog.ViewMode",
+        "downloader-catalog-view-mode.json");
     private readonly Dictionary<string, RemoteTitleCardModel> _cardsByIdentity = new(StringComparer.Ordinal);
     private readonly ObservableCollection<ChapterRow> _chapterRows = [];
     private readonly StackPanel _detailCoverActions = new();
@@ -67,12 +70,18 @@ public partial class CatalogScreen : UserControl, IDisposable
     private bool _browseActive;
     private bool _stopping;
     private bool _manualDetail;
+    private MangaViewMode _viewMode;
     private bool _disposed;
 
     public CatalogScreen()
     {
         InitializeComponent();
         ResultsList.ItemsSource = _cards;
+        ResultsTable.ItemsSource = _cards;
+        _viewMode = _viewModeStore.Load(out _);
+        ViewModeSelector.Mode = _viewMode;
+        ViewModeSelector.ModeRequested += ViewModeSelector_ModeRequested;
+        ApplyViewMode();
         Detail.CoverActions = _detailCoverActions;
         ChapterTable.ItemsSource = _chapterRows;
         if (ChapterHeaderCheck is { } headerCheck) headerCheck.Click += ChapterHeaderCheck_Click;
@@ -265,6 +274,25 @@ public partial class CatalogScreen : UserControl, IDisposable
             await RefreshListerAsync(token);
             await LoadDetailCoverAsync(card.Summary, token);
         });
+    }
+
+    private void TitleRow_OpenClick(object sender, RoutedEventArgs e) => TitleCard_Click(sender, e);
+
+    private void ViewModeSelector_ModeRequested(object? sender, MangaViewMode mode)
+    {
+        if (_disposed || _viewMode == mode) return;
+        _viewMode = mode;
+        _viewModeStore.Save(mode, out _);
+        ApplyViewMode();
+    }
+
+    private void ApplyViewMode()
+    {
+        if (_disposed) return;
+        var list = _viewMode == MangaViewMode.List;
+        ViewModeSelector.Mode = _viewMode;
+        ResultsScroll.Visibility = list ? Visibility.Collapsed : Visibility.Visible;
+        ResultsTable.Visibility = list ? Visibility.Visible : Visibility.Collapsed;
     }
 
     private void BackButton_Click(object sender, RoutedEventArgs e)
@@ -1141,6 +1169,7 @@ public partial class CatalogScreen : UserControl, IDisposable
         _disposed = true;
 
         IsVisibleChanged -= CatalogScreen_IsVisibleChanged;
+        ViewModeSelector.ModeRequested -= ViewModeSelector_ModeRequested;
         if (_catalog is not null) _catalog.StateChanged -= Catalog_StateChanged;
 
         var actionCancellation = _actionCancellation;

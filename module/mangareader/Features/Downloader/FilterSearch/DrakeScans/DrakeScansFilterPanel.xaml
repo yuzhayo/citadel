@@ -1,13 +1,16 @@
 <UserControl x:Class="Module.Mangareader.Features.Downloader.FilterSearch.DrakeScans.DrakeScansFilterPanel"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:setting="clr-namespace:Citadel.Setting.Components;assembly=Citadel.Setting"
              xmlns:mangacomponents="clr-namespace:Module.Mangareader.Components"
              Foreground="{DynamicResource Fg}">
     <WrapPanel Orientation="Horizontal">
         <mangacomponents:MangaMultiSelectFilter x:Name="StatusFilter"
+                                                 setting:UiPreference.Key="mangareader.downloader.drake.filter.status"
                                                  Margin="0,0,8,8"
                                                  Header="Status" />
         <mangacomponents:MangaMultiSelectFilter x:Name="GenreFilter"
+                                                 setting:UiPreference.Key="mangareader.downloader.drake.filter.genre"
                                                  Margin="0,0,8,8"
                                                  Header="Genres" />
     </WrapPanel>

@@ -1,5 +1,6 @@
 using Module.Mangareader.Features.Downloader.Sources;
 using Module.Mangareader.Features.Downloader.Sources.Comix;
+using Module.Mangareader.Features.Downloader.Sources.CucumberManga;
 using Module.Mangareader.Features.Downloader.Sources.DrakeScans;
 
 namespace Module.Mangareader.Features.Downloader.ManualUrl;
@@ -10,10 +11,14 @@ public static class ManualUrlProbeRegistry
     public static IReadOnlyList<IManualUrlProbe> Create(MangaSourceRegistry sources)
     {
         ArgumentNullException.ThrowIfNull(sources);
-        var probes = new List<IManualUrlProbe>(3);
+        var probes = new List<IManualUrlProbe>(4);
         if (sources.Find(DrakeScansContract.SourceId)?.Source is DrakeScansSource drake)
         {
             probes.Add(new DrakeScansManualUrlProbe(drake));
+        }
+        if (sources.Find(CucumberMangaContract.SourceId)?.Source is CucumberMangaSource cucumber)
+        {
+            probes.Add(new CucumberMangaManualUrlProbe(cucumber));
         }
         if (sources.Find(ComixContract.SourceId)?.Source is ComixSource comix)
         {

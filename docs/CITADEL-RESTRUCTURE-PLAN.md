@@ -1,12 +1,14 @@
 # CITADEL-RESTRUCTURE-PLAN — target struktur + plan ber-phase
 
-**Status: RENCANA. Belum satu baris kode pun diubah.** Ditulis 2026-09-11 atas
-perintah owner, setelah fase dokumentasi selesai. Mengikuti pola
+**Status: ARSIP RENCANA + CATATAN EKSEKUSI.** Sejumlah phase sudah dijalankan;
+checkpoint dan koreksi aktual ada di bagian akhir. Khusus throttle 429/502/503,
+koreksi safety-net paling akhir yang berlaku: satu percobaan lalu berhenti, tanpa
+retry otomatis. Ditulis 2026-09-11 atas perintah owner. Mengikuti pola
 `yuz-ui/IMPLEMENTATION-PLAN.md`: tiap phase punya success criteria bertanda
 **V** (terlihat mata) atau **T** (test/headless), dan gate keluar yang wajib hijau.
 
-Keadaan **sekarang** tidak ditulis di sini — ia ada di `CITADEL-FLOWS-*.md` dan
-`CITADEL-VIOLATIONS.md`. Dokumen ini hanya bentuk yang **diinginkan**.
+Keadaan **sekarang** harus dibaca dari checkpoint dan bagian koreksi, bukan dari
+phase historis yang telah dibatalkan.
 
 Aturan main:
 
@@ -423,7 +425,8 @@ Aturan wajib untuk setiap langkah berikutnya:
 ### Verdict review (steps 1-6, checkpoint 5f845aa / 9bc33ac / a3962f1)
 - Semua citizen (ftf, proxy, blank, camoprof, mangareader) dan Citadel.Shell
   COMPILE; suite penuh 9 proyek test hijau (929 test), termasuk 3 guard Level-B.
-- Perubahan PERILAKU yang disengaja hanya SATU: BUG-1. Sebelumnya backoff
+- **CATATAN HISTORIS — klaim berikut sudah dibatalkan oleh koreksi safety-net di
+  bawah.** Perubahan PERILAKU yang disengaja hanya SATU: BUG-1. Sebelumnya backoff
   429/502/503 pada sync CatalogMirror adalah kode mati (throttle langsung jatuh ke
   jalur gagal); sekarang ia retry dengan backoff. Ini perbaikan, bukan regresi.
 - Seluruh perubahan lain behavior-identik:
@@ -487,8 +490,10 @@ kontrak ikut repo.
 
 - Step 10 (gap 7): bde227f. Hook + skill modularity kini ter-version-control;
   hook sintetis pasca-commit tetap block untuk proyek core baru ber-referensi.
-- Step 11 (D6): 8b6031e + e028fbe. Lifetime + Log pindah ke Citadel.Contract dengan
-  namespace tetap; tepi dibalik Core->Contract; Contract = daun. Test invariant
+- Step 11 (D6): 8b6031e + e028fbe + koreksi lokal. Lifetime pindah ke
+  Citadel.Contract dengan namespace tetap; Log tetap dimiliki Citadel.Core;
+  dependency Lifetime ke Log diputus lewat diagnostic standar. Tepi dibalik
+  Core->Contract; Contract = daun. Test invariant
   metadata assembly diperbarui ke graf baru (Core tepat satu referensi Citadel;
   Contract nol). Suite 9/9.
 - Step 12 (B2): 907f071 + 97186da. Wildcard untuk Downloader.Tests dan Reader.Tests

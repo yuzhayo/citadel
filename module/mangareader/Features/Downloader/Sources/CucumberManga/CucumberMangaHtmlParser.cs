@@ -65,10 +65,26 @@ internal static partial class CucumberMangaHtmlParser
         ArgumentNullException.ThrowIfNull(html);
         ArgumentNullException.ThrowIfNull(identity);
         var document = Parse(html);
+        return ParseTitleDetail(document, identity);
+    }
 
-        var reportedId = Attribute(document.QuerySelector("#manga-chapters-holder"), "data-id")
-            ?? Attribute(document.QuerySelector("input.rating-post-id"), "value")
-            ?? ShortlinkId(document);
+    public static RemoteTitleDetail ParseTitleDetailFromCanonicalPath(string html, string slug)
+    {
+        ArgumentNullException.ThrowIfNull(html);
+        ArgumentException.ThrowIfNullOrWhiteSpace(slug);
+        var document = Parse(html);
+        var titleId = ReportedTitleId(document) ?? slug;
+        var identity = new RemoteTitleIdentity(
+            CucumberMangaContract.SourceId,
+            titleId,
+            slug,
+            slug);
+        return ParseTitleDetail(document, identity);
+    }
+
+    private static RemoteTitleDetail ParseTitleDetail(IDocument document, RemoteTitleIdentity identity)
+    {
+        var reportedId = ReportedTitleId(document);
         if (reportedId is not null
             && !string.Equals(reportedId, identity.TitleId, StringComparison.Ordinal))
         {
@@ -113,6 +129,11 @@ internal static partial class CucumberMangaHtmlParser
             genres,
             metadata);
     }
+
+    private static string? ReportedTitleId(IDocument document) =>
+        Attribute(document.QuerySelector("#manga-chapters-holder"), "data-id")
+        ?? Attribute(document.QuerySelector("input.rating-post-id"), "value")
+        ?? ShortlinkId(document);
 
     public static IReadOnlyList<RemoteChapterSummary> ParseChapters(
         string html,

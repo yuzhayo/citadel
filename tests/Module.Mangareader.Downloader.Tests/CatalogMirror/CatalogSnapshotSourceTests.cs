@@ -96,7 +96,11 @@ public sealed class CatalogSnapshotSourceTests : IDisposable
             ["title"] = "Mapped Title",
             ["altTitles"] = new JsonArray("Alt One", " ", "Alt Two"),
             ["url"] = "/title/dy88-mapped-title",
-            ["poster"] = new JsonObject { ["medium"] = "https://comix.ws/covers/m.jpg" },
+            ["poster"] = new JsonObject
+            {
+                ["medium"] = "https://comix.ws/covers/m.jpg",
+                ["large"] = "https://comix.ws/covers/l.jpg",
+            },
             ["latestChapter"] = 143L,
             ["type"] = "manhwa",
             ["status"] = "releasing",
@@ -114,7 +118,7 @@ public sealed class CatalogSnapshotSourceTests : IDisposable
         Assert.Equal("https://comix.ws/title/dy88-mapped-title", item.CanonicalUrl);
         Assert.Equal("Mapped Title", item.Title);
         Assert.Equal(["Alt One", "Alt Two"], item.AlternateTitles);
-        Assert.Equal("https://comix.ws/covers/m.jpg", item.CoverUrl);
+        Assert.Equal("https://comix.ws/covers/l.jpg", item.CoverUrl);
         Assert.Equal(143, item.LatestChapterValue);
         Assert.Equal("Ch. 143", item.LatestChapterLabel);
         Assert.Equal("safe", item.Rating);

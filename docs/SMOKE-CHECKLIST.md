@@ -13,8 +13,8 @@ Dijalankan oleh owner atau lewat sesi run terpisah; hasilnya dicatat di
 
 1. **Start.** App start tanpa error; ikon tray muncul; window terbuka pada ukuran
    preferensi dan ter-clamp ke work area.
-2. **Tab MangaReader.** Library, History, Downloader, Queue, Catalog, CatalogMirror,
-   dan CoverBuilder dibuka satu per satu: tanpa exception, tanpa layout rusak,
+2. **Tab MangaReader.** Library, History, Cover Builder, Downloader, Catalog,
+   dan Queue dibuka satu per satu: tanpa exception, tanpa layout rusak,
    tanpa scrollbar ganda.
 3. **Library.** Refresh berjalan dan selesai; kartu judul tampil; view Grid/List
    berpindah tanpa kehilangan state.
@@ -22,9 +22,10 @@ Dijalankan oleh owner atau lewat sesi run terpisah; hasilnya dicatat di
    muncul di tab History.
 5. **Reader.** Terbuka dari Library dengan chapter benar; zoom/dim/drawer berfungsi;
    ditutup bersih (tidak meninggalkan window yatim).
-6. **CatalogMirror.** Start sync lalu Stop: state kembali resumable tanpa crash.
-   Ini jalur yang dulu mati karena BUG-1 — wajib diamati bahwa Stop saat backoff
-   membangunkan sync segera, bukan menunggu backoff habis.
+6. **Catalog.** Start sync lalu Stop: state kembali resumable tanpa crash.
+   Respons throttle/challenge 429/502/503 harus menghentikan operasi setelah satu
+   percobaan dan menampilkan error; tidak boleh ada retry otomatis. Jalur online
+   ini tidak dijalankan saat IP masih diblokir provider.
 7. **Catalog → Queue handoff.** Memilih chapter dan enqueue memindahkan ke tab Queue
    dengan job tercatat; folder target mengikuti aturan konfirmasi bila folder sudah
    ada (jalur `ConfirmQueueTarget`).

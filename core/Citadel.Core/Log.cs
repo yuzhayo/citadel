@@ -9,7 +9,7 @@ namespace Citadel.Core;
 /// log.txt tail. Entries never block the caller: they enqueue and the
 /// writer thread flushes batches to disk.
 ///
-/// Citadel original where it differs from tdesktop: upstream writes
+/// Citadel Core implementation where it differs from tdesktop: upstream writes
 /// synchronously under one mutex per sink and reads the file back in
 /// full(); here the ring is the dump source and the writer thread owns
 /// the file.

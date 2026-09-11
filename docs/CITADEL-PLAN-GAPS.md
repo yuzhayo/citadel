@@ -1,9 +1,9 @@
 # PLAN GAP — metode tertulis untuk gap 1, 2, 4
 
-**Status: METODE TERTULIS, BELUM DIEKSEKUSI.** Sesuai aturan pelaksanaan: kode disentuh
-hanya setelah dokumen ini ada dan tiap langkah dijalankan satu diff terkendali +
-verifikasi + checkpoint. Gap 3 (B2) tetap tertunda sadar; gap 5 dan 6 adalah
-keputusan owner / analisa besar dan tidak dijadwalkan di sini.
+**Status: ARSIP METODE.** Steps 7-9 sudah dilanjutkan oleh checkpoint yang tercatat
+di `CITADEL-RESTRUCTURE-PLAN.md`. Checklist aktif ada di `SMOKE-CHECKLIST.md`;
+khusus throttle/challenge, aturan terkini adalah satu percobaan lalu berhenti,
+tanpa retry otomatis.
 
 Baseline terukur (scan 2026-09-11):
 - camoprof cross-feature: SATU tepi — `ProfileActions -> AddProfile`

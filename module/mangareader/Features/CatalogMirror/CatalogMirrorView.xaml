@@ -61,6 +61,9 @@
                                   Style="{DynamicResource SettingComboBoxStyle}"
                                   AutomationProperties.Name="Sort catalog locally"
                                   SelectionChanged="SortBox_SelectionChanged" />
+                        <mangacomponents:MangaViewModeSelector x:Name="ViewModeSelector"
+                                                               Margin="0,0,8,8"
+                                                               VerticalAlignment="Center" />
                     </WrapPanel>
                 </setting:SettingActionCard.Content>
                 <setting:SettingActionCard.ActionContent>
@@ -253,6 +256,57 @@
                         </ItemsControl.ItemTemplate>
                     </ItemsControl>
                 </ScrollViewer>
+
+                <setting:SettingTable x:Name="ResultsTable"
+                                      setting:UiPreference.Key="mangareader.catalog.results-table"
+                                      AutomationProperties.Name="Offline catalog results"
+                                      CanUserSortColumns="True"
+                                      Visibility="Collapsed">
+                    <setting:SettingTable.InteractiveColumns>
+                        <DataGridTemplateColumn CanUserSort="True"
+                                                Header="Title"
+                                                MinWidth="240"
+                                                Width="*"
+                                                SortMemberPath="Title">
+                            <DataGridTemplateColumn.CellTemplate>
+                                <DataTemplate>
+                                    <TextBlock FontWeight="SemiBold"
+                                               Text="{Binding Title}"
+                                               TextTrimming="CharacterEllipsis"
+                                               ToolTip="{Binding Title}" />
+                                </DataTemplate>
+                            </DataGridTemplateColumn.CellTemplate>
+                        </DataGridTemplateColumn>
+                        <DataGridTemplateColumn CanUserSort="True"
+                                                Header="Latest chapter"
+                                                MinWidth="140"
+                                                SortMemberPath="ChapterCountText">
+                            <DataGridTemplateColumn.CellTemplate>
+                                <DataTemplate>
+                                    <TextBlock Text="{Binding ChapterCountText}"
+                                               TextTrimming="CharacterEllipsis" />
+                                </DataTemplate>
+                            </DataGridTemplateColumn.CellTemplate>
+                        </DataGridTemplateColumn>
+                        <DataGridTemplateColumn CanUserSort="False"
+                                                Header="Action"
+                                                MinWidth="110">
+                            <DataGridTemplateColumn.CellTemplate>
+                                <DataTemplate>
+                                    <setting:SettingTableActions>
+                                        <setting:SettingTableActions.PrimaryContent>
+                                            <setting:SettingButton AutomationProperties.Name="Open this title"
+                                                                   Click="TitleRow_OpenClick"
+                                                                   Content="Open"
+                                                                   MinWidth="76"
+                                                                   Tag="{Binding}" />
+                                        </setting:SettingTableActions.PrimaryContent>
+                                    </setting:SettingTableActions>
+                                </DataTemplate>
+                            </DataGridTemplateColumn.CellTemplate>
+                        </DataGridTemplateColumn>
+                    </setting:SettingTable.InteractiveColumns>
+                </setting:SettingTable>
 
                 <StackPanel x:Name="EmptyPanel"
                             HorizontalAlignment="Center"

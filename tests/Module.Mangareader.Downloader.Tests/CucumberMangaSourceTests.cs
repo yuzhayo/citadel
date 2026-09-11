@@ -3,6 +3,7 @@ using System.Net.Http;
 using System.IO;
 using System.Text;
 using Module.Mangareader.Features.Downloader;
+using Module.Mangareader.Features.Downloader.ManualUrl;
 using Module.Mangareader.Features.Downloader.Sources;
 using Module.Mangareader.Features.Downloader.Sources.CucumberManga;
 using Module.Mangareader.Sources;
@@ -115,6 +116,29 @@ public sealed class CucumberMangaSourceTests
         Assert.Contains("vars%5Bposts_per_page%5D=25", handler.Body, StringComparison.Ordinal);
         Assert.Contains("vars%5Bmeta_key%5D=_latest_update", handler.Body, StringComparison.Ordinal);
         Assert.Contains("vars%5Border%5D=DESC", handler.Body, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task ManualProbeResolvesCanonicalTitleUrlThroughCucumberSource()
+    {
+        const string html = """
+            <link rel="shortlink" href="https://cucumbermanga.com/?p=4657">
+            <div class="post-title"><h1>Yang Ilwoo and Me</h1></div>
+            <div class="description-summary"><div class="summary__content"><p>Story.</p></div></div>
+            """;
+        var handler = new RecordingHandler(html);
+        var probe = new CucumberMangaManualUrlProbe(
+            new CucumberMangaSource(new HttpClient(handler)));
+
+        var result = await probe.ProbeAsync(
+            new Uri("https://cucumbermanga.com/manga/yang-ilwoo-and-me/"),
+            CancellationToken.None);
+
+        var resolved = Assert.IsType<ManualUrlProbeResult.ResolvedResult>(result);
+        Assert.Equal("cucumber-manga", resolved.Title.Summary.Identity.SourceId);
+        Assert.Equal("yang-ilwoo-and-me", resolved.Title.Summary.Identity.TitleHid);
+        Assert.Equal("Yang Ilwoo and Me", resolved.Title.Summary.DisplayName);
+        Assert.Equal("https://cucumbermanga.com/manga/yang-ilwoo-and-me/", handler.Uri?.ToString());
     }
 
     [Fact]

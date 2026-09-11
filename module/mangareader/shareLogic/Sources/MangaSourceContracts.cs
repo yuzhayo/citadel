@@ -14,16 +14,14 @@ namespace Module.Mangareader.Sources;
 /// A Comix wire-contract failure. Distinct from a network failure so the UI can
 /// say "the provider shape changed" instead of "the network is down".
 ///
-/// Lives at module level, not inside a provider folder, because TWO consumers
-/// match on it across feature boundaries: the provider that throws it and the
-/// CatalogMirror sync throttle filter that catches it. When each provider owned
-/// its own same-named type, a cross-feature <c>using</c> bound the catch to the
-/// wrong one and the 429/502/503 backoff silently never fired. One shared type
-/// makes that class of defect unrepresentable.
+/// Lives at module level because the online provider and Catalog sync boundary
+/// both need the same typed HTTP status without importing each other's feature.
 ///
 /// <see cref="HttpStatus"/> carries the provider HTTP status for failures that
-/// have one, so retries can match 401/403 or 429/502/503 on a typed value
-/// instead of message text. It stays null for non-HTTP contract failures.
+/// have one. The source may replace an expired 401/403 session once; throttle or
+/// challenge statuses such as 429/502/503 remain terminal for that operation so
+/// the UI can stop safely instead of retrying automatically. It stays null for
+/// non-HTTP contract failures.
 /// </summary>
 public sealed class ComixContractException(string message) : InvalidOperationException(message)
 {

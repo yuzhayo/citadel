@@ -88,7 +88,8 @@ public sealed class Lifetime
             {
                 // Same reasoning as EventStream's per-subscriber catch: one
                 // bad cleanup must not strand every cleanup behind it.
-                Log.Main($"[Rpl] lifetime cleanup threw, unwind continues: {ex.Message}");
+                System.Diagnostics.Trace.TraceError(
+                    $"[Rpl] lifetime cleanup threw, unwind continues: {ex.Message}");
             }
         }
     }

@@ -1,12 +1,13 @@
 using System.Reflection.Metadata;
 using System.Reflection.PortableExecutable;
+using Citadel.Core.Rpl;
 
 namespace Citadel.Core.Tests;
 
 /// <summary>
 /// The invariant behind the whole stage, as of D6: Citadel.Contract is the leaf
 /// (references no Citadel project) and Citadel.Core references exactly one
-/// Citadel project — Citadel.Contract, which owns Lifetime and Log. Verified
+/// Citadel project — Citadel.Contract. Contract owns Lifetime; Core owns Log. Verified
 /// from the built assemblies' metadata, not assumed from the csproj.
 /// </summary>
 public class NoWpfDependencyTests
@@ -49,6 +50,13 @@ public class NoWpfDependencyTests
             .ToList();
 
         Assert.Empty(references);
+    }
+
+    [Fact]
+    public void LifetimeAndLog_AreOwnedByTheirIntendedAssemblies()
+    {
+        Assert.Equal("Citadel.Contract", typeof(Lifetime).Assembly.GetName().Name);
+        Assert.Equal("Citadel.Core", typeof(Log).Assembly.GetName().Name);
     }
 
     private static List<string> ReadAssemblyReferences(string dllPath)

@@ -59,9 +59,12 @@
                         <setting:SettingButton x:Name="ManualButton"
                                                MinWidth="88"
                                                Height="34"
+                                               Margin="0,0,8,0"
                                                Content="Manual"
                                                Click="ManualButton_Click"
                                                AutomationProperties.Name="Open manual title URL" />
+                        <mangacomponents:MangaViewModeSelector x:Name="ViewModeSelector"
+                                                               VerticalAlignment="Center" />
                     </WrapPanel>
                 </setting:SettingActionCard>
 
@@ -127,6 +130,58 @@
                             </ItemsControl.ItemTemplate>
                         </ItemsControl>
                     </ScrollViewer>
+
+                    <setting:SettingTable x:Name="ResultsTable"
+                                          setting:UiPreference.Key="mangareader.downloader.results-table"
+                                          Grid.Row="0"
+                                          AutomationProperties.Name="Downloader catalog results"
+                                          CanUserSortColumns="True"
+                                          Visibility="Collapsed">
+                        <setting:SettingTable.InteractiveColumns>
+                            <DataGridTemplateColumn CanUserSort="True"
+                                                    Header="Title"
+                                                    MinWidth="240"
+                                                    Width="*"
+                                                    SortMemberPath="Title">
+                                <DataGridTemplateColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <TextBlock FontWeight="SemiBold"
+                                                   Text="{Binding Title}"
+                                                   TextTrimming="CharacterEllipsis"
+                                                   ToolTip="{Binding Title}" />
+                                    </DataTemplate>
+                                </DataGridTemplateColumn.CellTemplate>
+                            </DataGridTemplateColumn>
+                            <DataGridTemplateColumn CanUserSort="True"
+                                                    Header="Latest chapter"
+                                                    MinWidth="140"
+                                                    SortMemberPath="ChapterCountText">
+                                <DataGridTemplateColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <TextBlock Text="{Binding ChapterCountText}"
+                                                   TextTrimming="CharacterEllipsis" />
+                                    </DataTemplate>
+                                </DataGridTemplateColumn.CellTemplate>
+                            </DataGridTemplateColumn>
+                            <DataGridTemplateColumn CanUserSort="False"
+                                                    Header="Action"
+                                                    MinWidth="110">
+                                <DataGridTemplateColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <setting:SettingTableActions>
+                                            <setting:SettingTableActions.PrimaryContent>
+                                                <setting:SettingButton AutomationProperties.Name="Open this title"
+                                                                       Click="TitleRow_OpenClick"
+                                                                       Content="Open"
+                                                                       MinWidth="76"
+                                                                       Tag="{Binding}" />
+                                            </setting:SettingTableActions.PrimaryContent>
+                                        </setting:SettingTableActions>
+                                    </DataTemplate>
+                                </DataGridTemplateColumn.CellTemplate>
+                            </DataGridTemplateColumn>
+                        </setting:SettingTable.InteractiveColumns>
+                    </setting:SettingTable>
 
                     <setting:SettingButton x:Name="LoadMoreButton"
                                            Grid.Row="1"

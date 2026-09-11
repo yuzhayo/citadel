@@ -738,7 +738,7 @@ public sealed class ComixSource(DownloaderPyHostClient client)
         var poster = entry[ComixContract.FieldPoster] as JsonObject;
         var cover = poster is null
             ? null
-            : ReadString(poster, ComixContract.PosterMedium) ?? ReadString(poster, ComixContract.PosterLarge);
+            : ReadString(poster, ComixContract.PosterLarge) ?? ReadString(poster, ComixContract.PosterMedium);
 
         var latest = ReadLong(entry, ComixContract.FieldLatestChapter);
         long? year = ReadLong(entry, ComixContract.FieldYear);
@@ -1284,7 +1284,7 @@ public sealed class ComixSource(DownloaderPyHostClient client)
         var poster = entry[ComixContract.FieldPoster] as JsonObject;
         var cover = poster is null
             ? null
-            : ReadString(poster, ComixContract.PosterMedium) ?? ReadString(poster, ComixContract.PosterLarge);
+            : ReadString(poster, ComixContract.PosterLarge) ?? ReadString(poster, ComixContract.PosterMedium);
 
         var latest = ReadLong(entry, ComixContract.FieldLatestChapter);
         return new RemoteTitleSummary(

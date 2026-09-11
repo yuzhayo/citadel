@@ -192,6 +192,18 @@ public sealed class CucumberMangaSource : IMangaSource
         return CucumberMangaHtmlParser.ParseTitleDetail(html, title);
     }
 
+    internal async Task<RemoteTitleDetail> ResolveCanonicalTitleAsync(
+        string slug,
+        CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(slug);
+        using var message = NewRequest(
+            HttpMethod.Get,
+            "/manga/" + Uri.EscapeDataString(slug) + "/");
+        var html = await SendHtmlAsync(message, cancellationToken).ConfigureAwait(false);
+        return CucumberMangaHtmlParser.ParseTitleDetailFromCanonicalPath(html, slug);
+    }
+
     public Task<IReadOnlyList<RemoteSourceGroup>> GetGroupsAsync(
         RemoteTitleIdentity title,
         CancellationToken cancellationToken)
