@@ -247,6 +247,33 @@ public sealed class DownloadQueuePersistenceTests : IDisposable
             feature.Snapshot().Select(job => job.ChapterNumber));
     }
 
+    [Fact]
+    public async Task SchedulerRunsTwoChaptersInParallelAndKeepsTheThirdQueued()
+    {
+        var source = new ParallelBlockingSource();
+        using var feature = CreateFeature(
+            new MangaSourceRegistry(
+            [
+                new MangaSourceRegistration(
+                    source,
+                    () => throw new NotSupportedException("the queue never builds a filter panel")),
+            ]),
+            commitRoot: true);
+
+        var result = feature.QueueChapters(
+            Title(),
+            OfficialGroup(),
+            [Chapter("1"), Chapter("2"), Chapter("3")],
+            "Some Folder");
+
+        Assert.Equal(3, result.Queued);
+        await source.TwoEntered.Task.WaitAsync(TimeSpan.FromSeconds(2));
+        await Task.Delay(100);
+
+        Assert.Equal(2, source.ManifestCalls);
+        Assert.Equal(1, feature.Snapshot().Count(job => job.State == DownloadJobState.Queued));
+    }
+
     /// <summary>
     /// A provider double that parks inside its manifest call, which is what puts a job
     /// genuinely in flight so the queue has a running cancellation source to protect.
@@ -300,6 +327,55 @@ public sealed class DownloadQueuePersistenceTests : IDisposable
 
         public Task<RemotePageImage> TransformPageAsync(RemotePage page, byte[] payload, CancellationToken cancellationToken) =>
             throw new NotSupportedException("the queue must not transform a page");
+    }
+
+    private sealed class ParallelBlockingSource : IMangaSource
+    {
+        private int _manifestCalls;
+
+        public TaskCompletionSource TwoEntered { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public int ManifestCalls => Volatile.Read(ref _manifestCalls);
+
+        public string Id => "comix";
+
+        public string DisplayName => "Parallel blocking";
+
+        public MangaSourceCapabilities Capabilities { get; } = new(false, false, [], false);
+
+        public Task<RemoteChapterManifest> GetManifestAsync(
+            RemoteChapterIdentity chapter,
+            CancellationToken cancellationToken)
+        {
+            if (Interlocked.Increment(ref _manifestCalls) == 2) TwoEntered.TrySetResult();
+
+            var completion = new TaskCompletionSource<RemoteChapterManifest>(
+                TaskCreationOptions.RunContinuationsAsynchronously);
+            cancellationToken.Register(() => completion.TrySetCanceled(cancellationToken));
+            return completion.Task;
+        }
+
+        public Task<RemoteCatalogPage> BrowseAsync(RemoteBrowseRequest request, CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
+
+        public Task<IReadOnlyList<RemoteLookupOption>> LookupAsync(RemoteLookupKind kind, string query, CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
+
+        public Task<RemoteTitleDetail> GetTitleAsync(RemoteTitleIdentity title, CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
+
+        public Task<IReadOnlyList<RemoteSourceGroup>> GetGroupsAsync(RemoteTitleIdentity title, CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
+
+        public Task<IReadOnlyList<RemoteChapterSummary>> GetChaptersAsync(RemoteTitleIdentity title, RemoteGroupIdentity group, CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
+
+        public Task<IReadOnlyList<RemoteAlternateChapter>> FindAlternateGroupsAsync(RemoteChapterIdentity chapter, CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
+
+        public Task<RemotePageImage> TransformPageAsync(RemotePage page, byte[] payload, CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
     }
 
     private sealed class SessionBlockedSource : IMangaSource, IQueueSourceReadiness

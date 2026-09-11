@@ -28,6 +28,8 @@ public sealed record QueueAddResult(
 /// </summary>
 public sealed class DownloadQueueFeature : IDisposable
 {
+    internal const int JobConcurrency = 2;
+
     private readonly LibraryRootContext _root;
     private readonly MangaSourceRegistry _sources;
     private readonly DownloaderPyHostClient _browser;
@@ -356,7 +358,7 @@ public sealed class DownloadQueueFeature : IDisposable
     public void ClearCompleted() => Commit(jobs =>
         jobs.RemoveAll(job => job.State == DownloadJobState.Completed));
 
-    /// <summary>Starts the single-job scheduler. Idempotent.</summary>
+    /// <summary>Starts the bounded chapter scheduler. Idempotent.</summary>
     public void Start() => EnsureStarted();
 
     public void Dispose()
@@ -483,56 +485,96 @@ public sealed class DownloadQueueFeature : IDisposable
     }
 
     /// <summary>
-    /// One active chapter at a time, in durable queue order. A job that is
-    /// paused while running is left to finish its bounded work and park.
+    /// Runs at most two chapters in durable queue order. Each chapter keeps its
+    /// own cancellation source and staging folder, so one stalled job cannot
+    /// block the next slot and a third job remains queued until a slot is free.
     /// </summary>
     private async Task RunSchedulerAsync(CancellationToken lifetime)
     {
-        while (!lifetime.IsCancellationRequested)
+        var workers = new List<Task>(JobConcurrency);
+        try
         {
-            DownloadJobRecord? next = null;
-            lock (_gate)
+            while (!lifetime.IsCancellationRequested)
             {
-                next = _jobs.FirstOrDefault(job => job.State == DownloadJobState.Queued);
-                if (next is not null)
+                var claimed = new List<DownloadJobRecord>(JobConcurrency);
+                lock (_gate)
                 {
-                    var source = CancellationTokenSource.CreateLinkedTokenSource(lifetime);
-                    _running[next.JobId] = source;
+                    while (_running.Count < JobConcurrency)
+                    {
+                        var next = _jobs.FirstOrDefault(job =>
+                            job.State == DownloadJobState.Queued
+                            && !_running.ContainsKey(job.JobId));
+                        if (next is null) break;
+
+                        _running[next.JobId] =
+                            CancellationTokenSource.CreateLinkedTokenSource(lifetime);
+                        claimed.Add(next);
+                    }
+                }
+
+                foreach (var job in claimed)
+                {
+                    workers.Add(Task.Run(
+                        () => RunClaimedJobAsync(job, lifetime),
+                        CancellationToken.None));
+                }
+
+                if (workers.Count == 0)
+                {
+                    await Task.Delay(TimeSpan.FromMilliseconds(500), lifetime).ConfigureAwait(false);
+                    continue;
+                }
+
+                await Task.WhenAny(workers).WaitAsync(lifetime).ConfigureAwait(false);
+                for (var index = workers.Count - 1; index >= 0; index--)
+                {
+                    if (!workers[index].IsCompleted) continue;
+                    await workers[index].ConfigureAwait(false);
+                    workers.RemoveAt(index);
                 }
             }
-
-            if (next is null)
+        }
+        catch (OperationCanceledException) when (lifetime.IsCancellationRequested)
+        {
+            // Normal feature shutdown.
+        }
+        finally
+        {
+            if (workers.Count > 0)
             {
                 try
                 {
-                    await Task.Delay(TimeSpan.FromMilliseconds(500), lifetime).ConfigureAwait(false);
+                    await Task.WhenAll(workers).ConfigureAwait(false);
                 }
-                catch (OperationCanceledException)
+                catch (OperationCanceledException) when (lifetime.IsCancellationRequested)
                 {
-                    return;
+                    // Workers observe the same feature lifetime.
                 }
+            }
+        }
+    }
 
-                continue;
-            }
-
-            try
+    private async Task RunClaimedJobAsync(
+        DownloadJobRecord job,
+        CancellationToken lifetime)
+    {
+        try
+        {
+            await RunJobAsync(job, lifetime).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (lifetime.IsCancellationRequested)
+        {
+            // Normal feature shutdown.
+        }
+        catch (Exception exception)
+        {
+            Fail(job.JobId, "Job gagal: " + exception.GetBaseException().Message);
+        }
+        finally
+        {
+            lock (_gate)
             {
-                await RunJobAsync(next, lifetime).ConfigureAwait(false);
-            }
-            catch (OperationCanceledException) when (lifetime.IsCancellationRequested)
-            {
-                return;
-            }
-            catch (Exception exception)
-            {
-                Fail(next.JobId, "Job gagal: " + exception.GetBaseException().Message);
-            }
-            finally
-            {
-                lock (_gate)
-                {
-                    if (_running.Remove(next.JobId, out var source)) source.Dispose();
-                }
+                if (_running.Remove(job.JobId, out var source)) source.Dispose();
             }
         }
     }
