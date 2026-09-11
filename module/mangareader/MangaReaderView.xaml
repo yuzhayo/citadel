@@ -11,7 +11,8 @@
              UseLayoutRounding="True"
              SnapsToDevicePixels="True">
     <Grid>
-        <setting:SettingTabs x:Name="WorkspaceTabs">
+        <setting:SettingTabs x:Name="WorkspaceTabs"
+                             setting:UiPreference.Key="mangareader.workspace.tab">
             <TabItem Header="Library" Padding="12,9">
                 <local:LibraryView x:Name="LibraryTab"
                                    TitlesChanged="LibraryTab_TitlesChanged"

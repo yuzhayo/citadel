@@ -22,6 +22,7 @@
                                                Click="AddProfileButton_Click"
                                                AutomationProperties.Name="Add resident browser profile" />
                         <setting:SettingToggle x:Name="CheckModeToggle"
+                                               setting:UiPreference.Key="camoprof.launcher.show-browser"
                                                Margin="12,0,0,0"
                                                Content="Show browser while checking"
                                                IsChecked="True"
@@ -56,6 +57,7 @@
                 Style="{DynamicResource SettingCardStyle}">
             <Grid>
                 <setting:SettingTable x:Name="ProfileTable"
+                                      setting:UiPreference.Key="camoprof.launcher.profile-table"
                                       CanUserSortColumns="True"
                                       AutomationProperties.Name="CamoProf resident profiles">
                     <setting:SettingTable.InteractiveColumns>

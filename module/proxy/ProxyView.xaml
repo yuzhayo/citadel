@@ -7,7 +7,9 @@
              UseLayoutRounding="True"
              SnapsToDevicePixels="True">
     <!-- CamoProf's tab composition, without CamoProf business features. -->
-    <setting:SettingTabs x:Name="WorkspaceTabs" SelectedIndex="0">
+    <setting:SettingTabs x:Name="WorkspaceTabs"
+                         setting:UiPreference.Key="proxy.workspace.tab"
+                         SelectedIndex="0">
         <TabItem x:Name="LauncherPanel" Header="Launcher">
             <setting:SettingViewport Mode="Contained">
                 <TextBlock Text="Proxy Launcher"

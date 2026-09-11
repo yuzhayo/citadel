@@ -56,6 +56,7 @@
             </Grid.ColumnDefinitions>
 
             <ComboBox x:Name="SortPicker"
+                      setting:UiPreference.Key="mangareader.library.sort"
                       Width="158"
                       Height="34"
                       Margin="0,0,8,0"
@@ -97,6 +98,7 @@
               table owns its own scrolling and is never wrapped in another one.
             -->
             <setting:SettingTable x:Name="TitleTable"
+                                  setting:UiPreference.Key="mangareader.library.title-table"
                                   AutomationProperties.Name="Library titles"
                                   CanUserSortColumns="True"
                                   Visibility="Collapsed">

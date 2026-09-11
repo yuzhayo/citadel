@@ -32,6 +32,7 @@
                 <setting:SettingActionCard Margin="0,0,8,8" Padding="10,5">
                     <WrapPanel Orientation="Horizontal" VerticalAlignment="Center">
                         <ComboBox x:Name="SourcePicker"
+                                  setting:UiPreference.Key="mangareader.downloader.provider"
                                   MinWidth="150"
                                   Height="34"
                                   Margin="0,0,8,0"
@@ -67,6 +68,7 @@
                 <setting:SettingActionCard Grid.Column="1" Padding="10,5">
                     <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
                         <setting:SettingToggle x:Name="ShowBrowserToggle"
+                                               setting:UiPreference.Key="mangareader.downloader.show-browser"
                                                Margin="0,0,8,0"
                                                IsChecked="False"
                                                ToolTip="Show browser while loading; off uses the Downloader's headless browser"
@@ -232,6 +234,7 @@
                       selectable, because re-downloading one variant is allowed.
                     -->
                     <setting:SettingTable x:Name="ChapterTable"
+                                          setting:UiPreference.Key="mangareader.downloader.chapter-table"
                                           Grid.Row="3"
                                           Margin="0,12,0,0"
                                           AutomationProperties.Name="Chapters of the selected group"

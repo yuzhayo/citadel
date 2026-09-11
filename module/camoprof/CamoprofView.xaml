@@ -8,6 +8,7 @@
              SnapsToDevicePixels="True">
     <Grid>
         <setting:SettingTabs x:Name="WorkspaceTabs"
+                             setting:UiPreference.Key="camoprof.workspace.tab"
                              SelectedIndex="0"
                              SelectionChanged="WorkspaceTabs_SelectionChanged">
             <TabItem x:Name="LauncherPanel" Header="Launcher">

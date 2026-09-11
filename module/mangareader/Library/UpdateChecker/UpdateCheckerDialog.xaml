@@ -68,6 +68,7 @@
         </ListBox>
 
         <setting:SettingTable x:Name="ChapterTable"
+                              setting:UiPreference.Key="mangareader.update-checker.chapter-table"
                               Grid.Row="3"
                               MaxHeight="300"
                               Margin="0,12,0,0"

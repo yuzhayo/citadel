@@ -55,6 +55,7 @@
                          table sorts its collection view, never the durable
                          queue order. The Action column is never sortable. -->
                     <setting:SettingTable x:Name="JobTable"
+                                          setting:UiPreference.Key="mangareader.queue.table"
                                           CanUserSortColumns="True"
                                           AutomationProperties.Name="Download queue">
                         <setting:SettingTable.InteractiveColumns>

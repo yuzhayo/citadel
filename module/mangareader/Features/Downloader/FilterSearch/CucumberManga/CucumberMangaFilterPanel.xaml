@@ -6,6 +6,7 @@
              Foreground="{DynamicResource Fg}">
     <WrapPanel Orientation="Horizontal">
         <ComboBox x:Name="SortPicker"
+                  setting:UiPreference.Key="mangareader.downloader.cucumber.sort"
                   MinWidth="150"
                   Height="34"
                   Margin="0,0,8,8"
@@ -15,11 +16,13 @@
                   Style="{DynamicResource SettingComboBoxStyle}" />
 
         <mangacomponents:MangaMultiSelectFilter x:Name="StatusFilter"
+                                                 setting:UiPreference.Key="mangareader.downloader.cucumber.filter.status"
                                                  Margin="0,0,8,8"
                                                  Header="Status"
                                                  SelectionChanged="DraftFilter_Changed" />
 
         <mangacomponents:MangaMultiSelectFilter x:Name="GenreFilter"
+                                                 setting:UiPreference.Key="mangareader.downloader.cucumber.filter.genre"
                                                  Margin="0,0,8,8"
                                                  Header="Genres"
                                                  SelectionChanged="DraftFilter_Changed" />
@@ -57,6 +60,7 @@
                                        Foreground="{DynamicResource Dim}"
                                        Text="Adult content" />
                             <ComboBox x:Name="AdultPicker"
+                                      setting:UiPreference.Key="mangareader.downloader.cucumber.adult"
                                       Height="34"
                                       Margin="0,4,0,0"
                                       AutomationProperties.Name="Adult content"
@@ -70,6 +74,7 @@
                                        Foreground="{DynamicResource Dim}"
                                        Text="Release year" />
                             <setting:SettingField x:Name="ReleaseYearField"
+                                                  setting:UiPreference.Key="mangareader.downloader.cucumber.filter.release-year"
                                                   Height="34"
                                                   Margin="0,4,0,0"
                                                   AutomationProperties.Name="Release year"
@@ -89,6 +94,7 @@
                                        Foreground="{DynamicResource Dim}"
                                        Text="Author" />
                             <setting:SettingField x:Name="AuthorField"
+                                                  setting:UiPreference.Key="mangareader.downloader.cucumber.filter.author"
                                                   Height="34"
                                                   Margin="0,4,0,0"
                                                   AutomationProperties.Name="Author"
@@ -101,6 +107,7 @@
                                        Foreground="{DynamicResource Dim}"
                                        Text="Artist" />
                             <setting:SettingField x:Name="ArtistField"
+                                                  setting:UiPreference.Key="mangareader.downloader.cucumber.filter.artist"
                                                   Height="34"
                                                   Margin="0,4,0,0"
                                                   AutomationProperties.Name="Artist"

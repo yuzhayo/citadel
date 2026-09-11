@@ -28,6 +28,7 @@
     -->
     <WrapPanel Orientation="Horizontal">
         <ComboBox x:Name="SortPicker"
+                  setting:UiPreference.Key="mangareader.downloader.comix.sort"
                   MinWidth="150"
                   Height="34"
                   Margin="0,0,8,8"
@@ -37,21 +38,25 @@
                   Style="{DynamicResource SettingComboBoxStyle}" />
 
         <mangacomponents:MangaMultiSelectFilter x:Name="TypeFilter"
+                                        setting:UiPreference.Key="mangareader.downloader.comix.filter.type"
                                         Margin="0,0,8,8"
                                         Header="Type"
                                         SelectionChanged="DraftFilter_Changed" />
 
         <mangacomponents:MangaMultiSelectFilter x:Name="StatusFilter"
+                                        setting:UiPreference.Key="mangareader.downloader.comix.filter.status"
                                         Margin="0,0,8,8"
                                         Header="Status"
                                         SelectionChanged="DraftFilter_Changed" />
 
         <mangacomponents:MangaMultiSelectFilter x:Name="RatingFilter"
+                                        setting:UiPreference.Key="mangareader.downloader.comix.filter.rating"
                                         Margin="0,0,8,8"
                                         Header="Rating"
                                         SelectionChanged="DraftFilter_Changed" />
 
         <mangacomponents:MangaMultiSelectFilter x:Name="GenreFilter"
+                                        setting:UiPreference.Key="mangareader.downloader.comix.filter.genre"
                                         Margin="0,0,8,8"
                                         Header="Genres"
                                         SelectionChanged="DraftFilter_Changed" />
@@ -83,6 +88,7 @@
                               VerticalScrollBarVisibility="Auto">
                     <StackPanel>
                         <mangacomponents:MangaMultiSelectFilter x:Name="DemographicFilter"
+                                                        setting:UiPreference.Key="mangareader.downloader.comix.filter.demographic"
                                                         Margin="0,0,0,10"
                                                         HorizontalAlignment="Left"
                                                         Header="Demographic"
@@ -100,6 +106,7 @@
                                            Foreground="{DynamicResource Dim}"
                                            Text="Minimum chapter" />
                                 <setting:SettingField x:Name="MinChapterField"
+                                                      setting:UiPreference.Key="mangareader.downloader.comix.filter.minimum-chapter"
                                                       Height="34"
                                                       Margin="0,4,0,0"
                                                       AutomationProperties.Name="Minimum chapter"
@@ -112,6 +119,7 @@
                                            Foreground="{DynamicResource Dim}"
                                            Text="Release year from" />
                                 <setting:SettingField x:Name="YearFromField"
+                                                      setting:UiPreference.Key="mangareader.downloader.comix.filter.year-from"
                                                       Height="34"
                                                       Margin="0,4,0,0"
                                                       AutomationProperties.Name="Release year from"
@@ -124,6 +132,7 @@
                                            Foreground="{DynamicResource Dim}"
                                            Text="Release year to" />
                                 <setting:SettingField x:Name="YearToField"
+                                                      setting:UiPreference.Key="mangareader.downloader.comix.filter.year-to"
                                                       Height="34"
                                                       Margin="0,4,0,0"
                                                       AutomationProperties.Name="Release year to"

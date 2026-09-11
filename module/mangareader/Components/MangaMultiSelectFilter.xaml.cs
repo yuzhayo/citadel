@@ -1,10 +1,12 @@
 using System.Collections;
 using System.ComponentModel;
 using System.Runtime.CompilerServices;
+using System.Text.Json;
 using System.Windows;
 using System.Windows.Automation;
 using System.Windows.Controls;
 using System.Windows.Media;
+using Citadel.Setting.Components;
 
 namespace Module.Mangareader.Components;
 
@@ -41,9 +43,10 @@ public sealed class MangaFilterOption : INotifyPropertyChanged
 
 /// <summary>
 /// Shared MangaReader checkbox dropdown. It owns only draft selection and
-/// never performs validation, persistence, database work, or network calls.
+/// its string serialization contract; shared persistence remains opt-in via
+/// UiPreference.Key. It never performs validation, database work, or network calls.
 /// </summary>
-public partial class MangaMultiSelectFilter : UserControl
+public partial class MangaMultiSelectFilter : UserControl, IUiPreferenceControl
 {
     public static readonly DependencyProperty HeaderProperty =
         DependencyProperty.Register(
@@ -64,6 +67,7 @@ public partial class MangaMultiSelectFilter : UserControl
         VerticalAlignment = VerticalAlignment.Center,
         TextTrimming = TextTrimming.CharacterEllipsis,
     };
+    private HashSet<string>? _preferredKeys;
 
     public MangaMultiSelectFilter()
     {
@@ -88,6 +92,12 @@ public partial class MangaMultiSelectFilter : UserControl
 
     public event EventHandler? SelectionChanged;
 
+    event EventHandler? IUiPreferenceControl.PreferenceChanged
+    {
+        add => SelectionChanged += value;
+        remove => SelectionChanged -= value;
+    }
+
     public string Header
     {
         get => (string)GetValue(HeaderProperty);
@@ -100,15 +110,38 @@ public partial class MangaMultiSelectFilter : UserControl
         set => SetValue(OptionsProperty, value);
     }
 
-    public IReadOnlyList<string> SelectedKeys =>
-        TypedOptions().Where(option => option.IsChecked).Select(option => option.Key).ToArray();
+    public IReadOnlyList<string> SelectedKeys
+    {
+        get
+        {
+            var options = TypedOptions().ToArray();
+            return options.Length == 0
+                ? _preferredKeys?.ToArray() ?? []
+                : options.Where(option => option.IsChecked).Select(option => option.Key).ToArray();
+        }
+    }
 
     public void SetSelectedKeys(IEnumerable<string> keys)
     {
         ArgumentNullException.ThrowIfNull(keys);
         var wanted = new HashSet<string>(keys, StringComparer.Ordinal);
+        _preferredKeys = wanted;
         foreach (var option in TypedOptions()) option.IsChecked = wanted.Contains(option.Key);
         UpdateSummary();
+    }
+
+    public string CapturePreference() => JsonSerializer.Serialize(SelectedKeys);
+
+    public void RestorePreference(string value)
+    {
+        try
+        {
+            SetSelectedKeys(JsonSerializer.Deserialize<string[]>(value) ?? []);
+        }
+        catch (JsonException)
+        {
+            // A malformed UI preference is the same as no preference.
+        }
     }
 
     private IEnumerable<MangaFilterOption> TypedOptions() =>
@@ -121,6 +154,13 @@ public partial class MangaMultiSelectFilter : UserControl
     {
         var control = (MangaMultiSelectFilter)sender;
         control.OptionList.ItemsSource = args.NewValue as IEnumerable;
+        if (control._preferredKeys is not null)
+        {
+            foreach (var option in control.TypedOptions())
+            {
+                option.IsChecked = control._preferredKeys.Contains(option.Key);
+            }
+        }
         control.UpdateSummary();
     }
 
@@ -129,6 +169,10 @@ public partial class MangaMultiSelectFilter : UserControl
 
     private void Option_CheckClicked(object sender, RoutedEventArgs e)
     {
+        _preferredKeys = TypedOptions()
+            .Where(option => option.IsChecked)
+            .Select(option => option.Key)
+            .ToHashSet(StringComparer.Ordinal);
         UpdateSummary();
         SelectionChanged?.Invoke(this, EventArgs.Empty);
     }

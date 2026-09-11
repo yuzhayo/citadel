@@ -141,6 +141,25 @@ No per-screen scrollbar templates. Behavior consistent across app.
   padding, and a 40 DIP minimum row height. Horizontal overflow remains owned
   by the table's shared auto-fade scrollbar.
 
+## UI preference persistence
+
+- Durable presentation choices opt in with `UiPreference.Key`. The key is
+  stable and globally unique; the shared behavior never guesses a screen or
+  persists every control automatically.
+- The shared store is `%LOCALAPPDATA%\Citadel\ui-preferences.json`. Writes are
+  atomic and malformed, oversized, or unreadable content falls back to the
+  declared XAML/default value without blocking the screen.
+- `SettingTable` persists column width, display order, and active sort. Shared
+  tabs, toggles, ComboBox selectors, and explicitly keyed `SettingField`
+  controls persist their selected/value state.
+- A feature-owned composite may implement `IUiPreferenceControl` and still own
+  its serialization semantics. MangaReader checkbox filters use this contract;
+  the shared layer sees only an opaque short string.
+- Search text, result rows, checkbox row selection, online/process state,
+  credentials, and other transient or sensitive state are never persisted by
+  default. A normal close/navigation saves table layout; value controls save on
+  change and again on unload.
+
 ## 2026-09-02 evidence
 
 - Complete `Citadel.Uia` suite: 226/226.

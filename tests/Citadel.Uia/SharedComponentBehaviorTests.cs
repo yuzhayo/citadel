@@ -3,6 +3,7 @@ using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
 using System.Windows.Automation;
 using System.ComponentModel;
+using System.IO;
 using System.Reflection;
 using System.Windows.Media;
 using System.Windows.Shell;
@@ -239,6 +240,59 @@ public class SharedComponentBehaviorTests
 
             Assert.Equal(["Zulu", "Alpha"], source.Select(row => row.Name));
         });
+    }
+
+    [Fact]
+    public void UiPreferencesRestoreAcrossNewControlInstances()
+    {
+        var directory = Path.Combine(
+            Path.GetTempPath(),
+            "Citadel.UiPreference.Tests",
+            Guid.NewGuid().ToString("N"));
+        var path = Path.Combine(directory, "ui-preferences.json");
+
+        try
+        {
+            using var store = UiPreference.OverrideStoreForTesting(path);
+            Sta.Run(() =>
+            {
+                var first = PreferenceSurface();
+                var window = ShowOffscreen(first.Root);
+                try
+                {
+                    first.Toggle.IsChecked = true;
+                    first.Selector.SelectedIndex = 2;
+                    first.Field.Text = "2026";
+                    first.Column.Width = new DataGridLength(222);
+                    first.Column.SortDirection = ListSortDirection.Descending;
+                }
+                finally
+                {
+                    window.Close();
+                    PumpFor(TimeSpan.FromMilliseconds(40));
+                }
+
+                var restored = PreferenceSurface();
+                var restoredWindow = ShowOffscreen(restored.Root);
+                try
+                {
+                    Assert.True(restored.Toggle.IsChecked);
+                    Assert.Equal(2, restored.Selector.SelectedIndex);
+                    Assert.Equal("2026", restored.Field.Text);
+                    Assert.Equal(DataGridLengthUnitType.Pixel, restored.Column.Width.UnitType);
+                    Assert.Equal(222, restored.Column.Width.Value);
+                    Assert.Equal(ListSortDirection.Descending, restored.Column.SortDirection);
+                }
+                finally
+                {
+                    restoredWindow.Close();
+                }
+            });
+        }
+        finally
+        {
+            if (Directory.Exists(directory)) Directory.Delete(directory, recursive: true);
+        }
     }
 
     [Fact]
@@ -752,6 +806,56 @@ public class SharedComponentBehaviorTests
         return element;
     }
 
+    private static Window ShowOffscreen(FrameworkElement content)
+    {
+        var window = new Window
+        {
+            Width = 700,
+            Height = 420,
+            Left = -10000,
+            Top = -10000,
+            ShowInTaskbar = false,
+            Content = content,
+        };
+        window.Show();
+        PumpFor(TimeSpan.FromMilliseconds(40));
+        return window;
+    }
+
+    private static PreferenceControls PreferenceSurface()
+    {
+        var toggle = new SettingToggle();
+        UiPreference.SetKey(toggle, "test.toggle");
+
+        var selector = new ComboBox { ItemsSource = new[] { "One", "Two", "Three" } };
+        UiPreference.SetKey(selector, "test.selector");
+
+        var field = new SettingField();
+        UiPreference.SetKey(field, "test.field");
+
+        var column = new DataGridTextColumn
+        {
+            Header = "Profile",
+            SortMemberPath = nameof(SortableRow.Name),
+            Binding = new Binding(nameof(SortableRow.Name)),
+        };
+        var table = new SettingTable
+        {
+            Height = 180,
+            CanUserSortColumns = true,
+            ItemsSource = new[] { new SortableRow("Alpha"), new SortableRow("Zulu") },
+        };
+        table.InteractiveColumns.Add(column);
+        UiPreference.SetKey(table, "test.table");
+
+        var root = WithResources(new StackPanel());
+        root.Children.Add(toggle);
+        root.Children.Add(selector);
+        root.Children.Add(field);
+        root.Children.Add(table);
+        return new PreferenceControls(root, toggle, selector, field, column);
+    }
+
     private static T Arrange<T>(T element) where T : FrameworkElement
     {
         var width = double.IsNaN(element.Width) ? 640 : element.Width;
@@ -791,4 +895,11 @@ public class SharedComponentBehaviorTests
     private sealed record DisplayChoice(string Title);
 
     private sealed record SortableRow(string Name);
+
+    private sealed record PreferenceControls(
+        StackPanel Root,
+        SettingToggle Toggle,
+        ComboBox Selector,
+        SettingField Field,
+        DataGridColumn Column);
 }

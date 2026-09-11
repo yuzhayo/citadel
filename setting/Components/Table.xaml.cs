@@ -1,6 +1,8 @@
 using System.Collections;
 using System.Collections.ObjectModel;
 using System.Collections.Specialized;
+using System.ComponentModel;
+using System.Text.Json;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Data;
@@ -192,18 +194,120 @@ public sealed partial class SettingTable : UserControl
             {
                 InnerTable.Columns.Add(column);
             }
+        }
+        else
+        {
+            foreach (var (label, index) in _columns.Select((label, index) => (label, index)))
+            {
+                InnerTable.Columns.Add(new DataGridTextColumn
+                {
+                    Header = label,
+                    Binding = new Binding($"[{index}]") { Mode = BindingMode.OneWay },
+                    IsReadOnly = true,
+                });
+            }
+        }
+
+        if (IsLoaded) UiPreference.Restore(this);
+    }
+
+    internal string CapturePreference()
+    {
+        var columns = InnerTable.Columns
+            .Select((column, index) => new TableColumnPreference(
+                ColumnKey(column, index),
+                column.DisplayIndex,
+                column.Width.Value,
+                column.Width.UnitType,
+                column.SortDirection))
+            .ToArray();
+        return JsonSerializer.Serialize(new TablePreference(
+            SortColumn,
+            SortDescending,
+            columns));
+    }
+
+    internal void RestorePreference(string value)
+    {
+        TablePreference? preference;
+        try
+        {
+            preference = JsonSerializer.Deserialize<TablePreference>(value);
+        }
+        catch (JsonException)
+        {
             return;
         }
 
-        foreach (var (label, index) in _columns.Select((label, index) => (label, index)))
+        if (preference?.Columns is null) return;
+        var saved = new Dictionary<string, TableColumnPreference>(StringComparer.Ordinal);
+        foreach (var column in preference.Columns)
         {
-            InnerTable.Columns.Add(new DataGridTextColumn
-            {
-                Header = label,
-                Binding = new Binding($"[{index}]") { Mode = BindingMode.OneWay },
-                IsReadOnly = true,
-            });
+            if (!string.IsNullOrWhiteSpace(column.Key)) saved.TryAdd(column.Key, column);
         }
+
+        var matches = InnerTable.Columns
+            .Select((column, index) => (Column: column, Saved: saved.GetValueOrDefault(ColumnKey(column, index))))
+            .Where(match => match.Saved is not null)
+            .Select(match => (match.Column, Saved: match.Saved!))
+            .ToArray();
+
+        foreach (var match in matches)
+        {
+            var width = RestoredWidth(match.Saved);
+            if (width is not null) match.Column.Width = width.Value;
+            match.Column.SortDirection = match.Saved.SortDirection;
+        }
+
+        var preferredOrder = matches
+            .OrderBy(match => match.Saved.DisplayIndex)
+            .Select(match => match.Column)
+            .Concat(InnerTable.Columns.Where(column => matches.All(match => match.Column != column)))
+            .ToArray();
+        for (var displayIndex = 0; displayIndex < preferredOrder.Length; displayIndex++)
+        {
+            preferredOrder[displayIndex].DisplayIndex = displayIndex;
+        }
+
+        if (preference.SortColumn is not null)
+        {
+            SortColumn = preference.SortColumn;
+            SortDescending = preference.SortDescending;
+        }
+
+        var sorted = matches.FirstOrDefault(match => match.Saved.SortDirection is not null);
+        if (sorted.Column is not null
+            && InnerTable.CanUserSortColumns
+            && ItemsSource is not null
+            && !string.IsNullOrWhiteSpace(sorted.Column.SortMemberPath))
+        {
+            var view = CollectionViewSource.GetDefaultView(ItemsSource);
+            if (view.CanSort)
+            {
+                view.SortDescriptions.Clear();
+                view.SortDescriptions.Add(new SortDescription(
+                    sorted.Column.SortMemberPath,
+                    sorted.Saved.SortDirection!.Value));
+            }
+        }
+    }
+
+    private static string ColumnKey(DataGridColumn column, int index) =>
+        $"{index}|{column.SortMemberPath}|{column.Header}";
+
+    private static DataGridLength? RestoredWidth(TableColumnPreference preference)
+    {
+        if (!double.IsFinite(preference.Width) || preference.Width < 0) return null;
+        return preference.WidthUnit switch
+        {
+            DataGridLengthUnitType.Auto => DataGridLength.Auto,
+            DataGridLengthUnitType.SizeToCells => DataGridLength.SizeToCells,
+            DataGridLengthUnitType.SizeToHeader => DataGridLength.SizeToHeader,
+            DataGridLengthUnitType.Pixel => new DataGridLength(preference.Width),
+            DataGridLengthUnitType.Star when preference.Width > 0 =>
+                new DataGridLength(preference.Width, DataGridLengthUnitType.Star),
+            _ => null,
+        };
     }
 
     private void Resort()
@@ -226,4 +330,16 @@ public sealed partial class SettingTable : UserControl
 
     private static string Cell(IReadOnlyList<string> row, int index) =>
         index < row.Count ? row[index] : string.Empty;
+
+    private sealed record TablePreference(
+        string? SortColumn,
+        bool SortDescending,
+        IReadOnlyList<TableColumnPreference> Columns);
+
+    private sealed record TableColumnPreference(
+        string Key,
+        int DisplayIndex,
+        double Width,
+        DataGridLengthUnitType WidthUnit,
+        ListSortDirection? SortDirection);
 }

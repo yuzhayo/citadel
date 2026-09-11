@@ -42,6 +42,7 @@ public sealed class SettingsScreen : SettingScreen
 
         AutomationProperties.SetAutomationId(this, "SettingsScreen");
         AutomationProperties.SetAutomationId(_screens, "ScreenList");
+        UiPreference.SetKey(_screens, "settings.screens.table");
         AutomationProperties.SetAutomationId(_failures, "FailureList");
         AutomationProperties.SetAutomationId(_summary, "ScreenSummary");
 
