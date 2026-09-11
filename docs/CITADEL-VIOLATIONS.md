@@ -1409,3 +1409,29 @@ hasilnya lebih spesifik dari dugaan**:
    module discovery (folder hadir = terdaftar). Jadi perbaikan bukan merintis pola
    baru, melainkan **memindahkan pola yang sudah ada** ke lapisan yang belum
    memakainya.
+
+
+---
+
+## Status perbaikan (2026-09-11, phase 1-4)
+
+- **BUG-1 — DIPERBAIKI.** `CatalogMirrorSyncFeature.cs` tidak lagi meng-import
+  namespace Downloader; catch mengikat tipe bersama yang benar-benar dilempar
+  sumber Catalog. Regression test: `ContractExceptionIsTheSingleSharedModuleType`.
+  Backoff 429/502/503 kini hidup (test sync yang ada menjadi bermakna karena fake
+  source dan provider nyata kini melempar tipe yang sama).
+- **C12 — SEBAGIAN.** `ComixContractException` disatukan di
+  `shareLogic/Sources/MangaSourceContracts.cs`; definisi lokal di `ComixSource.cs`
+  dan `CatalogComixSource.cs` dihapus. Tujuh tipe vocabulary Comix masih duplikat
+  lintas Catalog/Downloader — terenumerasi di
+  `LevelBGuardTests.AcceptedDuplicateTypeNames` sebagai debt; C12 penuh =
+  memindahkannya ke shared.
+- **C13 — DIPERBAIKI.** Mekanisme Rar.exe pindah ke
+  `shareLogic/Archive/RarArchiveEngine.cs`; `Features/Rar/RarArchiveFeature.cs`
+  dihapus; `ArchivePageReader` dan `ArchiveReplacementTransaction` tidak lagi
+  meng-import feature. Siklus putus; arah dependensi feature→shared.
+- **C3 — SEBAGIAN.** Guard test Level-B ada untuk mangareader
+  (`Architecture/LevelBGuardTests.cs`). camoprof belum punya; assertion 3 (parent
+  hanya kontrak) sengaja belum ditegakkan karena C14/D22 belum diperbaiki.
+- **Belum disentuh:** A1-A13 selain yang disebut, B1-B7, C1-C2, C4-C15 selain yang
+  disebut, D1-D26.

@@ -1,7 +1,7 @@
 using System.Diagnostics;
 using System.IO;
+using System.Linq;
 using Module.Mangareader.Features.CatalogMirror;
-using Module.Mangareader.Features.Downloader.Sources.Comix;
 using Module.Mangareader.Sources;
 
 namespace Module.Mangareader.Downloader.Tests;
@@ -238,6 +238,24 @@ public sealed class CatalogMirrorSyncTests : IDisposable
 
         Assert.Equal(CatalogSyncState.Ready, feature.Current.State);
         Assert.Equal(3, calls);
+    }
+
+    [Fact]
+    public void ContractExceptionIsTheSingleSharedModuleType()
+    {
+        // BUG-1 regression. Two same-named ComixContractException types lived in
+        // two feature namespaces; a cross-feature using then bound the sync
+        // throttle catch to a type the Catalog provider never throws, so the
+        // 429/502/503 backoff was dead code while every test stayed green. One
+        // shared module-level type makes that defect unrepresentable; if a second
+        // same-named type ever returns, this fails instead of the retry silently
+        // never firing.
+        var assembly = typeof(CatalogMirrorSyncFeature).Assembly;
+        var matches = assembly.GetTypes().Where(t => t.Name == "ComixContractException").ToArray();
+
+        Assert.Single(matches);
+        Assert.Equal(typeof(ComixContractException), matches[0]);
+        Assert.Equal("Module.Mangareader.Sources", matches[0].Namespace);
     }
 
     [Fact]

@@ -1,5 +1,4 @@
 using System.IO;
-using Module.Mangareader.Features.Rar;
 
 namespace Module.Mangareader.Archive;
 
@@ -51,18 +50,18 @@ public class ArchiveReplacementTransaction
     private readonly LatestCoverBackupStore _backupStore;
     private readonly IArchiveLockCoordinator _lockCoordinator;
     private readonly ArchiveValidator _validator;
-    private readonly RarArchiveFeature _rar;
+    private readonly RarArchiveEngine _rar;
 
     public ArchiveReplacementTransaction(
         LatestCoverBackupStore? backupStore = null,
         IArchiveLockCoordinator? lockCoordinator = null,
         ArchiveValidator? validator = null,
-        RarArchiveFeature? rar = null)
+        RarArchiveEngine? rar = null)
     {
         _backupStore = backupStore ?? new LatestCoverBackupStore();
         _lockCoordinator = lockCoordinator ?? new ArchiveLockCoordinator();
         _validator = validator ?? new ArchiveValidator();
-        _rar = rar ?? new RarArchiveFeature();
+        _rar = rar ?? new RarArchiveEngine();
     }
 
     public Task<CoverBakeResult> BakeAsync(

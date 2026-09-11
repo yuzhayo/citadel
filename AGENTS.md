@@ -19,22 +19,52 @@ Before starting any task in this workspace, you **must**:
 
 ---
 
+## Skill Sources and Precedence
+
+Citadel policy comes from three layers. Load in this order; on conflict the more
+specific layer wins.
+
+1. **yuzskill (global — every agent, every project).** The maintained cross-project
+   baseline: `engineering-quality`, `modular-architecture`, `planning-and-delivery`,
+   `architecture-and-contracts`, `verification-and-review`, `git-and-release`,
+   `shared-ui`, `stack-guidance`, plus `citadel-project` as the Citadel profile.
+   Any agent working in this repository loads these; they are the base policy.
+2. **Citadel deltas (this repo).** `.agents/skills/citadel-feature-modularity` and
+   `.agents/skills/citadel-shared-ui`. These carry Citadel's concrete rules
+   (feature catalog, parent/feature and feature/feature boundaries, shared-UI
+   approval boundary, combo-component exception) and **override the yuzskill
+   general skills where they conflict**.
+3. **Source-only — do NOT load at runtime.** The remaining local skills
+   (`api-and-interface-design`, `code-review-and-quality`,
+   `git-workflow-and-versioning`, `incremental-implementation`, `mengquality`,
+   `planning-and-task-breakdown`, `test-driven-development`) are the historical
+   **base** from which yuzskill was curated (see the yuzskill collection's
+   `skill-sources.json`). Their maintained policy now lives in yuzskill. Do not
+   load them alongside yuzskill and do not re-derive rules from them.
+
+Precedence on conflict: **Citadel delta > yuzskill general.** The yuzskill
+`citadel-project` profile defers to the Citadel deltas above for detailed rules.
+
+---
+
 ## Skill Activation Matrix
 
-Use this table to know which skills apply to your task:
+Use this table to know which skills apply to your task. The yuzskill base
+(`engineering-quality`, `modular-architecture`) is always loaded; rows below add
+to it.
 
 | If you're doing... | You MUST use these skills | You MAY use these skills |
 |-------------------|---------------------------|--------------------------|
-| **Adding/modifying UI** | `citadel-shared-ui` | `incremental-implementation` |
-| **Adding/modifying feature logic** | `citadel-feature-modularity` | `test-driven-development`, `api-and-interface-design` |
-| **Refactoring existing code** | `incremental-implementation` | `test-driven-development`, `code-review-and-quality` |
-| **Splitting files or moving code** | `citadel-feature-modularity`, `incremental-implementation` | `git-workflow-and-versioning` |
-| **Designing module contracts** | `api-and-interface-design`, `citadel-feature-modularity` | `planning-and-task-breakdown` |
-| **Fixing bugs** | `test-driven-development` | `incremental-implementation` |
-| **Reviewing code** | `code-review-and-quality`, `citadel-shared-ui` (if UI), `citadel-feature-modularity` (if features) | — |
-| **Planning features** | `planning-and-task-breakdown` | `api-and-interface-design` |
-| **Writing tests** | `test-driven-development` | — |
-| **Git commits/PRs** | `git-workflow-and-versioning` | — |
+| **Adding/modifying UI** | `citadel-shared-ui` | yuzskill `shared-ui`, `stack-guidance` |
+| **Adding/modifying feature logic** | `citadel-feature-modularity` | yuzskill `modular-architecture`, `architecture-and-contracts` |
+| **Refactoring existing code** | yuzskill `modular-architecture`, `planning-and-delivery` | `citadel-feature-modularity` (if it touches features) |
+| **Splitting files or moving code** | `citadel-feature-modularity`, yuzskill `modular-architecture` | yuzskill `planning-and-delivery` |
+| **Designing module contracts** | yuzskill `architecture-and-contracts`, `citadel-feature-modularity` | yuzskill `planning-and-delivery` |
+| **Fixing bugs** | yuzskill `verification-and-review` | yuzskill `planning-and-delivery` |
+| **Reviewing code** | yuzskill `verification-and-review`, `citadel-shared-ui` (if UI), `citadel-feature-modularity` (if features) | — |
+| **Planning features** | yuzskill `planning-and-delivery` | yuzskill `architecture-and-contracts` |
+| **Writing tests** | yuzskill `verification-and-review` | — |
+| **Git commits/PRs** | yuzskill `git-and-release` | — |
 
 ---
 

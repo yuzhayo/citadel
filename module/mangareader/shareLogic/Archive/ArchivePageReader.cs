@@ -1,6 +1,5 @@
 using System.IO;
 using System.IO.Compression;
-using Module.Mangareader.Features.Rar;
 using Module.Mangareader.ShareLogic;
 
 namespace Module.Mangareader.Archive;
@@ -15,7 +14,7 @@ public sealed class ArchivePageReader
         StringComparer.OrdinalIgnoreCase);
 
     private readonly ArchiveSignatureDetector _detector = new();
-    private readonly RarArchiveFeature _rar = new();
+    private readonly RarArchiveEngine _rar = new();
 
     public bool IsSupportedArchive(string path)
     {
@@ -41,7 +40,6 @@ public sealed class ArchivePageReader
             ArchiveFormat.Zip => ReadZipPages(archivePath, cancellationToken),
             ArchiveFormat.Rar4 or ArchiveFormat.Rar5 => _rar
                 .ReadPages(archivePath, cancellationToken)
-                .Select(page => new ArchivePage(page.Name, page.Bytes))
                 .ToArray(),
             _ => throw new NotSupportedException(
                 "Only ZIP/CBZ and RAR/CBR chapter archives can be read."),

@@ -1,16 +1,21 @@
 using System.Diagnostics;
 using System.IO;
-using Module.Mangareader.Archive;
 
-namespace Module.Mangareader.Features.Rar;
-
-public sealed record RarPage(string Name, byte[] Bytes);
+namespace Module.Mangareader.Archive;
 
 /// <summary>
-/// The single adapter around the RAR payload shipped with MangaReader.
+/// The single adapter around the RAR payload shipped with MangaReader: process
+/// spawn, extraction, and cover rewrite mechanics.
+///
+/// Lives in the module shared archive folder, NOT in a feature, because it is a
+/// mechanism with several real consumers across features (page reading, cover
+/// baking, replacement transactions). When it lived in <c>Features/Rar</c> the
+/// shared dispatcher had to import that feature, and the feature imported the
+/// shared folder back — a cycle inside one assembly that no project-level guard
+/// can see. Mechanisms belong shared; business policy belongs in features.
 /// Readers and Cover Builder never invoke Rar.exe directly.
 /// </summary>
-public sealed class RarArchiveFeature
+public sealed class RarArchiveEngine
 {
     private static readonly HashSet<string> ImageExtensions = new(
         [".jpg", ".jpeg", ".png", ".webp", ".bmp", ".gif", ".tif", ".tiff"],
@@ -19,7 +24,7 @@ public sealed class RarArchiveFeature
     private static readonly TimeSpan CommandTimeout = TimeSpan.FromMinutes(5);
     private readonly string _executablePath;
 
-    public RarArchiveFeature(string? executablePath = null)
+    public RarArchiveEngine(string? executablePath = null)
     {
         _executablePath = executablePath ?? ResolveBundledExecutable();
     }
@@ -38,7 +43,7 @@ public sealed class RarArchiveFeature
             : Path.Combine(AppContext.BaseDirectory, "Features", "Rar", "Rar.exe");
     }
 
-    public IReadOnlyList<RarPage> ReadPages(
+    public IReadOnlyList<ArchivePage> ReadPages(
         string archivePath,
         CancellationToken cancellationToken)
     {
@@ -59,7 +64,7 @@ public sealed class RarArchiveFeature
             return Directory
                 .EnumerateFiles(extractionRoot, "*", SearchOption.AllDirectories)
                 .Where(path => ImageExtensions.Contains(Path.GetExtension(path)))
-                .Select(path => new RarPage(
+                .Select(path => new ArchivePage(
                     Path.GetRelativePath(extractionRoot, path).Replace('\\', '/'),
                     ReadAllBytes(path, cancellationToken)))
                 .ToArray();

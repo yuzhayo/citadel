@@ -1,7 +1,6 @@
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
-using Module.Mangareader.Features.Downloader.Sources.Comix;
 using Module.Mangareader.Sources;
 
 namespace Module.Mangareader.Features.CatalogMirror;

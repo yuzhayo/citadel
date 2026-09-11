@@ -184,20 +184,6 @@ public static class ComixContract
     public const string FieldPageUrl = "url";
 }
 
-/// <summary>
-/// A Comix wire-contract failure. Distinct from a network failure so the UI can
-/// say "the provider shape changed" instead of "the network is down".
-///
-/// <see cref="HttpStatus"/> carries the provider HTTP status for failures that
-/// have one, so the snapshot-only session-expiry retry can match 401/403 on a
-/// typed value instead of message text. It stays null for non-HTTP contract
-/// failures. Adding the property changes no existing throw or message.
-/// </summary>
-public sealed class ComixContractException(string message) : InvalidOperationException(message)
-{
-    public int? HttpStatus { get; set; }
-}
-
 public enum ComixGenreMode
 {
     And,

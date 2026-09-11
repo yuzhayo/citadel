@@ -1,7 +1,6 @@
 using System.IO;
 using System.Diagnostics;
 using Module.Mangareader.Archive;
-using Module.Mangareader.Features.Rar;
 
 namespace Module.Mangareader.Archive.Tests;
 
@@ -121,7 +120,7 @@ public sealed class ArchiveReplacementTransactionTests : ArchiveTestFixture
     {
         var chapter = CreateRarChapter();
         var before = File.ReadAllBytes(chapter);
-        var reader = new RarArchiveFeature();
+        var reader = new RarArchiveEngine();
         var originalPages = reader.ReadPages(chapter, CancellationToken.None)
             .ToDictionary(page => page.Name, page => page.Bytes);
 

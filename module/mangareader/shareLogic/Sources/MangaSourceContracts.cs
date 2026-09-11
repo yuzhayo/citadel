@@ -11,6 +11,26 @@ namespace Module.Mangareader.Sources;
 // file declares the contract; it never interprets provider behavior.
 
 /// <summary>
+/// A Comix wire-contract failure. Distinct from a network failure so the UI can
+/// say "the provider shape changed" instead of "the network is down".
+///
+/// Lives at module level, not inside a provider folder, because TWO consumers
+/// match on it across feature boundaries: the provider that throws it and the
+/// CatalogMirror sync throttle filter that catches it. When each provider owned
+/// its own same-named type, a cross-feature <c>using</c> bound the catch to the
+/// wrong one and the 429/502/503 backoff silently never fired. One shared type
+/// makes that class of defect unrepresentable.
+///
+/// <see cref="HttpStatus"/> carries the provider HTTP status for failures that
+/// have one, so retries can match 401/403 or 429/502/503 on a typed value
+/// instead of message text. It stays null for non-HTTP contract failures.
+/// </summary>
+public sealed class ComixContractException(string message) : InvalidOperationException(message)
+{
+    public int? HttpStatus { get; set; }
+}
+
+/// <summary>
 /// What one registered source can actually do. Catalog reads this to decide
 /// which controls exist; it never probes a provider to find out.
 /// </summary>

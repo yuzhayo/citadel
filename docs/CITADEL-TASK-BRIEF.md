@@ -55,6 +55,23 @@ konsep yuz-ui yang dirujuk di bawah. Jangan memulai dari ingatan.
    children di citadel; tanpa perubahan kode.
 6. `CITADEL-INVENTORY.md` — checklist cakupan berstatus; satu-satunya penjamin
    "tanpa tertinggal". Setiap flow selesai = status diperbarui saat itu juga.
+7. `CITADEL-RESTRUCTURE-PLAN.md` — **ditambah atas perintah owner 2026-09-11**:
+   target struktur + plan ber-phase dengan success criteria, mengikuti pola
+   `yuz-ui/IMPLEMENTATION-PLAN.md`. Berisi bentuk yang DIINGINKAN; keadaan
+   sekarang tetap tinggal di dokumen flow.
+
+## Perluasan perintah owner (2026-09-11)
+
+Fase dokumentasi (slice 1–9) SELESAI. Owner kemudian memerintahkan: "buat plan
+dan target structure nya". Maka cakupan bertambah **perencanaan**, dan aturan
+read-only terhadap kode tetap berlaku:
+
+- Plan adalah dokumen untuk dibaca dan disetujui owner; ia tidak mengeksekusi
+  dirinya sendiri.
+- Tiap phase di plan hanya dikerjakan bila owner memerintahkan phase itu secara
+  eksplisit, satu per satu.
+- Bila pelaksanaan sebuah phase dimulai, brief ini diperbarui lebih dulu dengan
+  status phase tersebut.
 
 ## Aturan kerja selama fase ini
 

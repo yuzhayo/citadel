@@ -277,3 +277,29 @@ Konsep kernel yang kamu inginkan untuk citadel **sudah berjalan di citadel** —
 module. Yang belum adalah menerapkannya satu tingkat lebih dalam, ke feature, dan
 repo ini sudah punya tiga contoh yang terbukti (Reader, pyhost, Searcher) sehingga
 tidak ada yang perlu ditemukan dari nol.
+
+
+---
+
+## Status pelaksanaan phase 1-4 (2026-09-11)
+
+Phase 1-4 dari §8 **SELESAI** dan terverifikasi: `dotnet test Citadel.slnx` hijau,
+929 test, 0 gagal.
+
+| # | Sasaran | Keadaan | Bukti |
+| --- | --- | --- | --- |
+| 1 | BUG-1 catch mati | **DIPERBAIKI** | `CatalogMirrorSyncFeature.cs` menangkap tipe bersama; regression test `ContractExceptionIsTheSingleSharedModuleType` menegaskan hanya ada SATU `ComixContractException` dan ia milik `Module.Mangareader.Sources` |
+| 2 | Guard test Level-B | **ADA** | `tests/Module.Mangareader.Downloader.Tests/Architecture/LevelBGuardTests.cs` (3 test): tepi lintas feature di luar allow-list = gagal; shareLogic→feature = gagal; tipe bernama sama baru = gagal; coupling yang sudah diperbaiki tidak boleh kembali |
+| 3 | C12 minimal | **SELESAI** | satu `ComixContractException` di `shareLogic/Sources/MangaSourceContracts.cs`; definisi lokal di kedua provider dihapus |
+| 4 | C13 siklus | **PUTUS** | mekanisme pindah ke `shareLogic/Archive/RarArchiveEngine.cs`; `Features/Rar/RarArchiveFeature.cs` dihapus; arah dependensi kini feature→shared satu arah |
+
+**Debt yang kini TERENUMERASI oleh guard** (allow-list; tujuan akhirnya menyusut):
+
+- 7 tipe vocabulary Comix masih duplikat di Catalog & Downloader (C12 penuh):
+  `ComixScrambleHeader`, `ComixScrambleHeaders`, `ComixContract`, `ComixGenreMode`,
+  `ComixBrowseQuery`, `ComixSortOption`, `ComixOptions`.
+- 2 tepi lintas feature `Catalog ↔ CatalogMirror` (C14).
+- Assertion 3 (parent hanya menyentuh kontrak) **belum ditegakkan** (C14/D22):
+  parent masih menjangkau internal feature.
+
+**Belum dikerjakan:** C12 penuh, C14+D22, B2, D9, C6/C8, D1, D6.

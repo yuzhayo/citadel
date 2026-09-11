@@ -123,8 +123,8 @@
              Link="ShareLogic\Archive\CoverArchiveWriter.cs" />
     <Compile Include="..\..\module\mangareader\shareLogic\Archive\ArchivePageReader.cs"
              Link="ShareLogic\Archive\ArchivePageReader.cs" />
-    <Compile Include="..\..\module\mangareader\Features\Rar\RarArchiveFeature.cs"
-             Link="Features\Rar\RarArchiveFeature.cs" />
+    <Compile Include="..\..\module\mangareader\shareLogic\Archive\RarArchiveEngine.cs"
+             Link="ShareLogic\Archive\RarArchiveEngine.cs" />
     <None Include="..\..\module\mangareader\Features\Rar\Rar.exe"
           Link="Features\Rar\Rar.exe"
           CopyToOutputDirectory="PreserveNewest" />
