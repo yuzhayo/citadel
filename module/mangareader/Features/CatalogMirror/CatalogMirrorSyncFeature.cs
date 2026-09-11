@@ -35,6 +35,14 @@ public sealed class CatalogMirrorSyncFeature(
     /// <summary>Tunable pacing; tests set it to zero. Never negative.</summary>
     public TimeSpan PoliteDelay { get; set; } = DefaultPoliteDelay;
 
+    /// <summary>
+    /// Hard cap on provider pages per run. One run can never page the whole
+    /// catalog without a human choosing to Resume, so neither a misconfiguration
+    /// nor a hostile throttle pattern can produce unbounded request volume.
+    /// Reaching the cap is a Stop (resumable), not a failure.
+    /// </summary>
+    public int MaxPagesPerRun { get; set; } = 200;
+
     /// <summary>Immutable progress snapshot, updated on every transition.</summary>
     public CatalogSyncProgress Current
     {
@@ -212,6 +220,7 @@ public sealed class CatalogMirrorSyncFeature(
             CatalogSyncState.Syncing, null, startPartition, partitions.Count,
             0, checkpoint?.StagedRecords ?? 0, 0, null, 0, null, _partitions));
 
+        var pagesFetched = 0;
         for (var index = startPartition; index < partitions.Count; index++)
         {
             var partition = partitions[index];
@@ -224,6 +233,12 @@ public sealed class CatalogMirrorSyncFeature(
                 }
 
                 if (Volatile.Read(ref _stopRequested) != 0)
+                {
+                    Publish(Stopped(last, partitions.Count));
+                    return;
+                }
+
+                if (pagesFetched >= MaxPagesPerRun)
                 {
                     Publish(Stopped(last, partitions.Count));
                     return;
@@ -268,11 +283,23 @@ public sealed class CatalogMirrorSyncFeature(
                         return;
                     }
 
+                    if (exception is ComixContractException limited &&
+                        limited.HttpStatus is 403 or 429 or 502 or 503)
+                    {
+                        Publish(Failed(last, partitions.Count, partition.Key, index, page,
+                            new CatalogSnapshotException(
+                                $"Sumber membatasi akses otomatis (HTTP {limited.HttpStatus}). " +
+                                "Sync dihentikan tanpa retry. Selesaikan challenge manual lewat " +
+                                "toggle headed browser pada source, atau tunggu pembatasan " +
+                                "luruh, lalu Resume.")));
+                        return;
+                    }
                     Publish(Failed(last, partitions.Count, partition.Key, index, page, exception));
                     return;
                 }
 
                 fetchedAny = true;
+                pagesFetched++;
 
                 if (!IsCurrent(generation))
                 {
