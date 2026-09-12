@@ -67,7 +67,7 @@ process.stdin.on("data", (d) => (raw += d)).on("end", () => {
           `${name} may reference ` +
           `${allowed.length ? allowed.join(", ") : "nothing"}. ` +
           `If this looks necessary, the design is wrong — the boundary does ` +
-          `not move. See .docs/README.md for the current architecture.`,
+          `not move. See docs/README.md for the current architecture.`,
       }),
     );
   } catch {}

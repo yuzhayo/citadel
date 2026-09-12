@@ -181,10 +181,9 @@ Dicatat jujur supaya "tanpa tertinggal" tidak berarti "tanpa batas".
 
 | Area | Keadaan |
 | --- | --- |
-| `.docs/` (19 PLAN/AUDIT/SPEC/REPORT) | dibaca sebagai **niat sejarah** sesuai brief; perilaku diverifikasi dari kode, bukan dipercaya dari plan. Tidak didokumentasikan ulang per file |
-| `.agents/skills/` selain 2 skill citadel | 7 skill generik (api-and-interface-design, code-review-and-quality, git-workflow-and-versioning, incremental-implementation, mengquality, planning-and-task-breakdown, test-driven-development) — tidak spesifik citadel, tidak dipetakan |
-| `.agents/bridge/` | catatan jembatan antar harness (`hermes-codex.md`, `qoder-codex.md`) — tidak dipetakan |
-| `tasks/`, `.hermes/` | artefak perencanaan harness lain; `tasks/todo.md:30` menyebut credenz |
+| `docs/history/2026/` | plan/audit/spec/report terdahulu; dibaca sebagai **niat sejarah**, perilaku diverifikasi dari kode |
+| `.agents/skills/` | hanya dua kontrak Citadel yang di-version-kan; skill generik lokal tidak termasuk repo |
+| `docs/work/`, `docs/history/2026/hermes/` | plan aktif Add Profile dan satu arsip plan harness; tidak lagi menjadi folder root terpisah |
 | Isi `artifacts/recovery-ftf-proxy-2.1.3-20260907` | **unverified** — hanya keberadaannya yang dicatat; relevan untuk memulihkan D9 |
 | `.qoder/settings.json` + `settings.local.json` | dibaca untuk menemukan dua hook; tidak dipetakan lebih jauh |
 | Perilaku runtime nyata (app dijalankan) | **tidak ada verifikasi live/visual**. Seluruh dokumentasi berbasis kode + git, sesuai batas read-only pada brief |

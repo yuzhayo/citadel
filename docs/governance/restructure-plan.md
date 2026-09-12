@@ -466,7 +466,7 @@ Aturan wajib untuk setiap langkah berikutnya:
 - Step 8 (C6/C8): C6 masuk CI (step Build citizens). C8 diperkuat di hook
   check-project-refs dan DIVERIFIKASI dengan payload sintetis: proyek core baru
   ber-referensi = block; module baru = lolos; Citadel.Shell nyata = lolos.
-- Step 9: docs/SMOKE-CHECKLIST.md dibuat sebagai syarat keluar wajib step refactor.
+- Step 9: docs/operations/smoke-checklist.md dibuat sebagai syarat keluar wajib step refactor.
 - Audit diff a3962f1..1582068: NOL kode produksi. Hanya 1 file test baru, 1 workflow
   CI, dan docs. Suite 9/9 proyek hijau (931 test).
 - Perilaku app tidak berubah sejak a3962f1 (yang sudah diverifikasi behavior-identik

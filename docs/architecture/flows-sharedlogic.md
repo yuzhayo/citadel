@@ -245,7 +245,7 @@ me-link `cs/`.
 - `.github/workflows/ci.yml:33-35` hanya menjalankan `dotnet test Citadel.slnx`.
   Hook `gate-on-stop.mjs:34` juga hanya itu.
 - Suite python hanya muncul sebagai gate di plan lama
-  (`.docs/PLAN-camoprof.md:330` G0b; `.docs/PLAN-ownership-shared-ui-2026-09-05.md:226`).
+  (`docs/history/2026/plans/camoprof.md:330` G0b; `docs/history/2026/plans/ownership-shared-ui.md:226`).
 
 Jadi seluruh jembatan python — termasuk protokol yang mengangkut kredensial —
 **tidak diuji oleh gate otomatis mana pun**. → register C9.

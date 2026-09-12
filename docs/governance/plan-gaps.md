@@ -57,7 +57,7 @@ Rollback: revert.
 ## Step 9 — acceptance live (gap 4)
 
 Checklist wajib sebagai syarat keluar setiap step refactor berikutnya
-(disimpan di `docs/SMOKE-CHECKLIST.md`):
+(disimpan di `docs/operations/smoke-checklist.md`):
 1. App start tanpa error; tray muncul; window terbuka.
 2. Tiap tab MangaReader dibuka: Library, History, Downloader, Queue, Catalog,
    CatalogMirror, CoverBuilder — tanpa exception dan tanpa layout rusak.

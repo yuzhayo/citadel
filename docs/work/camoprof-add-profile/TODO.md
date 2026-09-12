@@ -1,8 +1,8 @@
-# CamoProf Add Profile — todo (kontrak puzzle-block, tasks/plan.md)
+# CamoProf Add Profile — todo (kontrak puzzle-block, docs/work/camoprof-add-profile/PLAN.md)
 
 ## Bongkar menara + adapter tipis
 
-- [x] Task 1: Rewrite kontrak (tasks/plan.md) ke puzzle-block
+- [x] Task 1: Rewrite kontrak (docs/work/camoprof-add-profile/PLAN.md) ke puzzle-block
 - [x] Task 2: Hapus `core/` (SessionHost/lease/CommandRegistry); pyhost.py
       memakai helper generik register/lifecycle/page/session retirement
 - [x] Task 3: Plugin enrollment.py tipis: buat E → arm → set primary →

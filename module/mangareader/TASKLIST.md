@@ -125,7 +125,7 @@ work; it does not change Citadel Core or the shared module contract.
 - [x] Layout-stable: rail width always reserved, opacity changes do not shift content.
 - [x] Cleanup: timers/storyboards/handlers detached on Unloaded, no leaks (`ConditionalWeakTable`).
 - [x] Migrate all consumers to shared `SettingScrollViewerStyle` (Viewport Document, SettingTable, MangaReader views).
-- [x] Document behavior contract in `.docs/SHARED-UI-BEHAVIOR.md`.
+- [x] Document behavior contract in `docs/contracts/shared-ui-behavior.md`.
 - [x] Add regression tests: template used, orientation correct, layout stable, cleanup verified.
 - [x] Build verification: `setting/`, `module/mangareader/`, tests pass.
 
@@ -153,7 +153,7 @@ work; it does not change Citadel Core or the shared module contract.
 
 ## Immersive Reader controls — implemented and verified
 
-Canonical contract: `.docs/PLAN-mangareader-reader-controls.md`. Reading
+Canonical contract: `docs/history/2026/plans/mangareader-reader-controls.md`. Reading
 direction and fit modes are explicitly outside this scope.
 
 - [x] Refactor `ReaderWindow` once into the stable parent/children feature
@@ -174,11 +174,11 @@ direction and fit modes are explicitly outside this scope.
 ## Downloader — locked plan; implementation has not started
 
 - [x] Record the logged-out Comix/DNS/browser/API/group/descramble/CBZ evidence
-      in `.docs/RESEARCH-comix-downloader-2026-09-01.md`.
+      in `docs/history/2026/research/comix-downloader.md`.
 - [x] Lock the two-screen local-first product, feature ownership, explicit
       network triggers, provider contract, retry/fallback rules, persistent
       queue, hybrid transport, and atomic output in
-      `.docs/PLAN-mangareader-downloader.md`.
+      `docs/history/2026/plans/mangareader-downloader.md`.
 - [ ] Phase 0: start from a settled Reader worktree, freeze exact live Comix
       contracts as fixtures, and characterize current CBZ/Library behavior.
 - [ ] Phase 1: implement pure remote identity, source registry, filter/query,

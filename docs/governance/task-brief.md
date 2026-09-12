@@ -38,8 +38,8 @@ konsep yuz-ui yang dirujuk di bawah. Jangan memulai dari ingatan.
   `C:\VSCODE\yuz-ui\WADAH-SCREEN.md` (arsip cara owner berpikir).
 - Kontrak yang DIMAKSUD citadel: `AGENTS.md` citadel, skill
   `citadel-feature-modularity`, skill `citadel-shared-ui`, serta
-  `.docs/SHARED-UI-BEHAVIOR.md` dan `.docs/PLAN-ownership-shared-ui-2026-09-05.md`.
-- Plan lama di `.docs/` adalah niat sejarah; perilaku sebenarnya harus diverifikasi
+  `docs/contracts/shared-ui-behavior.md` dan `docs/history/2026/plans/ownership-shared-ui.md`.
+- Plan lama di `docs/history/` adalah niat sejarah; perilaku sebenarnya harus diverifikasi
   dari kode, bukan dipercaya dari plan.
 
 ## Deliverable (lokasi: `docs/` di root citadel)

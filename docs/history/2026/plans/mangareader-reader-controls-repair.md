@@ -2,7 +2,7 @@
 
 Status: **COMPLETE — root repair and every required gate passed on 2026-09-02**  
 Date: 2026-09-02  
-Behavior contract: `.docs/PLAN-mangareader-reader-controls.md`  
+Behavior contract: `docs/history/2026/plans/mangareader-reader-controls.md`
 Current base: `main` at `ae450bc` plus the uncommitted Reader/shared-component WIP
 
 ## 1. Purpose
@@ -21,7 +21,7 @@ The baseline WIP audited at the start of this repair was **FAIL**: it built and
 the old solution suite passed, but the visible Reader engine, composition,
 lifecycle, and behavior contracts were disconnected. That verdict remains the
 historical starting point recorded in
-`.docs/AUDIT-mangareader-reader-controls-2026-09-02.md`.
+`docs/history/2026/audits/mangareader-reader-controls.md`.
 
 The repaired worktree is **PASS on available hardware**. Root composition,
 ownership, continuous Reader engine, shared Drawer/chrome, feature controls,

@@ -1,9 +1,9 @@
 # Implementation Plan: MangaReader Library, History, and Downloader Updates
 
 Status: implementation-ready plan. Product decisions are locked by
-`.docs/SPEC-mangareader-library-catalog-features-2026-09-06.md`; the existing
+`docs/history/2026/specifications/mangareader-library-catalog-features.md`; the existing
 Downloader pipeline contract remains governed by
-`.docs/PLAN-mangareader-downloader.md`.
+`docs/history/2026/plans/mangareader-downloader.md`.
 
 This plan deliberately separates work by area and by feature. An executor must
 finish and verify one slice before beginning the next. It must not combine
@@ -592,7 +592,7 @@ numeric. Author/Artist search only on Enter or explicit Search.
 
 Author/Artist options use the captured `tags/search` and `tags/by-ids` routes.
 Use all 13 exact sort mappings already recorded in
-`.docs/PLAN-mangareader-downloader.md`.
+`docs/history/2026/plans/mangareader-downloader.md`.
 
 `Manga`, `Manhwa`, and `Manhua` are types. `Pornographic` is a rating.
 `Adult`, `Hentai`, `Mature`, and `Smut` are genre/tag choices. Do not invent an

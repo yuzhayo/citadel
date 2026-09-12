@@ -30,7 +30,17 @@ dotnet build module/blank/Module.Blank.csproj
 .\tools\Build-Release.ps1
 ```
 
-See `RELEASE.md` for installer, GitHub release, and in-app update details.
+See [operations/release.md](operations/release.md) for installer, GitHub release,
+and in-app update details.
 
-Completed plans and handoffs were removed from the working tree after delivery.
-Their history remains available in Git when explicitly needed.
+## Documentation map
+
+- `architecture/` — as-built structure, dependency flows, and inventory.
+- `contracts/` — current cross-module behavior contracts.
+- `governance/` — boundary review, remediation, and restructuring records.
+- `operations/` — release and smoke procedures.
+- `work/` — active, scoped work plans and checklists.
+- `history/` — dated plans, audits, research, reports, and imported harness notes.
+
+Historical material is retained for traceability only. Verify current behavior
+from source and the architecture/contract documents before relying on it.

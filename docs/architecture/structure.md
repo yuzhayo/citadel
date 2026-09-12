@@ -113,10 +113,14 @@ citadel/
 │   ├─ hooks/
 │   │   ├─ check-project-refs.mjs   MENEBLOKIR grafis dependensi csproj
 │   │   └─ gate-on-stop.mjs         dotnet test saat turn berakhir (melaporkan)
-│   ├─ skills/                9 skill (2 di antaranya kontrak citadel)
-│   └─ bridge/                catatan jembatan antar harness
-├─ .docs/                     niat sejarah: PLAN/AUDIT/SPEC/REPORT + kontrak perilaku UI
-├─ docs/                      DOKUMENTASI INI (as-built)
+│   └─ skills/                2 kontrak Citadel yang di-version-kan
+├─ docs/                      SATU-SATUNYA pohon dokumentasi
+│   ├─ architecture/          peta as-built + flow
+│   ├─ contracts/             kontrak perilaku aktif
+│   ├─ governance/            review dan remediation
+│   ├─ operations/            release + smoke procedure
+│   ├─ work/                  plan/checklist aktif
+│   └─ history/               plan, audit, report, riset terdahulu
 │
 ├─ core/
 │   ├─ Citadel.Contract/      IModule · IModuleGate · ModuleDescriptor ·

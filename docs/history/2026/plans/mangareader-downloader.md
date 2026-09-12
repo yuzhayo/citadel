@@ -25,7 +25,7 @@ If MCP is unavailable, follow the collection's file fallback at
 `C:\Users\YUZHA\Yuzskill\AGENTS.md`. Relevant workflows: modular-architecture,
 engineering-quality, planning-and-delivery, architecture-and-contracts,
 shared-ui, verification-and-review, stack-guidance and citadel-project.
-Read local `AGENTS.md`, `module/README.md`, and `.docs/SHARED-UI-BEHAVIOR.md`.
+Read local `AGENTS.md`, `module/README.md`, and `docs/contracts/shared-ui-behavior.md`.
 Changing protected agent configuration is not a prerequisite to reading skills
 or executing already authorized source work; do not bypass its protection.
 
@@ -85,7 +85,7 @@ only reading surfaces.
 ## 2. Evidence baseline
 
 The canonical historical evidence is
-`.docs/RESEARCH-comix-downloader-2026-09-01.md`. It records, within the tested
+`docs/history/2026/research/comix-downloader.md`. It records, within the tested
 logged-out sample (not a current live guarantee):
 
 - direct Camoufox can render Comix and reach its signed `/api/v1` calls;

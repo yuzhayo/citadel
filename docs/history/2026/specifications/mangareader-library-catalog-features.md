@@ -2,7 +2,7 @@
 
 Status: product decisions approved in discussion on 2026-09-06.  This is a
 locked behavior and ownership record, not implementation approval and not a
-replacement for `.docs/PLAN-mangareader-downloader.md`.
+replacement for `docs/history/2026/plans/mangareader-downloader.md`.
 
 ## 1. Goal
 
@@ -39,7 +39,7 @@ The following are presentation capabilities, not separate business features:
 - loading, empty, error, ready, and disabled visual states.
 
 Before implementation, inspect `setting/Components/`,
-`setting/SettingResources.xaml`, and `.docs/SHARED-UI-BEHAVIOR.md`. Reuse the
+`setting/SettingResources.xaml`, and `docs/contracts/shared-ui-behavior.md`. Reuse the
 existing control or documented behavior when it satisfies the role. A feature
 may create a combo component from existing primitives, but no new primitive,
 style, template, or parallel screen-local substitute may be created without
@@ -141,7 +141,7 @@ order[<captured field>]=asc|desc
 Author and Artist lookup use `tags/search` with `type=author|artist`, then
 `tags/by-ids`, before the resolved provider ID enters the Browse request. The
 13 captured sorts and their exact order fields remain canonical in
-`.docs/PLAN-mangareader-downloader.md`.
+`docs/history/2026/plans/mangareader-downloader.md`.
 
 Types are Manga, Manhwa, Manhua and Other. Content ratings are Safe,
 Suggestive, Erotica and Pornographic. Release status uses Releasing, Finished,

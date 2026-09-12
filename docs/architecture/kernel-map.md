@@ -317,7 +317,7 @@ Keadaan repo = checkpoint 9bc33ac; suite 929 test hijau; working tree bersih.
 ### Step 6 (2026-09-11) - SELESAI
 
 C14/D22: aturan koordinasi lintas-feature dipisah dari komposisi ke
-module/mangareader/MangaReaderHandoffs.cs sesuai docs/CITADEL-PLAN-C14.md.
+module/mangareader/MangaReaderHandoffs.cs sesuai docs/governance/plan-c14.md.
 MangaReaderView.xaml.cs 412 menjadi 289 baris; perilaku identik; suite 929 hijau.
 Framing lama C14 dikoreksi di CITADEL-VIOLATIONS.md (kebijakan lintas-feature sah
 di composition root; yang tersisa terbuka adalah ketiadaan katalog/gate seragam).

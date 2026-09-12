@@ -114,8 +114,8 @@ Comix to compensate.
 Run this before implementation:
 
 1. Confirm the real root with `git -C C:\VSCODE\citadel rev-parse --show-toplevel`.
-2. Read root `AGENTS.md`, this plan, `.docs/PLAN-mangareader-downloader.md`, and
-   `.docs/SPEC-mangareader-library-catalog-features-2026-09-06.md`.
+2. Read root `AGENTS.md`, this plan, `docs/history/2026/plans/mangareader-downloader.md`, and
+   `docs/history/2026/specifications/mangareader-library-catalog-features.md`.
 3. Read the current implementations of:
    - `shareLogic/Sources/MangaSourceContracts.cs`;
    - `Sources/MangaSourceRegistry.cs`;

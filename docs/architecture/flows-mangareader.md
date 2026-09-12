@@ -712,7 +712,7 @@ one source, so its contract exception is the only throttle signal. Never
 message-sniffed; a second source would bring its own typed signal here"
 (`:413-415`). Niatnya tepat; tipe yang diimpor salah.
 
-**Klaim yang ikut gugur:** `.docs/REPORT-catalog-mirror-handoff-2026-09-08.md:47`
+**Klaim yang ikut gugur:** `docs/history/2026/reports/catalog-mirror-handoff.md:47`
 mencatat "backoff typed 429/502/503 (2 dtk ×2ⁿ, cap 30 dtk, maks 4 percobaan)"
 sebagai keputusan terkunci yang terverifikasi. Mekanisme itu ada di kode tapi tidak
 pernah aktif untuk sumber yang benar.

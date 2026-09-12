@@ -5,7 +5,7 @@
 > | Singkatan | Sumber | Lokasi |
 > |---|---|---|
 > | **YUZZENI** | Monorepo YUZZENI (frozen reference) | `C:\VSCODE\YUZZENI\` |
-> | **PLAN** | CamoProf plan utama | `.docs/PLAN-camoprof.md` |
+> | **PLAN** | CamoProf plan utama | `docs/history/2026/plans/camoprof.md` |
 > | **bridge** | Hermes↔Codex mailbox | `.agents/bridge/hermes-codex.md` |
 > | **playbook** | Citadel module playbook | `module/README.md` |
 

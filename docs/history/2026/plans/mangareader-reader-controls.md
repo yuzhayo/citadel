@@ -628,9 +628,9 @@ There are no remaining open product decisions for this Reader-control scope.
 ## 15. Implementation evidence — 2026-09-02
 
 The locked behavior remains the authority. Implementation was repaired against
-it through `.docs/PLAN-mangareader-reader-controls-repair.md`; original and
+it through `docs/history/2026/plans/mangareader-reader-controls-repair.md`; original and
 live-discovered findings plus their root resolution are retained in
-`.docs/AUDIT-mangareader-reader-controls-2026-09-02.md`.
+`docs/history/2026/audits/mangareader-reader-controls.md`.
 
 ### Delivered ownership
 

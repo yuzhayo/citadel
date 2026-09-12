@@ -1,6 +1,6 @@
 r"""Behavior tests for the camoprof_add_profile pyhost plugin.
 
-Behavior suite for the thin puzzle-block contract (tasks/plan.md):
+Behavior suite for the thin puzzle-block contract (docs/work/camoprof-add-profile/PLAN.md):
 - start creates a fresh enrollment page (proven pattern), arms the
   listener on it BEFORE navigation, swaps sess["page"] via the generic
   host helper, then closes the resident page — one visible window;

@@ -1,7 +1,7 @@
 # Catalog Mirror — Laporan Handoff Planner (2026-09-08)
 
 Dokumen serah-terima untuk sesi/agent berikutnya. Sumber kebenaran kontrak tetap
-`.docs/PLAN-mangareader-offline-catalog.md` (§0–§13); dokumen ini mencatat
+`docs/history/2026/plans/mangareader-offline-catalog.md` (§0–§13); dokumen ini mencatat
 **status eksekusi, bukti, keputusan, dan sisa kerja** per tanggal di atas.
 
 ## 1. Ringkasan status
@@ -11,7 +11,7 @@ Dokumen serah-terima untuk sesi/agent berikutnya. Sumber kebenaran kontrak tetap
 - Gate terakhir terverifikasi: suite Downloader **294/294**, citizen Release
   **0 warning 0 error**, `git diff --check` bersih.
 - Worktree BELUM di-commit: 9 file modified + 3 path untracked
-  (`.docs/PLAN-…`, `module/mangareader/Features/CatalogMirror/`,
+  (`docs/history/2026/plans/…`, `module/mangareader/Features/CatalogMirror/`,
   `module/mangareader/shareLogic/Sources/CatalogSnapshotContracts.cs`,
   `tests/…/CatalogMirror/`). Commit dilarang plan tanpa perintah operator.
 

@@ -23,7 +23,7 @@
     dialog is deliberately NOT linked here: its post-close guard and
     cancellation ownership are code-reviewed only — a WPF harness was
     judged not worth the flake risk for one dialog; live smoke covers
-    the real behavior and is tracked in tasks/todo.md.
+    the real behavior and is tracked in docs/work/camoprof-add-profile/TODO.md.
   -->
   <ItemGroup>
     <Compile Include="..\..\module\sharedLogic\cs\**\*.cs" />

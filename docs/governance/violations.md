@@ -31,7 +31,7 @@ sejumlah besar batas citadel justru **terkunci mesin dan nol pelanggaran**.
 | **FM-4** | State bersama lewat container/context, bukan field parent per feature | Rule 4 |
 | **FM-5** | Sebelum menambah logika ke parent: koordinasi atau logika feature? | Rule 5 |
 | **SU-1..5** | Kepemilikan shared UI, larangan menyalin template, parent composition-only, approval primitive baru, satu pemilik behavior pair | `.agents/skills/citadel-shared-ui/SKILL.md` |
-| **CT-1** | Kontrak citizen publik = **empat** tipe | `.docs/README.md:15` |
+| **CT-1** | Kontrak citizen publik = **empat** tipe | `docs/README.md:15` |
 | **CT-2** | Contract tidak boleh tumbuh tanpa keputusan | `IModuleGate.cs:10-12`, `LayoutDeclaration.cs:17-19` |
 | **CT-3** | Searcher mendeklarasikan Contract saja; reachable ≠ diizinkan | `Citadel.Searcher.csproj:7-15` |
 | **CT-4** | Core tak boleh belajar screen berasal dari disk | `ModuleDescriptor.cs:3-8`, `ModuleManifest.cs:4-6` |
@@ -80,7 +80,7 @@ susah memperbaikinya.
 
 **Aturan:** CT-1, CT-2.
 
-Klaim: `.docs/README.md:15` "the four types in `core/Citadel.Contract`";
+Klaim: `docs/README.md:15` "the four types in `core/Citadel.Contract`";
 `LayoutDeclaration.cs:8-9` "One of the contract's four public types";
 `LayoutDeclaration.cs:17-19` "the contract is exactly four public types, and a
 fifth would grow it"; `IModuleGate.cs:10-12` "Returning a result here would grow a
@@ -105,7 +105,7 @@ do not implement this interface keep the normal title-only header",
 `IContentHeaderActionProvider.cs:6-8`); yang tidak dilakukan adalah memperbarui
 klaim.
 
-**Akibat:** `.docs/README.md` adalah sumber kebenaran yang dibaca agent. Agent
+**Akibat:** `docs/README.md` adalah sumber kebenaran yang dibaca agent. Agent
 berikutnya yang diminta "jaga kontrak tetap empat tipe" akan menolak perubahan sah,
 atau menambah tipe keenam tanpa merasa melanggar karena angkanya sudah tidak
 dipercaya.
@@ -478,7 +478,7 @@ nama tidak lagi menceritakan isi.
 
 ## D1 — `module/` memegang empat peran
 
-`.docs/README.md:11` mendefinisikan `module/` sebagai "screen discovery plus
+`docs/README.md:11` mendefinisikan `module/` sebagai "screen discovery plus
 independently deployable citizen screens" — satu folder, dua pekerjaan, dan
 kenyataannya empat:
 
@@ -767,7 +767,7 @@ message-sniffed; a second source would bring its own typed signal here"
 (`CatalogMirrorSyncFeature.cs:413-415`). Niatnya tepat; `using`-nya salah arah.
 
 **Klaim dokumen yang ikut gugur:**
-`.docs/REPORT-catalog-mirror-handoff-2026-09-08.md:47` mencatat "backoff typed
+`docs/history/2026/reports/catalog-mirror-handoff.md:47` mencatat "backoff typed
 429/502/503 (2 dtk ×2ⁿ, cap 30 dtk, maks 4 percobaan)" sebagai keputusan terkunci
 yang terverifikasi. Mekanisme itu ada di kode tetapi tidak pernah aktif untuk sumber
 yang benar.
@@ -796,7 +796,7 @@ baik, dan sekaligus menghapus C12 — satu provider Comix, bukan dua.
 
 ## A5 — `SettingList` / `SettingCombo` disebut sebagai kontrol; yang ada hanya style
 
-`.docs/SHARED-UI-BEHAVIOR.md:64` menulis "All scroll surfaces use
+`docs/contracts/shared-ui-behavior.md:64` menulis "All scroll surfaces use
 `SettingScrollViewerStyle`: … `SettingList` / `SettingCombo` dropdowns". Tidak ada
 kontrol bernama itu. Yang ada adalah **style** `SettingListStyle`
 (`setting/SettingResources.xaml:176`) dan `SettingComboBoxStyle` (`:59`), dan
@@ -994,7 +994,7 @@ pun**:
 - `.github/workflows/ci.yml:33-35` hanya `dotnet test Citadel.slnx`.
 - `.agents/hooks/gate-on-stop.mjs:34` juga hanya itu.
 - Suite python hanya muncul sebagai gate di plan lama
-  (`.docs/PLAN-camoprof.md:330` G0b; `.docs/PLAN-ownership-shared-ui-2026-09-05.md:226`).
+  (`docs/history/2026/plans/camoprof.md:330` G0b; `docs/history/2026/plans/ownership-shared-ui.md:226`).
 
 Yang tidak teruji karenanya: protokol NDJSON, lifecycle sesi, plugin loading,
 **dan seluruh jalur yang mengangkut kredensial**. Perhatikan bahwa
@@ -1448,7 +1448,7 @@ lintas-feature baru yang ditolak guard Level-B. Jadi parent TIDAK melanggar FM-5
 dengan memegangnya; pelanggarannya hanya ST-1 (satu file memegang komposisi DAN
 aturan koordinasi).
 
-Tindakan yang diambil (plan tertulis: docs/CITADEL-PLAN-C14.md): aturan koordinasi
+Tindakan yang diambil (plan tertulis: docs/governance/plan-c14.md): aturan koordinasi
 dipisah ke module/mangareader/MangaReaderHandoffs.cs (5 method statis, dependensi
 eksplisit sebagai parameter, badan verbatim). Parent turun 412 menjadi 289 baris dan
 kini hanya komposisi + navigasi + lifecycle. Perilaku identik; suite 929 hijau.

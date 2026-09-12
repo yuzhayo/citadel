@@ -1,6 +1,6 @@
 # Queue independent transfer, scheduler, and grouped controls
 
-Status: implemented locally in 2.2.13; live provider transfer remains unverified.
+Status: implemented and released in 2.2.13; live provider transfer remains unverified.
 Baseline inspected: working tree 2.2.12, 2026-09-12.
 Revision: Queue owns Comix manifest sessions as well as independent page transfer.
 This is a scoped follow-up to PLAN-mangareader-downloader.md. Existing dirty and
@@ -276,7 +276,7 @@ not part of this implementation request. No code or version changed when origina
 - Existing resident background owner and Downloader default profile are retained.
   Queue profile identity is stable per job, rather than a reusable scheduler slot;
   the scheduler prevents simultaneous execution of the same job.
-- Local Release version is 2.2.13. Running instances were exited through tray Exit
+- Release version is 2.2.13. Running instances were exited through tray Exit
   before deployment to artifacts/smoke/publish (not a Debug deployment).
 - Native UI checked at 1180x900: title expansion/collapse, selection of all 45
   children, retained selection while collapsed, and deselection. No user queue
@@ -291,4 +291,5 @@ not part of this implementation request. No code or version changed when origina
   live shared-browser timeout. No provider requests were sent for verification.
   Already-dispatched shared work must settle before staging removal; Stop may
   remain Stopping while the shared host finishes its operation.
-- No commit, push, installer or GitHub release performed for this task.
+- Follow-up release completed: commit `81e9e30`, tag `v2.2.13`, installer and
+  GitHub release published after the implementation handoff.

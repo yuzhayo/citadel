@@ -1,6 +1,6 @@
-r"""Invariant tests untuk kontrak Add Profile puzzle-block (tasks/plan.md).
+r"""Invariant tests untuk kontrak Add Profile puzzle-block (docs/work/camoprof-add-profile/PLAN.md).
 
-Kontrak final (tasks/plan.md — puzzle-block):
+Kontrak final (docs/work/camoprof-add-profile/PLAN.md — puzzle-block):
   INV-1  Setiap session terdaftar selalu mengekspos primary page HIDUP
          (referensi ditukar lewat host.set_primary_page saat swap).
   INV-2  SATU jendela terlihat: setelah start, tepat satu page hidup di

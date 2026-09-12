@@ -104,7 +104,7 @@ Rollback: revert.
 
 ## Step 15 — eksekusi smoke (pintu keluar keseluruhan)
 
-1. Jalankan `docs/SMOKE-CHECKLIST.md` poin 1–10 pada build hasil step 10–14,
+1. Jalankan `docs/operations/smoke-checklist.md` poin 1–10 pada build hasil step 10–14,
    oleh owner atau sesi run terpisah.
 2. Catat hasil per poin di `CITADEL-RESTRUCTURE-PLAN.md`.
 3. Restructure dinyatakan SELESAI hanya bila: suite penuh hijau, kelima citizen +

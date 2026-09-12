@@ -47,12 +47,12 @@ Jika source terbaru sudah memperbaiki satu temuan, verifikasi lalu tandai SATISF
 ## 3. Onboarding agent dan pemulihan setelah compaction
 
 1. Pastikan repository aktual `C:\VSCODE\citadel`. Jangan memakai checkout lama `C:\VSCODE\TELEGRAM-CITADEL\Citadel` atau baseline audit secara buta.
-2. Baca `AGENTS.md`, instruksi yang lebih dekat ke file, dokumen ini, `.docs/README.md`, `module/README.md`, dan `.docs/SHARED-UI-BEHAVIOR.md`.
+2. Baca `AGENTS.md`, instruksi yang lebih dekat ke file, dokumen ini, `docs/README.md`, `module/README.md`, dan `docs/contracts/shared-ui-behavior.md`.
 3. Aktifkan Yuzskill melalui MCP `skills_begin` dengan intent refactor dan path aktual; baca/ack semua required skill, lalu periksa status. Nama tool mengikuti server yang tersedia.
 4. Jika MCP Yuzskill tidak tersedia, baca manual `C:\Users\YUZHA\Yuzskill\AGENTS.md`, `.agents/skill-map.json`, core skills dan workflow terkait. Laporkan manual activation; jangan mengklaim receipt MCP.
 5. Skill relevan: engineering-quality, modular-architecture, planning-and-delivery, architecture-and-contracts, shared-ui, verification-and-review, stack-guidance (.NET/WPF dan Python jika tersentuh), citadel-project. Baca seluruh active SKILL.md; jangan memuat archive SKILLS-ORIGINAL.
 6. Periksa `git status`, HEAD, diff, manifest, caller dan test target fase yang akan dikerjakan. Dirty worktree lain tetap utuh.
-7. `tasks/plan.md` dan `tasks/todo.md` memuat kontrak Add Profile serta smoke yang belum selesai. Baca ketika mengerjakan CamoProf; jangan overwrite atau menandainya selesai berdasarkan build. Plan baru ini hanya mengubah ownership, bukan mengganti kontrak terminal flow lama.
+7. `docs/work/camoprof-add-profile/PLAN.md` dan `docs/work/camoprof-add-profile/TODO.md` memuat kontrak Add Profile serta smoke yang belum selesai. Baca ketika mengerjakan CamoProf; jangan overwrite atau menandainya selesai berdasarkan build. Plan baru ini hanya mengubah ownership, bukan mengganti kontrak terminal flow lama.
 8. Setelah compaction: berhenti sebelum edit berikutnya; baca ulang skill aktif, dokumen ini beserta checkpoint terakhir, status/diff, dan owner/caller fase aktif. Ringkasan percakapan bukan pengganti source.
 
 Gunakan dokumen ini sebagai tracker tunggal pekerjaan ini. Tidak perlu membuat salinan plan/todo/ADR baru. Update checklist dan checkpoint singkat saat eksekusi.
@@ -349,7 +349,7 @@ Bukti privat: grep seluruh repo menunjukkan tidak ada consumer di luar fitur pem
 
 - LIVE VERIFICATION PENDING — build/test bukan bukti visual. Butuh WPF live dengan library disposable: scan sukses/empty/gagal/cancel → restart restore → buka chapter → pastikan History tercatat sebelum tab History dibuka → fetch/bake cover → refresh Library dan History serta konfirmasi cover BARU yang tampil, bukan cover lama.
 - P4–P6 tidak disentuh. P0 masih pending.
-- `.docs/PLAN-mangareader-downloader.md` ikut berubah di worktree selama P3 berjalan (reconcile Yuzskill bertanggal 2026-09-05, inspeksi HEAD `3158dee`), BUKAN oleh pekerjaan ini. Dibiarkan utuh sesuai batas "pertahankan perubahan user/agent lain".
+- `docs/history/2026/plans/mangareader-downloader.md` ikut berubah di worktree selama P3 berjalan (reconcile Yuzskill bertanggal 2026-09-05, inspeksi HEAD `3158dee`), BUKAN oleh pekerjaan ini. Dibiarkan utuh sesuai batas "pertahankan perubahan user/agent lain".
 - Worktree masih memuat perubahan P2 yang belum di-commit; keduanya dibiarkan tanpa commit sesuai instruksi.
 
 ### Checkpoint P4 — 2026-09-05
@@ -491,7 +491,7 @@ Perbandingan isi mengonfirmasi tidak ada perilaku unik yang hilang: Background/F
 
 **1. Review diff gabungan (31 file, +1712/−538).**
 
-- Semua perubahan source berada di subsistem yang direncanakan: `module/camoprof`, `module/mangareader`, `module/sharedLogic/cs/PyHost.cs`, `core/Citadel.Ui/Theme/ThemeResources.xaml`, `tests/`, `.docs/`. Diperiksa dengan `git diff --name-only ce578d5..HEAD` plus filter; tidak ada file di luar daftar itu.
+- Semua perubahan source berada di subsistem yang direncanakan: `module/camoprof`, `module/mangareader`, `module/sharedLogic/cs/PyHost.cs`, `core/Citadel.Ui/Theme/ThemeResources.xaml`, `tests/`, dan dokumentasi. Diperiksa dengan `git diff --name-only ce578d5..HEAD` plus filter; tidak ada file di luar daftar itu.
 - Kontrak antarfitur tersambung dan tidak ada implementasi ganda:
   - P1 — `module/sharedLogic/cs/` tidak memuat command Add Profile; satu-satunya penyebutan `camoprof_add_profile` adalah contoh di komentar `CITADEL_PYHOST_PLUGINS`, bukan command.
   - P2 — `_catalog.DeleteAsync`/`_credentials.DeleteAsync` hanya dipanggil `ProfileActionsFeature`; Launcher hanya memanggil `_profileActions.DeleteAsync`.
@@ -500,7 +500,7 @@ Perbandingan isi mengonfirmasi tidak ada perilaku unik yang hilang: Background/F
   - P5 — tidak ada implicit `ListBoxItem` style di `module/` sama sekali.
   - P6 — `ThemeResources.xaml` 0 occurrence kata yang dilarang invariant `ThemeResourcesTests`.
 - Tidak ada sisa diagnostik: 0 `Console.WriteLine`/`Debug.WriteLine`/`TODO`/`HACK`/`FIXME` di area yang diubah, dan tidak ada `.orig`/`.bak`/`.rej`/`*_wpftmp.csproj`.
-- **Perubahan di luar scope yang ikut ter-commit:** `.docs/PLAN-mangareader-downloader.md` (596 baris) masuk di `7cdc338` bersama P2/P3. Itu reconcile Yuzskill dari proses lain, hanya dokumen, bukan bagian P1–P6. Dicatat, tidak diubah, tidak diklaim sebagai pekerjaan ini.
+- **Perubahan di luar scope yang ikut ter-commit:** `docs/history/2026/plans/mangareader-downloader.md` (596 baris) masuk di `7cdc338` bersama P2/P3. Itu reconcile Yuzskill dari proses lain, hanya dokumen, bukan bagian P1–P6. Dicatat, tidak diubah, tidak diklaim sebagai pekerjaan ini.
 - Temuan unrelated, dicatat terpisah dan TIDAK dikerjakan: `module/camoprof/module.json` memiliki `"icon": ""` kosong. Ini valid — `Citadel.Searcher/Reader.cs` hanya mewajibkan `title`/`route`/`entry`/`type`, sedangkan `icon` opsional — dan file itu tidak disentuh P1–P6.
 
 **2. Build gabungan, deployment, dan deteksi citizen.**
@@ -535,4 +535,4 @@ Laporan akhir kepada user: ringkas perubahan ownership, kode redundant yang diha
 
 ## Prompt pembuka untuk agent pelaksana
 
-> Implementasikan `.docs/PLAN-ownership-shared-ui-2026-09-05.md` di `C:\VSCODE\citadel`. Aktifkan Yuzskill sendiri, baca goal/scope/kontrak dan source terbaru, lalu kerjakan urut P0-P6 dengan checkpoint di dokumen yang sama. Fokus mengurangi coupling dan duplikasi; jangan rewrite aplikasi, menambah framework/primitive tanpa izin, atau membuat test suite berlebihan. Baca Context7 hanya untuk API relevan dengan versi project. Setelah compaction bangun ulang context dari skill, plan, git diff, dan owner aktif sebelum melanjutkan. Pertahankan semua behavior/data/lifecycle existing. Jangan commit/push/release tanpa instruksi user. Laporkan validation aktual dan live verification yang belum dilakukan.
+> Implementasikan `docs/history/2026/plans/ownership-shared-ui.md` di `C:\VSCODE\citadel`. Aktifkan Yuzskill sendiri, baca goal/scope/kontrak dan source terbaru, lalu kerjakan urut P0-P6 dengan checkpoint di dokumen yang sama. Fokus mengurangi coupling dan duplikasi; jangan rewrite aplikasi, menambah framework/primitive tanpa izin, atau membuat test suite berlebihan. Baca Context7 hanya untuk API relevan dengan versi project. Setelah compaction bangun ulang context dari skill, plan, git diff, dan owner aktif sebelum melanjutkan. Pertahankan semua behavior/data/lifecycle existing. Jangan commit/push/release tanpa instruksi user. Laporkan validation aktual dan live verification yang belum dilakukan.

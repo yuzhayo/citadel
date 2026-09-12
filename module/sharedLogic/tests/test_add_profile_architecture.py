@@ -1,4 +1,4 @@
-r"""Architecture guards for the Add Profile ownership contract (tasks/plan.md).
+r"""Architecture guards for the Add Profile ownership contract (docs/work/camoprof-add-profile/PLAN.md).
 
 Dependency direction and containment, asserted by searching source —
 cheap, deterministic, and immune to refactors that rename symbols:

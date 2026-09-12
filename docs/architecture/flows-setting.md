@@ -2,7 +2,7 @@
 
 Ditulis 2026-09-11 dari kode. Klaim bertanda `file:baris`.
 Kontrak yang mengadili: `.agents/skills/citadel-shared-ui/SKILL.md` (SU-1..SU-5)
-dan `.docs/SHARED-UI-BEHAVIOR.md`.
+dan `docs/contracts/shared-ui-behavior.md`.
 
 **Temuan utama:** `setting/` adalah bagian citadel yang **paling patuh**. Nol nama
 module di dalamnya, nol kunci style ganda, dan tabel kepemilikan di

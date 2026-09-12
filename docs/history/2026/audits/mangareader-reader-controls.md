@@ -2,8 +2,8 @@
 
 Date: 2026-09-02  
 Scope: current uncommitted Reader/shared-component implementation  
-Contract: `.docs/PLAN-mangareader-reader-controls.md`  
-Repair plan: `.docs/PLAN-mangareader-reader-controls-repair.md`  
+Contract: `docs/history/2026/plans/mangareader-reader-controls.md`
+Repair plan: `docs/history/2026/plans/mangareader-reader-controls-repair.md`
 Verdict before repair: **FAIL**
 Verdict after repair: **PASS on available hardware; multi-monitor/high-DPI live
 coverage remains an explicitly reported hardware limitation**

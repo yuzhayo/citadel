@@ -1,6 +1,6 @@
 """State machine enrollment milik fitur Add Profile (camoprof).
 
-Adapter tipis di atas blok generik yang sudah ada (kontrak tasks/plan.md):
+Adapter tipis di atas blok generik yang sudah ada (kontrak docs/work/camoprof-add-profile/PLAN.md):
 
 - TIDAK ada lease/claim/rotasi. Page enrollment E dibuat biasa
   (ctx.new_page — pola yang terbukti), listener dipasang di E SEBELUM

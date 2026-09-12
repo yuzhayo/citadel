@@ -15,7 +15,7 @@ Read the relevant current files before proposing or editing UI:
 
 1. `setting/Components/` for shared controls and each control's behavior pair.
 2. `setting/SettingResources.xaml` for shared styles, tokens, and templates.
-3. `.docs/SHARED-UI-BEHAVIOR.md` for the documented behavior contract.
+3. `docs/contracts/shared-ui-behavior.md` for the documented behavior contract.
 4. The owning module's current view, feature contract, plan, and tests.
 
 Search by behavior and visual role, not only by the requested label. Confirm
