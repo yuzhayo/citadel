@@ -30,6 +30,9 @@ public sealed class DownloaderPyHostClient : IDisposable
     /// <summary>Camoufox bootstrap and first navigation.</summary>
     public static readonly TimeSpan BootstrapTimeout = TimeSpan.FromSeconds(120);
 
+    /// <summary>Maximum initial navigation wait for one proxied browser attempt.</summary>
+    public static readonly TimeSpan ProxyConnectTimeout = TimeSpan.FromSeconds(5);
+
     /// <summary>Catalog, detail, lookup, manifest, and browser fallback.</summary>
     public static readonly TimeSpan ApiTimeout = TimeSpan.FromSeconds(45);
 
@@ -463,7 +466,11 @@ public sealed class DownloaderPyHostClient : IDisposable
                 ["headless"] = headless,
                 ["timeout_ms"] = (int)BootstrapTimeout.TotalMilliseconds,
             };
-            if (lease is not null) parameters["proxy"] = lease.ToLaunchOptions().ToJson();
+            if (lease is not null)
+            {
+                parameters["proxy"] = lease.ToLaunchOptions().ToJson();
+                parameters["connect_timeout_ms"] = (int)ProxyConnectTimeout.TotalMilliseconds;
+            }
             if (_profileIdentity is not null) parameters["profile_identity"] = _profileIdentity;
 
             try

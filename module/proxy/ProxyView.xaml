@@ -15,6 +15,9 @@
         <TabItem x:Name="SyncPanel" Header="Sync">
             <ContentControl x:Name="SyncHost" />
         </TabItem>
+        <TabItem x:Name="WebsharePanel" Header="Webshare">
+            <ContentControl x:Name="WebshareHost" />
+        </TabItem>
         <TabItem x:Name="SettingsPanel" Header="Settings">
             <ContentControl x:Name="SettingsHost" />
         </TabItem>

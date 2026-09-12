@@ -28,6 +28,8 @@ internal sealed class ProxyPoolAdapter(string lane, string? poolPath = null)
     private readonly string _poolPath = poolPath ?? ProxyPoolContract.ActivePoolPath;
     private readonly object _gate = new();
     private ProxyPoolSnapshot _snapshot = new([], long.MinValue, 0);
+    private ProxyHealthSnapshot _health = ProxyHealthSnapshot.Empty;
+    private long _healthRevision = long.MinValue;
     private readonly HashSet<string> _quarantine = new(StringComparer.Ordinal);
     private int _browserCursor;
     private int _httpCursor;
@@ -49,8 +51,29 @@ internal sealed class ProxyPoolAdapter(string lane, string? poolPath = null)
         {
             ReloadIfChanged();
             var schemes = target == ProxyTarget.Browser ? BrowserSchemes : HttpSchemes;
-            return _snapshot.Endpoints.Where(item => schemes.Contains(item.Scheme))
+            return OrderByHealth(_snapshot.Endpoints.Where(item => schemes.Contains(item.Scheme)))
+                .Where(item => HealthRank(item) < 2)
                 .DistinctBy(ProxyLeaseRegistry.Key).ToArray();
+        }
+    }
+
+    /// <summary>
+    /// Snapshot for a bounded parallel lane. Unlike <see cref="Candidates"/>,
+    /// quarantined endpoints are excluded before the reservation registry
+    /// assigns a worker, so a retry cannot immediately reclaim a known-bad
+    /// proxy.
+    /// </summary>
+    internal IReadOnlyList<ProxyEndpoint> AvailableCandidates(ProxyTarget target)
+    {
+        lock (_gate)
+        {
+            ReloadIfChanged();
+            var schemes = target == ProxyTarget.Browser ? BrowserSchemes : HttpSchemes;
+            return OrderByHealth(_snapshot.Endpoints
+                .Where(item => schemes.Contains(item.Scheme) && !_quarantine.Contains(item.Canonical)))
+                .Where(item => HealthRank(item) < 2)
+                .DistinctBy(ProxyLeaseRegistry.Key)
+                .ToArray();
         }
     }
 
@@ -68,7 +91,9 @@ internal sealed class ProxyPoolAdapter(string lane, string? poolPath = null)
             }
 
             var schemes = target == ProxyTarget.Browser ? BrowserSchemes : HttpSchemes;
-            var compatible = _snapshot.Endpoints.Where(item => schemes.Contains(item.Scheme)).ToArray();
+            var compatible = OrderByHealth(_snapshot.Endpoints.Where(item => schemes.Contains(item.Scheme)))
+                .Where(item => HealthRank(item) < 2)
+                .ToArray();
             if (compatible.Length == 0)
             {
                 throw Error("PROXY_POOL_INCOMPATIBLE", $"no {target.ToString().ToLowerInvariant()}-compatible endpoint");
@@ -97,12 +122,42 @@ internal sealed class ProxyPoolAdapter(string lane, string? poolPath = null)
     private void ReloadIfChanged()
     {
         var revision = File.Exists(_poolPath) ? File.GetLastWriteTimeUtc(_poolPath).Ticks : 0;
-        if (revision == _snapshot.Revision) return;
-        _snapshot = ProxyPoolContract.ReadSnapshot(_poolPath);
-        _quarantine.RemoveWhere(value => _snapshot.Endpoints.All(item => item.Canonical != value));
-        _browserCursor = 0;
-        _httpCursor = 0;
+        var healthPath = ProxyPoolHealthContract.HealthPathFor(_poolPath);
+        var healthRevision = File.Exists(healthPath) ? File.GetLastWriteTimeUtc(healthPath).Ticks : 0;
+        if (revision == _snapshot.Revision && healthRevision == _healthRevision) return;
+        if (revision != _snapshot.Revision)
+        {
+            _snapshot = ProxyPoolContract.ReadSnapshot(_poolPath);
+            _quarantine.RemoveWhere(value => _snapshot.Endpoints.All(item => item.Canonical != value));
+            _browserCursor = 0;
+            _httpCursor = 0;
+        }
+        if (healthRevision != _healthRevision)
+        {
+            _health = ProxyPoolHealthContract.ReadSnapshot(healthPath);
+            _healthRevision = healthRevision;
+        }
     }
+
+    private IEnumerable<ProxyEndpoint> OrderByHealth(IEnumerable<ProxyEndpoint> endpoints) =>
+        endpoints.OrderBy(endpoint => HealthRank(endpoint))
+            .ThenBy(endpoint => HealthLatency(endpoint))
+            .ThenBy(endpoint => endpoint.Canonical, StringComparer.Ordinal);
+
+    private int HealthRank(ProxyEndpoint endpoint) =>
+        _health.Entries.TryGetValue(ProxyPoolHealthContract.EndpointKey(endpoint), out var health)
+            ? health.State switch
+            {
+                ProxyHealthState.Healthy => 0,
+                ProxyHealthState.Unknown => 1,
+                _ => 2,
+            }
+            : 1;
+
+    private long HealthLatency(ProxyEndpoint endpoint) =>
+        _health.Entries.TryGetValue(ProxyPoolHealthContract.EndpointKey(endpoint), out var health)
+            ? health.LatencyMilliseconds ?? long.MaxValue
+            : long.MaxValue;
 
     private ProxyPoolException Error(string code, string detail) =>
         new(code, $"{_lane} proxy mode: {detail}.");

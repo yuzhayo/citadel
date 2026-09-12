@@ -75,7 +75,7 @@ internal sealed class ProxySyncCoordinator(
             }
             else
             {
-                _poolStore.Commit(result.Reachable);
+                _poolStore.Commit(result.Reachable, result.Health);
                 PoolCommitted?.Invoke(this, EventArgs.Empty);
                 terminal = new ProxySyncState(
                     false,

@@ -176,12 +176,17 @@ public partial class DownloadListScreen : UserControl, IDisposable
             return;
         }
 
-        var folder = Path.GetDirectoryName(path);
-        if (string.IsNullOrEmpty(folder)) return;
-
         try
         {
-            Process.Start(new ProcessStartInfo("explorer.exe", folder) { UseShellExecute = true });
+            // Explorer's plain directory argument is not reliable when a path
+            // contains spaces: it may fall back to Documents. Selecting the
+            // published CBZ resolves its parent folder and makes the chapter
+            // the visible target in the same action.
+            Process.Start(new ProcessStartInfo("explorer.exe",
+                "/select,\"" + path.Replace("\"", string.Empty, StringComparison.Ordinal) + "\"")
+            {
+                UseShellExecute = true,
+            });
         }
         catch (Exception exception)
         {

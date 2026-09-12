@@ -2,6 +2,7 @@ using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
+using System.Windows.Threading;
 using Citadel.Core;
 using Citadel.Core.Crl;
 using Citadel.Core.Modules;
@@ -31,6 +32,8 @@ public partial class MainWindow : Window
     private readonly Lifetime _lifetime;
     private readonly ISettingHost? _settingHost;
     private readonly AnimationManager _animations;
+    private readonly WindowPlacementStore? _placementStore;
+    private readonly DispatcherTimer? _placementSaveTimer;
     private Rect? _startupWorkArea;
 
     private readonly Dictionary<string, BuiltInRoute> _builtInRoutes;
@@ -41,13 +44,15 @@ public partial class MainWindow : Window
         AnimationManager animations,
         Lifetime lifetime,
         IReadOnlyDictionary<string, BuiltInRoute> builtInRoutes,
-        ISettingHost? settingHost = null)
+        ISettingHost? settingHost = null,
+        WindowPlacementStore? placementStore = null)
     {
         _tokens = tokens ?? throw new ArgumentNullException(nameof(tokens));
         _gate = gate ?? throw new ArgumentNullException(nameof(gate));
         _animations = animations ?? throw new ArgumentNullException(nameof(animations));
         _lifetime = lifetime ?? throw new ArgumentNullException(nameof(lifetime));
         _settingHost = settingHost;
+        _placementStore = placementStore;
         ArgumentNullException.ThrowIfNull(builtInRoutes);
         _builtInRoutes = builtInRoutes.ToDictionary(
             pair => pair.Key,
@@ -59,6 +64,25 @@ public partial class MainWindow : Window
         Resources.MergedDictionaries.Insert(0, themeResources);
 
         InitializeComponent();
+
+        if (_placementStore is not null)
+        {
+            _placementSaveTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(400) };
+            _placementSaveTimer.Tick += PlacementSaveTimer_Tick;
+            LocationChanged += WindowGeometryChanged;
+            SizeChanged += WindowGeometryChanged;
+            StateChanged += WindowGeometryChanged;
+            Closing += MainWindow_Closing;
+            lifetime.Add(() =>
+            {
+                _placementSaveTimer.Stop();
+                _placementSaveTimer.Tick -= PlacementSaveTimer_Tick;
+                LocationChanged -= WindowGeometryChanged;
+                SizeChanged -= WindowGeometryChanged;
+                StateChanged -= WindowGeometryChanged;
+                Closing -= MainWindow_Closing;
+            });
+        }
 
         ApplyWindowTokens();
         tokens.TokensChanged += ApplyWindowTokens;
@@ -158,6 +182,15 @@ public partial class MainWindow : Window
             new WpfSize(_tokens.Number("WindowMinW"), _tokens.Number("WindowMinH")),
             workArea);
 
+        var saved = _placementStore?.TryLoad();
+        if (saved is not null)
+        {
+            bounds = WindowBoundsPolicy.ClampSaved(
+                saved.Bounds,
+                new WpfSize(_tokens.Number("WindowMinW"), _tokens.Number("WindowMinH")),
+                workArea);
+        }
+
         _startupWorkArea = workArea;
         MinWidth = Math.Min(_tokens.Number("WindowMinW"), workArea.Width);
         MinHeight = Math.Min(_tokens.Number("WindowMinH"), workArea.Height);
@@ -165,6 +198,7 @@ public partial class MainWindow : Window
         Top = bounds.Top;
         Width = bounds.Width;
         Height = bounds.Height;
+        if (saved?.IsMaximized == true) WindowState = WindowState.Maximized;
     }
 
     private static (double X, double Y) MonitorDpi(
@@ -224,6 +258,36 @@ public partial class MainWindow : Window
 
         void OnWindowStateChanged(object? sender, EventArgs args) => Refresh();
         void OnWindowVisibilityChanged(object sender, DependencyPropertyChangedEventArgs args) => Refresh();
+    }
+
+    private void WindowGeometryChanged(object? sender, EventArgs e)
+    {
+        if (_placementSaveTimer is null || !IsLoaded) return;
+        _placementSaveTimer.Stop();
+        _placementSaveTimer.Start();
+    }
+
+    private void PlacementSaveTimer_Tick(object? sender, EventArgs e)
+    {
+        _placementSaveTimer?.Stop();
+        SaveWindowPlacement();
+    }
+
+    private void MainWindow_Closing(object? sender, System.ComponentModel.CancelEventArgs e) => SaveWindowPlacement();
+
+    private void SaveWindowPlacement()
+    {
+        if (_placementStore is null || !IsLoaded) return;
+        try
+        {
+            var bounds = WindowState == WindowState.Maximized ? RestoreBounds : new Rect(Left, Top, Width, Height);
+            if (bounds.Width <= 0 || bounds.Height <= 0) return;
+            _placementStore.Save(new WindowPlacement(bounds, WindowState == WindowState.Maximized));
+        }
+        catch (Exception exception)
+        {
+            Log.Main("[Shell] window placement save failed: " + exception.Message);
+        }
     }
 
     private void OnRouteSelected(string route) => Router.Navigate(route);

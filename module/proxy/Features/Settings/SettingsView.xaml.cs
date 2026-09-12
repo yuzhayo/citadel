@@ -22,10 +22,10 @@ public partial class SettingsView : UserControl
         try
         {
             var settings = new ProxySettings(
-                Parse(TargetField.Text, "Target usable entries"),
                 Parse(SourceTimeoutField.Text, "Source timeout"),
                 Parse(TcpTimeoutField.Text, "Proxy validation timeout"),
-                Parse(ParallelField.Text, "Parallel TCP checks"));
+                Parse(ParallelField.Text, "Parallel TCP checks"),
+                (WebshareConnectionModeBox.SelectedItem as ComboBoxItem)?.Tag?.ToString() ?? "backbone");
             var saved = _store.Save(settings);
             Render(saved);
             SetStatus("Settings saved.");
@@ -51,10 +51,10 @@ public partial class SettingsView : UserControl
 
     private void Render(ProxySettings settings)
     {
-        TargetField.Text = settings.TargetUsableEntries.ToString(CultureInfo.InvariantCulture);
         SourceTimeoutField.Text = settings.SourceRequestTimeoutSeconds.ToString(CultureInfo.InvariantCulture);
         TcpTimeoutField.Text = settings.ProxyValidationTimeoutSeconds.ToString(CultureInfo.InvariantCulture);
         ParallelField.Text = settings.ParallelTcpChecks.ToString(CultureInfo.InvariantCulture);
+        WebshareConnectionModeBox.SelectedIndex = settings.WebshareConnectionMode == "direct" ? 1 : 0;
     }
 
     private static int Parse(string value, string label) =>

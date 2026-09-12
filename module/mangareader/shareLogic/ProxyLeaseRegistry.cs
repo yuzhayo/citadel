@@ -2,7 +2,7 @@ using CitadelBridge;
 
 namespace Module.Mangareader.ShareLogic;
 
-internal sealed record ProxyUsage(string Server, string Owner);
+internal sealed record ProxyUsage(string EndpointKey, string Owner);
 
 /// <summary>One lane's atomic, FIFO reservations. Credentials never enter snapshots.</summary>
 internal sealed class ProxyLeaseRegistry
@@ -11,7 +11,13 @@ internal sealed class ProxyLeaseRegistry
     private readonly Dictionary<string, ProxyReservation> _busy = new(StringComparer.OrdinalIgnoreCase);
     private readonly List<Waiter> _waiting = [];
 
-    internal static string Key(ProxyEndpoint endpoint) => endpoint.Server.ToLowerInvariant();
+    /// <summary>
+    /// An opaque identity for one authenticated endpoint. Server alone is not
+    /// enough: pool providers can expose independent routes at the same server
+    /// under different account credentials. The raw canonical value is never
+    /// exposed through snapshots or UI.
+    /// </summary>
+    internal static string Key(ProxyEndpoint endpoint) => ProxyPoolHealthContract.EndpointKey(endpoint);
 
     public IReadOnlyList<ProxyUsage> Snapshot()
     {

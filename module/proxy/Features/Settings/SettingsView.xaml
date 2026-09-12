@@ -35,17 +35,32 @@
                     <RowDefinition Height="Auto" />
                     <RowDefinition Height="Auto" />
                     <RowDefinition Height="Auto" />
-                    <RowDefinition Height="Auto" />
                 </Grid.RowDefinitions>
-                <TextBlock Grid.Row="0" Text="Target usable entries" VerticalAlignment="Center" />
-                <setting:SettingField x:Name="TargetField" Grid.Row="0" Grid.Column="1" />
-                <TextBlock Grid.Row="1" Margin="0,8,0,0" Text="Source timeout (seconds)" VerticalAlignment="Center" />
-                <setting:SettingField x:Name="SourceTimeoutField" Grid.Row="1" Grid.Column="1" Margin="0,8,0,0" />
-                <TextBlock Grid.Row="2" Margin="0,8,0,0" Text="Proxy validation timeout (seconds)" VerticalAlignment="Center" />
-                <setting:SettingField x:Name="TcpTimeoutField" Grid.Row="2" Grid.Column="1" Margin="0,8,0,0" />
-                <TextBlock Grid.Row="3" Margin="0,8,0,0" Text="Parallel TCP checks" VerticalAlignment="Center" />
-                <setting:SettingField x:Name="ParallelField" Grid.Row="3" Grid.Column="1" Margin="0,8,0,0" />
+                <TextBlock Grid.Row="0" Text="Source timeout (seconds)" VerticalAlignment="Center" />
+                <setting:SettingField x:Name="SourceTimeoutField" Grid.Row="0" Grid.Column="1" />
+                <TextBlock Grid.Row="1" Margin="0,8,0,0" Text="Proxy validation timeout (seconds)" VerticalAlignment="Center" />
+                <setting:SettingField x:Name="TcpTimeoutField" Grid.Row="1" Grid.Column="1" Margin="0,8,0,0" />
+                <TextBlock Grid.Row="2" Margin="0,8,0,0" Text="Parallel TCP checks" VerticalAlignment="Center" />
+                <setting:SettingField x:Name="ParallelField" Grid.Row="2" Grid.Column="1" Margin="0,8,0,0" />
             </Grid>
+
+            <setting:SettingActionCard Margin="0,12,0,0">
+                <StackPanel>
+                    <TextBlock Text="Webshare" FontWeight="SemiBold" />
+                    <TextBlock Margin="0,4,0,0"
+                               Foreground="{DynamicResource Body}"
+                               Text="The Webshare tab stores API keys separately in Credenz and imports this connection mode."
+                               TextWrapping="Wrap" />
+                </StackPanel>
+                <setting:SettingActionCard.ActionContent>
+                    <ComboBox x:Name="WebshareConnectionModeBox"
+                              Width="150"
+                              Style="{DynamicResource SettingComboBoxStyle}">
+                        <ComboBoxItem Content="Backbone" Tag="backbone" />
+                        <ComboBoxItem Content="Direct" Tag="direct" />
+                    </ComboBox>
+                </setting:SettingActionCard.ActionContent>
+            </setting:SettingActionCard>
         </StackPanel>
     </setting:SettingViewport>
 </UserControl>

@@ -131,10 +131,14 @@ public partial class LibraryView : UserControl, IDisposable
 
     private async void BrowseButton_Click(object sender, RoutedEventArgs e)
     {
+        var currentLibrary = LibraryPath.Text.Trim();
         var dialog = new OpenFolderDialog
         {
             Title = "Choose manga library folder",
             Multiselect = false,
+            // Browse is a change-of-root action. When the current root still
+            // exists, start there instead of the system's last/default folder.
+            InitialDirectory = Directory.Exists(currentLibrary) ? currentLibrary : string.Empty,
         };
 
         var owner = Window.GetWindow(this);

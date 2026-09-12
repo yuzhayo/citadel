@@ -89,6 +89,14 @@ public sealed record RemoteTitleSummary(
     string? LatestChapterLabel)
 {
     /// <summary>
+    /// Headers the owning provider requires when its poster is fetched. A card
+    /// loader transports these unchanged; it never guesses a referer from the
+    /// image host or borrows browser cookies from an unrelated session.
+    /// </summary>
+    public IReadOnlyDictionary<string, string> CoverRequestHeaders { get; init; } =
+        new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>
     /// Provider-owned alternatives for the same cover, tried only when the
     /// primary URL cannot be fetched or decoded. Existing providers keep the
     /// empty default and therefore retain their single-request behavior.

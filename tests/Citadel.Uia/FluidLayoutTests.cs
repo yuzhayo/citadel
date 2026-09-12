@@ -223,6 +223,18 @@ public class FluidLayoutTests
         Assert.Equal(new Rect(-1280, 0, 1280, 720), dips);
     }
 
+    [Fact]
+    public void SavedBounds_AreKeptOrClampedInsideTheCurrentWorkArea()
+    {
+        var preserved = WindowBoundsPolicy.ClampSaved(
+            new Rect(120, 80, 1180, 900), new Size(900, 560), new Rect(0, 0, 1920, 1040));
+        var movedMonitor = WindowBoundsPolicy.ClampSaved(
+            new Rect(3000, 1200, 2000, 1400), new Size(900, 560), new Rect(-1280, 0, 1024, 700));
+
+        Assert.Equal(new Rect(120, 80, 1180, 900), preserved);
+        Assert.Equal(new Rect(-1280, 0, 1024, 700), movedMonitor);
+    }
+
     private static T WithResources<T>(T element) where T : FrameworkElement
     {
         element.Resources.MergedDictionaries.Add(new SettingResources());

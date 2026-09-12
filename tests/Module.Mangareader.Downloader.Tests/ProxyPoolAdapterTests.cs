@@ -56,6 +56,27 @@ public sealed class ProxyPoolAdapterTests : IDisposable
         Assert.Equal("PROXY_POOL_EMPTY", error.Code);
     }
 
+    [Fact]
+    public void ProxyMode_PrefersHealthyLowestLatencyBeforeRoundRobin()
+    {
+        WritePool("http://slow.test:80", "http://fast.test:81", "http://failed.test:82");
+        var endpoints = ProxyPoolContract.ReadSnapshot(PoolPath).Endpoints;
+        var records = endpoints.Select(endpoint => new ProxyHealthRecord(
+            ProxyPoolHealthContract.EndpointKey(endpoint),
+            endpoint.Host == "failed.test" ? ProxyHealthState.Unreachable : ProxyHealthState.Healthy,
+            endpoint.Host == "fast.test" ? 20 : endpoint.Host == "slow.test" ? 200 : null,
+            DateTimeOffset.UtcNow,
+            endpoint.Host == "failed.test" ? "Timeout" : "OK"));
+        File.WriteAllText(ProxyPoolHealthContract.HealthPathFor(PoolPath), ProxyPoolHealthContract.Serialize(records));
+
+        var adapter = new ProxyPoolAdapter("Downloader", PoolPath) { Enabled = true };
+
+        var fast = adapter.Acquire(ProxyTarget.Http)!;
+        Assert.Equal("fast.test", fast.Endpoint.Host);
+        adapter.ReportFailure(fast);
+        Assert.Equal("slow.test", adapter.Acquire(ProxyTarget.Http)!.Endpoint.Host);
+    }
+
     public void Dispose()
     {
         if (Directory.Exists(_root)) Directory.Delete(_root, recursive: true);

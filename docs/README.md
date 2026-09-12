@@ -31,7 +31,8 @@ dotnet build module/blank/Module.Blank.csproj
 ```
 
 See [operations/release.md](operations/release.md) for installer, GitHub release,
-and in-app update details.
+in-app update details, and [operations/handoff.md](operations/handoff.md) for the
+current operational baseline.
 
 ## Documentation map
 

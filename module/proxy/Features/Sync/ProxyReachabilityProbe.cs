@@ -1,22 +1,34 @@
 using System.Net;
 using System.Net.Http;
+using System.Diagnostics;
 using CitadelBridge;
 
 namespace Module.Proxy.Features.Sync;
 
 internal interface IProxyReachabilityProbe
 {
-    Task<bool> IsReachableAsync(
+    Task<ProxyProbeResult> ProbeAsync(
         ProxyEndpoint endpoint,
         TimeSpan timeout,
         CancellationToken cancellationToken);
+}
+
+internal sealed record ProxyProbeResult(bool IsHealthy, long? LatencyMilliseconds, string Detail)
+{
+    public ProxyHealthRecord ToHealthRecord(ProxyEndpoint endpoint, DateTimeOffset checkedAtUtc) =>
+        new(
+            ProxyPoolHealthContract.EndpointKey(endpoint),
+            IsHealthy ? ProxyHealthState.Healthy : ProxyHealthState.Unreachable,
+            LatencyMilliseconds,
+            checkedAtUtc,
+            Detail);
 }
 
 internal sealed class ProxyReachabilityProbe : IProxyReachabilityProbe
 {
     private static readonly Uri ProbeUri = new("https://example.com/", UriKind.Absolute);
 
-    public async Task<bool> IsReachableAsync(
+    public async Task<ProxyProbeResult> ProbeAsync(
         ProxyEndpoint endpoint,
         TimeSpan timeout,
         CancellationToken cancellationToken)
@@ -43,6 +55,7 @@ internal sealed class ProxyReachabilityProbe : IProxyReachabilityProbe
         };
         using var timeoutCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         timeoutCancellation.CancelAfter(timeout);
+        var stopwatch = Stopwatch.StartNew();
         try
         {
             using var request = new HttpRequestMessage(HttpMethod.Get, ProbeUri);
@@ -51,15 +64,22 @@ internal sealed class ProxyReachabilityProbe : IProxyReachabilityProbe
                 request,
                 HttpCompletionOption.ResponseHeadersRead,
                 timeoutCancellation.Token).ConfigureAwait(false);
-            return response.IsSuccessStatusCode;
+            stopwatch.Stop();
+            return response.IsSuccessStatusCode
+                ? new ProxyProbeResult(true, Math.Max(1, (long)stopwatch.Elapsed.TotalMilliseconds), "OK")
+                : new ProxyProbeResult(false, Math.Max(1, (long)stopwatch.Elapsed.TotalMilliseconds), $"HTTP {(int)response.StatusCode}");
         }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
         {
-            return false;
+            return new ProxyProbeResult(false, null, "Timeout");
         }
         catch (HttpRequestException)
         {
-            return false;
+            return new ProxyProbeResult(false, null, "Transport failure");
+        }
+        catch (Exception)
+        {
+            return new ProxyProbeResult(false, null, "Probe failure");
         }
     }
 }

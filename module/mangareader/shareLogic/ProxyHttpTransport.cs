@@ -13,6 +13,10 @@ namespace Module.Mangareader.ShareLogic;
 internal sealed class ProxyHttpTransport(ProxyPoolAdapter pool) : IDisposable
 {
     private const int MaxProxyGetAttempts = 3;
+    // Cover hosts can reject one proxy without that proxy being unusable for
+    // chapter traffic. A cover therefore gets a bounded turn on every HTTP
+    // endpoint before a retry cycle begins; it never writes to lane quarantine.
+    private const int MaxCoverAttemptsPerProxy = 4;
     private static readonly HttpRequestOptionsKey<ProxyLease> LeaseOption =
         new("Citadel.MangaReader.ProxyLease");
 
@@ -139,6 +143,143 @@ internal sealed class ProxyHttpTransport(ProxyPoolAdapter pool) : IDisposable
         throw lastFailure ?? new HttpRequestException($"{owner}: proxy GET failed without an error.");
     }
 
+    /// <summary>
+    /// Fetches a provider-owned image through a unique pool reservation. Every
+    /// concurrent caller receives a different healthy endpoint; callers beyond
+    /// the pool size wait instead of sharing one proxy concurrently. Provider
+    /// headers remain request-local and direct mode remains one request.
+    /// </summary>
+    internal async Task<byte[]> GetByteArrayWithHeadersAsync(
+        string owner,
+        HttpClient directClient,
+        string url,
+        IReadOnlyDictionary<string, string> headers,
+        CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(owner);
+        ArgumentNullException.ThrowIfNull(directClient);
+        ArgumentException.ThrowIfNullOrWhiteSpace(url);
+        ArgumentNullException.ThrowIfNull(headers);
+
+        if (!_pool.IsProxyMode)
+        {
+            using var request = CreateCoverRequest(url, headers);
+            using var response = await directClient.SendAsync(
+                request, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
+            response.EnsureSuccessStatusCode();
+            return await response.Content.ReadAsByteArrayAsync(cancellationToken).ConfigureAwait(false);
+        }
+
+        // A cycle gives every endpoint at most four attempts. On retryable
+        // failures the cycle restarts, so a slow CDN route can recover without
+        // permanently excluding the endpoint from Downloader's other lanes.
+        while (true)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var candidates = _pool.Candidates(ProxyTarget.Http);
+            if (candidates.Count == 0)
+                throw new ProxyPoolException("PROXY_POOL_INCOMPATIBLE", "no HTTP-compatible endpoint for cover requests");
+
+            var attemptsByEndpoint = new Dictionary<string, int>(StringComparer.Ordinal);
+            Exception? lastFailure = null;
+            while (true)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                var candidateOrder = candidates
+                    // Endpoints not yet tried are deliberately first, so one
+                    // bad cover response rotates before any endpoint repeats.
+                    .Where(endpoint => attemptsByEndpoint.GetValueOrDefault(ProxyLeaseRegistry.Key(endpoint))
+                        < MaxCoverAttemptsPerProxy)
+                    .OrderBy(endpoint => attemptsByEndpoint.GetValueOrDefault(ProxyLeaseRegistry.Key(endpoint)))
+                    .ThenBy(endpoint => endpoint.Canonical, StringComparer.Ordinal)
+                    .ToArray();
+                if (candidateOrder.Length == 0) break;
+
+                using var request = CreateCoverRequest(url, headers);
+                try
+                {
+                    using var response = await SendWithDistinctProxyAsync(
+                        owner,
+                        directClient,
+                        request,
+                        HttpCompletionOption.ResponseHeadersRead,
+                        candidateOrder,
+                        quarantineOnTransportFailure: false,
+                        cancellationToken: cancellationToken).ConfigureAwait(false);
+                    response.EnsureSuccessStatusCode();
+                    return await response.Content.ReadAsByteArrayAsync(cancellationToken).ConfigureAwait(false);
+                }
+                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                {
+                    throw;
+                }
+                catch (Exception ex) when (IsRetryableCoverFailure(ex))
+                {
+                    lastFailure = ex;
+                    if (request.Options.TryGetValue(LeaseOption, out var lease))
+                    {
+                        var endpointKey = ProxyLeaseRegistry.Key(lease.Endpoint);
+                        attemptsByEndpoint[endpointKey] = attemptsByEndpoint.GetValueOrDefault(endpointKey) + 1;
+                    }
+                    else
+                    {
+                        throw;
+                    }
+                }
+            }
+
+            if (lastFailure is null)
+                throw new HttpRequestException($"{owner}: cover request ended without an attempt.");
+        }
+    }
+
+    private async Task<HttpResponseMessage> SendWithDistinctProxyAsync(
+        string owner,
+        HttpClient directClient,
+        HttpRequestMessage request,
+        HttpCompletionOption completion,
+        IReadOnlyList<ProxyEndpoint>? candidates,
+        bool quarantineOnTransportFailure,
+        CancellationToken cancellationToken)
+    {
+        if (!_pool.IsProxyMode)
+        {
+            return await directClient.SendAsync(request, completion, cancellationToken).ConfigureAwait(false);
+        }
+
+        candidates ??= _pool.AvailableCandidates(ProxyTarget.Http);
+        var reservation = await _pool.Reservations.ReserveAsync(owner, candidates, cancellationToken)
+            .ConfigureAwait(false);
+        var lease = reservation.Lease;
+        CopyDefaultHeaders(directClient, request);
+        request.Options.Set(LeaseOption, lease);
+        var key = owner + "\n" + lease.Endpoint.Canonical;
+        var client = _clients.GetOrAdd(key, _ => CreateProxyClient(lease.Endpoint, directClient.Timeout));
+        try
+        {
+            var response = await client.SendAsync(request, completion, cancellationToken).ConfigureAwait(false);
+            response.Content = new ReservedContent(response.Content, reservation);
+            return response;
+        }
+        catch (HttpRequestException)
+        {
+            reservation.Dispose();
+            if (quarantineOnTransportFailure) _pool.ReportFailure(lease);
+            throw;
+        }
+        catch (TaskCanceledException) when (!cancellationToken.IsCancellationRequested)
+        {
+            reservation.Dispose();
+            if (quarantineOnTransportFailure) _pool.ReportFailure(lease);
+            throw;
+        }
+        catch
+        {
+            reservation.Dispose();
+            throw;
+        }
+    }
+
     public void Dispose()
     {
         if (Interlocked.Exchange(ref _disposed, 1) != 0) return;
@@ -194,6 +335,34 @@ internal sealed class ProxyHttpTransport(ProxyPoolAdapter pool) : IDisposable
     private static bool IsRetryableGetFailure(Exception error) =>
         error is HttpRequestException or TimeoutException
         || error is TaskCanceledException;
+
+    private static bool IsRetryableCoverFailure(Exception error)
+    {
+        if (error is TimeoutException or TaskCanceledException) return true;
+        if (error is not HttpRequestException { StatusCode: { } status })
+        {
+            return error is HttpRequestException;
+        }
+
+        return ShouldQuarantineCoverResponse(status);
+    }
+
+    private static bool ShouldQuarantineCoverResponse(HttpStatusCode status) =>
+        status is HttpStatusCode.Forbidden
+            or HttpStatusCode.RequestTimeout
+            or HttpStatusCode.TooManyRequests
+            || (int)status >= 500;
+
+    private static HttpRequestMessage CreateCoverRequest(
+        string url, IReadOnlyDictionary<string, string> headers)
+    {
+        var request = new HttpRequestMessage(HttpMethod.Get, url);
+        foreach (var (name, value) in headers)
+        {
+            request.Headers.TryAddWithoutValidation(name, value);
+        }
+        return request;
+    }
 
     private static void CopyDefaultHeaders(HttpClient source, HttpRequestMessage request)
     {

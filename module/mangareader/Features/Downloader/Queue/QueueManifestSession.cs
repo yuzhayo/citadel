@@ -34,7 +34,7 @@ internal sealed class QueueManifestSession(
             var eligible = _candidates.Where(item => !attempted.Contains(ProxyLeaseRegistry.Key(item))
                 && !_failed.Contains(ProxyLeaseRegistry.Key(item)))
                 .Where(item => !pool.Reservations.Snapshot().Any(usage => usage.Owner == "downloader-browser"
-                    && usage.Server == ProxyLeaseRegistry.Key(item))).ToArray();
+                    && usage.EndpointKey == ProxyLeaseRegistry.Key(item))).ToArray();
             if (eligible.Length == 0) break;
             status("Independent manifest: waiting for proxy");
             using var reservation = await pool.Reservations.ReserveAsync(

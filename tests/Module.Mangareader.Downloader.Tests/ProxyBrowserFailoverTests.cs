@@ -17,16 +17,22 @@ public sealed class ProxyBrowserFailoverTests : IDisposable
     {
         var adapter = CreatePool("Downloader");
         var attempts = new List<string>();
+        var connectTimeouts = new List<int>();
         using var client = new DownloaderPyHostClient(
             Path.Combine(_root, "downloader"),
             adapter,
-            (payload, _) => OpenOnThirdAttempt(payload, attempts));
+            (payload, _) =>
+            {
+                connectTimeouts.Add(payload["connect_timeout_ms"]!.GetValue<int>());
+                return OpenOnThirdAttempt(payload, attempts);
+            });
 
         var session = await client.EnsureSessionAsync(
             "comix", "https://comix.ws/browse", true, CancellationToken.None);
 
         Assert.Equal("s3", session);
         AssertThreeDistinctAttempts(attempts);
+        Assert.All(connectTimeouts, value => Assert.Equal(5000, value));
     }
 
     [Fact]

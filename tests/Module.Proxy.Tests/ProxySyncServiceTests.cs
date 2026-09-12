@@ -18,17 +18,17 @@ public sealed class ProxySyncServiceTests
         var accept = listener.AcceptTcpClientAsync();
         var endpoint = Parse($"http://127.0.0.1:{port}");
 
-        var result = await new ProxyReachabilityProbe().IsReachableAsync(
+        var result = await new ProxyReachabilityProbe().ProbeAsync(
             endpoint,
             TimeSpan.FromMilliseconds(200),
             CancellationToken.None);
         using var client = await accept.WaitAsync(TimeSpan.FromSeconds(1));
 
-        Assert.False(result);
+        Assert.False(result.IsHealthy);
     }
 
     [Fact]
-    public async Task RunAsync_IsolatesSourceFailureAndStopsAtTarget()
+    public async Task RunAsync_IsolatesSourceFailureAndChecksEveryCandidate()
     {
         var sources = new[]
         {
@@ -42,13 +42,13 @@ public sealed class ProxySyncServiceTests
         var service = new ProxySyncService(fetcher, probe, sources);
 
         var result = await service.RunAsync(
-            new ProxySettings(TargetUsableEntries: 2, ParallelTcpChecks: 1),
+            new ProxySettings(ParallelTcpChecks: 1),
             new HashSet<string>(StringComparer.Ordinal),
             null,
             CancellationToken.None);
 
-        Assert.Equal(2, result.Reachable.Count);
-        Assert.Equal(2, result.Tested);
+        Assert.Equal(3, result.Reachable.Count);
+        Assert.Equal(3, result.Tested);
         Assert.NotNull(result.Sources[0].Error);
         Assert.Null(result.Sources[1].Error);
     }
@@ -65,7 +65,7 @@ public sealed class ProxySyncServiceTests
             [source]);
 
         var result = await service.RunAsync(
-            new ProxySettings(TargetUsableEntries: 10, ParallelTcpChecks: 1),
+            new ProxySettings(ParallelTcpChecks: 1),
             new HashSet<string>([banned.Canonical], StringComparer.Ordinal),
             null,
             CancellationToken.None);
@@ -107,20 +107,20 @@ public sealed class ProxySyncServiceTests
     private sealed class FakeProbe(bool result) : IProxyReachabilityProbe
     {
         public int Calls { get; private set; }
-        public Task<bool> IsReachableAsync(ProxyEndpoint endpoint, TimeSpan timeout, CancellationToken cancellationToken)
+        public Task<ProxyProbeResult> ProbeAsync(ProxyEndpoint endpoint, TimeSpan timeout, CancellationToken cancellationToken)
         {
             Calls++;
-            return Task.FromResult(result);
+            return Task.FromResult(new ProxyProbeResult(result, result ? 10 : null, result ? "OK" : "Timeout"));
         }
     }
 
     private sealed class CancellingProbe(CancellationTokenSource cancellation) : IProxyReachabilityProbe
     {
-        public Task<bool> IsReachableAsync(ProxyEndpoint endpoint, TimeSpan timeout, CancellationToken cancellationToken)
+        public Task<ProxyProbeResult> ProbeAsync(ProxyEndpoint endpoint, TimeSpan timeout, CancellationToken cancellationToken)
         {
             cancellation.Cancel();
             cancellationToken.ThrowIfCancellationRequested();
-            return Task.FromResult(false);
+            return Task.FromResult(new ProxyProbeResult(false, null, "Cancelled"));
         }
     }
 }

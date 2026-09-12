@@ -4,6 +4,8 @@
 
   <ItemGroup>
     <Compile Include="..\sharedLogic\cs\ProxyPoolContract.cs" />
+    <Compile Include="..\sharedLogic\cs\ProxyPoolHealthContract.cs" />
+    <Compile Include="..\sharedLogic\cs\CredenzPath.cs" />
   </ItemGroup>
 
 </Project>

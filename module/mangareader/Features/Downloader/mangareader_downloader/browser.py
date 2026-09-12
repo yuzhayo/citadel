@@ -215,6 +215,13 @@ def _timeout_ms(msg, default_ms):
     return int(min(value, 180000))
 
 
+def _connect_timeout_ms(msg, default_ms):
+    value = msg.get("connect_timeout_ms", default_ms)
+    if not isinstance(value, (int, float)) or value <= 0:
+        raise PyhostError("BAD_TIMEOUT", "connect_timeout_ms harus angka positif")
+    return int(min(value, 30000))
+
+
 def _is_waf_challenge(url):
     if not isinstance(url, str):
         return False
@@ -239,10 +246,11 @@ async def _wait_for_application_page(page, timeout_ms):
             "verifikasi Comix belum selesai: %s" % exc) from exc
 
 
-async def _navigate_application_page(page, start_url, timeout_ms):
+async def _navigate_application_page(
+        page, start_url, connect_timeout_ms, challenge_timeout_ms):
     await page.goto(start_url, wait_until="domcontentloaded",
-                    timeout=timeout_ms)
-    await _wait_for_application_page(page, timeout_ms)
+                    timeout=connect_timeout_ms)
+    await _wait_for_application_page(page, challenge_timeout_ms)
 
 
 def _live_provider_session(host, profile):
@@ -287,7 +295,8 @@ async def cmd_open(host, msg):
             sid, session, page = existing
             if session.get("headless", headless) == headless:
                 await _navigate_application_page(
-                    page, start_url, _timeout_ms(msg, 120000))
+                    page, start_url, _connect_timeout_ms(msg, 120000),
+                    _timeout_ms(msg, 120000))
                 return {"session": sid, "provider": provider,
                         "url": page.url, "headless": headless}
         await _forget_dead_provider_session(host, profile)
@@ -324,7 +333,8 @@ async def cmd_open(host, msg):
         page = ctx.pages[0] if ctx.pages else await ctx.new_page()
         host.sessions[sid]["page"] = page
         await _navigate_application_page(
-            page, start_url, _timeout_ms(msg, 120000))
+            page, start_url, _connect_timeout_ms(msg, 120000),
+            _timeout_ms(msg, 120000))
     except asyncio.CancelledError:
         await host._drop_session(sid)
         raise

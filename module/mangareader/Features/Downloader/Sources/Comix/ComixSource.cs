@@ -171,6 +171,16 @@ public static class ComixContract
     public const string ImageReferer = "https://comix.ws/";
 
     /// <summary>
+    /// Poster assets use the same provider-owned image policy as chapter pages.
+    /// This is data carried with a Comix title, not a downloader-wide default.
+    /// </summary>
+    public static readonly IReadOnlyDictionary<string, string> CoverRequestHeaders =
+        new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["Referer"] = ImageReferer,
+        };
+
+    /// <summary>
     /// Captured: the shape of the title page path the provider reports in
     /// <c>url</c>, <c>/title/{hid}-{slug}</c>. Only this shape is resolved against
     /// <see cref="BaseUrl"/>, so a tampered payload cannot aim a canonical url at
@@ -1291,7 +1301,10 @@ public sealed class ComixSource(DownloaderPyHostClient client)
             resolved,
             name,
             cover,
-            latest is > 0 ? "Ch. " + latest.Value.ToString(CultureInfo.InvariantCulture) : null);
+            latest is > 0 ? "Ch. " + latest.Value.ToString(CultureInfo.InvariantCulture) : null)
+        {
+            CoverRequestHeaders = ComixContract.CoverRequestHeaders,
+        };
     }
 
     /// <summary>The origin every canonical title url must belong to, parsed once.</summary>

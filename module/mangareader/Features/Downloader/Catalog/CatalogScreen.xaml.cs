@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using System.Collections.Concurrent;
 using System.ComponentModel;
 using System.Globalization;
 using System.IO;
@@ -47,6 +48,9 @@ public partial class CatalogScreen : UserControl, IDisposable
         "Downloader.Catalog.ViewMode",
         "downloader-catalog-view-mode.json");
     private readonly Dictionary<string, RemoteTitleCardModel> _cardsByIdentity = new(StringComparer.Ordinal);
+    // A failed poster is terminal for the displayed browse result. Repeating it
+    // in the background is both misleading and unsafe for provider traffic.
+    private readonly ConcurrentDictionary<string, byte> _failedCoverKeys = new(StringComparer.Ordinal);
     private readonly ObservableCollection<ChapterRow> _chapterRows = [];
     private readonly StackPanel _detailCoverActions = new();
     private string? _chapterSetKey;
@@ -237,6 +241,8 @@ public partial class CatalogScreen : UserControl, IDisposable
     {
         if (_disposed || _catalog is null || _context is null) return;
         if (_catalog.State.IsActionBusy) return;
+
+        ResetFailedCoversForNewBrowse();
 
         // Preserve the established Start behavior: the requested mode is applied
         // by the provider's existing browse path. Switching the toggle and pressing
@@ -938,7 +944,9 @@ public partial class CatalogScreen : UserControl, IDisposable
         if (_disposed || _coverBatch is not null) return;
 
         var pending = _cards
-            .Where(card => card.Cover is null && card.CoverUrls.Count > 0)
+            .Where(card => card.Cover is null
+                && card.CoverUrls.Count > 0
+                && !_failedCoverKeys.ContainsKey(CoverKey(card.Summary)))
             .ToList();
         if (pending.Count == 0) return;
 
@@ -951,10 +959,14 @@ public partial class CatalogScreen : UserControl, IDisposable
         IReadOnlyList<RemoteTitleCardModel> pending,
         CancellationTokenSource batch)
     {
+        var failures = 0;
         var options = new ParallelOptions
         {
             CancellationToken = batch.Token,
-            MaxDegreeOfParallelism = 4,
+            // Cover traffic is isolated by ProxyLeaseRegistry, so each active
+            // proxy worker owns one endpoint. Direct mode remains conservative
+            // and never turns a card repaint into a burst from the real IP.
+            MaxDegreeOfParallelism = _context?.HttpTransport.IsProxyMode == true ? 32 : 4,
         };
 
         try
@@ -965,14 +977,20 @@ public partial class CatalogScreen : UserControl, IDisposable
                 try
                 {
                     cover = await LoadCoverAsync(
-                        card.CoverUrls,
+                        card.Summary,
                         CoverPixelWidth,
                         cancellationToken).ConfigureAwait(true);
                 }
                 catch (Exception exception) when (exception is not OperationCanceledException)
                 {
-                    // One unreachable cover leaves its card on the placeholder;
-                    // the rest of the catalog is unaffected.
+                    // Do not reschedule this card until the user explicitly
+                    // starts a new browse. A cosmetic failure must not produce
+                    // an unbounded provider request loop.
+                    if (ReferenceEquals(_coverBatch, batch))
+                    {
+                        _failedCoverKeys.TryAdd(CoverKey(card.Summary), 0);
+                        Interlocked.Increment(ref failures);
+                    }
                     return;
                 }
 
@@ -990,8 +1008,22 @@ public partial class CatalogScreen : UserControl, IDisposable
         }
         finally
         {
-            if (ReferenceEquals(_coverBatch, batch)) _coverBatch = null;
+            var isCurrent = ReferenceEquals(_coverBatch, batch);
+            if (isCurrent) _coverBatch = null;
             batch.Dispose();
+
+            if (isCurrent && failures > 0 && !_disposed)
+            {
+                await Dispatcher.InvokeAsync(() =>
+                {
+                    if (!_disposed)
+                    {
+                        SetStatus(
+                            $"{_failedCoverKeys.Count} cover tidak dapat dimuat. Jalankan Search atau Start untuk mencoba ulang.",
+                            isError: false);
+                    }
+                });
+            }
         }
 
         // A second Start or a Load more may have added cards while this batch
@@ -1004,22 +1036,16 @@ public partial class CatalogScreen : UserControl, IDisposable
     /// covers, so the two grids render identically.
     /// </summary>
     private async Task<BitmapSource?> LoadCoverAsync(
-        IReadOnlyList<string> urls,
+        RemoteTitleSummary title,
         int decodePixelWidth,
         CancellationToken cancellationToken)
     {
         Exception? lastFailure = null;
-        foreach (var url in urls)
+        foreach (var url in title.CoverCandidates())
         {
             try
             {
-                var bytes = _context is null
-                    ? await CoverClient.GetByteArrayAsync(url, cancellationToken).ConfigureAwait(true)
-                    : await _context.HttpTransport.GetByteArrayAsync(
-                        "downloader-detail-cover",
-                        CoverClient,
-                        url,
-                        cancellationToken).ConfigureAwait(true);
+                var bytes = await GetCoverBytesAsync(title, url, cancellationToken).ConfigureAwait(true);
                 if (bytes.Length == 0) continue;
 
                 using var stream = new MemoryStream(bytes, writable: false);
@@ -1048,14 +1074,33 @@ public partial class CatalogScreen : UserControl, IDisposable
     }
 
     /// <summary>
+    /// Uses the selected proxy lane when enabled, while preserving only the
+    /// headers declared by the source that produced this title. The UI never
+    /// invents provider headers or copies browser session cookies.
+    /// </summary>
+    private async Task<byte[]> GetCoverBytesAsync(
+        RemoteTitleSummary title,
+        string url,
+        CancellationToken cancellationToken)
+    {
+        return _context is null
+            ? await CoverClient.GetByteArrayAsync(url, cancellationToken).ConfigureAwait(true)
+            : await _context.HttpTransport.GetByteArrayWithHeadersAsync(
+                "downloader-card-cover",
+                CoverClient,
+                url,
+                title.CoverRequestHeaders,
+                cancellationToken).ConfigureAwait(true);
+    }
+
+    /// <summary>
     /// Loads the detail cover off the UI thread. A stale response is dropped, so
     /// selecting another title can never paint the previous cover.
     /// </summary>
     private async Task LoadDetailCoverAsync(RemoteTitleSummary title, CancellationToken cancellationToken)
     {
         var generation = Interlocked.Increment(ref _coverGeneration);
-        var coverUrls = title.CoverCandidates().ToArray();
-        if (coverUrls.Length == 0) return;
+        if (!title.CoverCandidates().Any()) return;
 
         var previous = _coverCancellation;
         var cancellation = new CancellationTokenSource();
@@ -1066,7 +1111,7 @@ public partial class CatalogScreen : UserControl, IDisposable
         {
             using var linked = CancellationTokenSource.CreateLinkedTokenSource(
                 cancellationToken, cancellation.Token);
-            var image = await LoadCoverAsync(coverUrls, decodePixelWidth: 0, linked.Token)
+            var image = await LoadCoverAsync(title, decodePixelWidth: 0, linked.Token)
                 .ConfigureAwait(true);
             if (_disposed || generation != Volatile.Read(ref _coverGeneration)) return;
             if (image is null) return;
@@ -1129,6 +1174,17 @@ public partial class CatalogScreen : UserControl, IDisposable
             isError ? "Dim" : "Accent");
     }
 
+    private static string CoverKey(RemoteTitleSummary title) =>
+        IdentityKey(title.Identity) + "\n" + string.Join("\n", title.CoverCandidates());
+
+    private void ResetFailedCoversForNewBrowse()
+    {
+        _failedCoverKeys.Clear();
+        var previous = _coverBatch;
+        _coverBatch = null;
+        previous?.Cancel();
+    }
+
     public void Dispose()
     {
         if (_disposed) return;
@@ -1160,6 +1216,7 @@ public partial class CatalogScreen : UserControl, IDisposable
 
         _cards.Clear();
         _cardsByIdentity.Clear();
+        _failedCoverKeys.Clear();
 
         foreach (var row in _chapterRows) row.SelectionChanged -= Row_SelectionChanged;
         _chapterRows.Clear();

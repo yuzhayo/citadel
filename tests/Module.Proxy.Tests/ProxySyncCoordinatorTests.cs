@@ -22,7 +22,7 @@ public sealed class ProxySyncCoordinatorTests : IDisposable
             [source]);
         var store = new ProxyPoolStore(_root);
         var settings = new ProxySettingsStore(Path.Combine(_root, "settings.json"));
-        settings.Save(new ProxySettings(TargetUsableEntries: 1, ParallelTcpChecks: 1));
+        settings.Save(new ProxySettings(ParallelTcpChecks: 1));
         using var coordinator = new ProxySyncCoordinator(service, store, settings);
         ProxySyncState? last = null;
         coordinator.StateChanged += (_, state) => last = state;
@@ -53,7 +53,7 @@ public sealed class ProxySyncCoordinatorTests : IDisposable
             [source]);
         var store = new ProxyPoolStore(_root);
         var settings = new ProxySettingsStore(Path.Combine(_root, "settings.json"));
-        settings.Save(new ProxySettings(TargetUsableEntries: 1, ParallelTcpChecks: 1));
+        settings.Save(new ProxySettings(ParallelTcpChecks: 1));
         using var coordinator = new ProxySyncCoordinator(service, store, settings);
         EventHandler<ProxySyncState> observer = (_, _) => { };
         coordinator.StateChanged += observer;
@@ -91,7 +91,7 @@ public sealed class ProxySyncCoordinatorTests : IDisposable
         public TaskCompletionSource FirstStarted { get; } =
             new(TaskCreationOptions.RunContinuationsAsynchronously);
 
-        public async Task<bool> IsReachableAsync(
+        public async Task<ProxyProbeResult> ProbeAsync(
             ProxyEndpoint endpoint,
             TimeSpan timeout,
             CancellationToken cancellationToken)
@@ -101,7 +101,7 @@ public sealed class ProxySyncCoordinatorTests : IDisposable
                 FirstStarted.SetResult();
                 await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
             }
-            return true;
+            return new ProxyProbeResult(true, 10, "OK");
         }
     }
 }

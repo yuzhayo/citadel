@@ -41,10 +41,10 @@ internal sealed class QueueIndependentSession : IDisposable
         while (true)
         {
             token.ThrowIfCancellationRequested();
-            var sharedServers = _pool.Reservations.Snapshot().Where(item => item.Owner == "downloader-browser")
-                .Select(item => item.Server).ToHashSet(StringComparer.OrdinalIgnoreCase);
+            var sharedEndpointKeys = _pool.Reservations.Snapshot().Where(item => item.Owner == "downloader-browser")
+                .Select(item => item.EndpointKey).ToHashSet(StringComparer.OrdinalIgnoreCase);
             var eligible = _candidates.Where(item => !attempted.Contains(ProxyLeaseRegistry.Key(item))
-                && !_failed.ContainsKey(ProxyLeaseRegistry.Key(item)) && !sharedServers.Contains(ProxyLeaseRegistry.Key(item))).ToArray();
+                && !_failed.ContainsKey(ProxyLeaseRegistry.Key(item)) && !sharedEndpointKeys.Contains(ProxyLeaseRegistry.Key(item))).ToArray();
             if (eligible.Length == 0) break;
             _status($"Independent page {page.Ordinal + 1}: waiting for proxy");
             using var reservation = await _pool.Reservations.ReserveAsync(

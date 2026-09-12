@@ -27,11 +27,26 @@
                         <setting:SettingButton Content="Reload"
                                                Click="ReloadButton_Click"
                                                AutomationProperties.Name="Reload committed proxy pool" />
+                        <setting:SettingButton x:Name="RefreshHealthButton"
+                                               Margin="8,0,0,0"
+                                               Content="Refresh health"
+                                               Click="RefreshHealthButton_Click"
+                                               AutomationProperties.Name="Refresh committed proxy health" />
+                        <setting:SettingButton x:Name="StopHealthButton"
+                                               Margin="8,0,0,0"
+                                               Content="Stop"
+                                               Click="StopHealthButton_Click"
+                                               AutomationProperties.Name="Stop proxy health refresh" />
                         <setting:SettingButton x:Name="BanButton"
                                                Margin="8,0,0,0"
                                                Content="Ban selected"
                                                Click="BanButton_Click"
                                                AutomationProperties.Name="Ban selected proxies" />
+                        <setting:SettingButton x:Name="RemoveFailedButton"
+                                               Margin="8,0,0,0"
+                                               Content="Remove failed"
+                                               Click="RemoveFailedButton_Click"
+                                               AutomationProperties.Name="Remove failed proxies from active pool" />
                     </StackPanel>
                 </setting:SettingActionCard.ActionContent>
             </setting:SettingActionCard>
@@ -44,7 +59,7 @@
                                           AutomationProperties.Name="Committed proxy pool">
                         <setting:SettingTable.InteractiveColumns>
                             <DataGridCheckBoxColumn Header=""
-                                                    Binding="{Binding Selected}"
+                                                    Binding="{Binding Selected, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
                                                     CanUserSort="False"
                                                     Width="42" />
                             <DataGridTextColumn Header="Endpoint"
@@ -65,6 +80,23 @@
                                                 Binding="{Binding Port}"
                                                 SortMemberPath="Port"
                                                 Width="90" />
+                            <DataGridTextColumn Header="Health"
+                                                Binding="{Binding Health}"
+                                                SortMemberPath="HealthSort"
+                                                Width="110" />
+                            <DataGridTextColumn Header="Latency"
+                                                Binding="{Binding Latency}"
+                                                SortMemberPath="LatencySort"
+                                                Width="100" />
+                            <DataGridTextColumn Header="Checked"
+                                                Binding="{Binding Checked}"
+                                                SortMemberPath="CheckedSort"
+                                                Width="150" />
+                            <DataGridTextColumn Header="Diagnostic"
+                                                Binding="{Binding Diagnostic}"
+                                                SortMemberPath="Diagnostic"
+                                                MinWidth="160"
+                                                Width="*" />
                         </setting:SettingTable.InteractiveColumns>
                     </setting:SettingTable>
                     <TextBlock x:Name="EmptyText"

@@ -95,7 +95,8 @@ public partial class App : System.Windows.Application
             animations,
             _appLifetime,
             BuiltInRoutes(host),
-            host);
+            host,
+            new WindowPlacementStore());
         _window = window;
 
         MainWindow = window;

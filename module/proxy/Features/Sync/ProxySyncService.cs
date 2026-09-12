@@ -19,6 +19,7 @@ internal sealed record ProxySyncProgress(
 
 internal sealed record ProxySyncResult(
     IReadOnlyList<ProxyEndpoint> Reachable,
+    IReadOnlyList<ProxyHealthRecord> Health,
     IReadOnlyList<ProxySourceOutcome> Sources,
     int Skipped,
     int Banned,
@@ -132,6 +133,7 @@ internal sealed class ProxySyncService(
 
         var orderedCandidates = candidates.Values.ToArray();
         var reachable = new List<ProxyEndpoint>();
+        var health = new List<ProxyHealthRecord>();
         var resultGate = new object();
         var tested = 0;
         var failed = 0;
@@ -143,10 +145,6 @@ internal sealed class ProxySyncService(
             {
                 lock (resultGate)
                 {
-                    if (reachable.Count >= settings.TargetUsableEntries)
-                    {
-                        return;
-                    }
                 }
 
                 var index = Interlocked.Increment(ref next);
@@ -156,7 +154,7 @@ internal sealed class ProxySyncService(
                 }
 
                 var endpoint = orderedCandidates[index];
-                var isReachable = await _probe.IsReachableAsync(
+                var probe = await _probe.ProbeAsync(
                     endpoint,
                     TimeSpan.FromSeconds(settings.ProxyValidationTimeoutSeconds),
                     cancellationToken).ConfigureAwait(false);
@@ -167,11 +165,12 @@ internal sealed class ProxySyncService(
                 lock (resultGate)
                 {
                     testedNow = ++tested;
-                    if (isReachable && reachable.Count < settings.TargetUsableEntries)
+                    if (probe.IsHealthy)
                     {
                         reachable.Add(endpoint);
+                        health.Add(probe.ToHealthRecord(endpoint, DateTimeOffset.UtcNow));
                     }
-                    else if (!isReachable)
+                    else if (!probe.IsHealthy)
                     {
                         failed++;
                     }
@@ -195,6 +194,7 @@ internal sealed class ProxySyncService(
         stopwatch.Stop();
         return new ProxySyncResult(
             reachable.OrderBy(item => item.Canonical, StringComparer.Ordinal).ToArray(),
+            health.OrderBy(item => item.EndpointKey, StringComparer.Ordinal).ToArray(),
             outcomes,
             skipped,
             bannedCount,

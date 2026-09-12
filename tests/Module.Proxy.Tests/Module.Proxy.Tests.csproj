@@ -10,10 +10,13 @@
   </ItemGroup>
   <ItemGroup>
     <Compile Include="..\..\module\sharedLogic\cs\ProxyPoolContract.cs" />
+    <Compile Include="..\..\module\sharedLogic\cs\ProxyPoolHealthContract.cs" />
     <Compile Include="..\..\module\proxy\sharedLogic\*.cs" />
     <Compile Include="..\..\module\proxy\Features\Sync\ProxySourceCatalog.cs" />
     <Compile Include="..\..\module\proxy\Features\Sync\ProxyReachabilityProbe.cs" />
     <Compile Include="..\..\module\proxy\Features\Sync\ProxySyncService.cs" />
     <Compile Include="..\..\module\proxy\Features\Sync\ProxySyncCoordinator.cs" />
+    <Compile Include="..\..\module\proxy\Features\Pool\PoolHealthCoordinator.cs" />
+    <Compile Include="..\..\module\proxy\Features\Webshare\WebshareImportService.cs" />
   </ItemGroup>
 </Project>

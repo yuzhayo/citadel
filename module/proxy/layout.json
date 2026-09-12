@@ -2,6 +2,7 @@
   "slots": {
     "PoolPanel": { "kind": "visibility", "visible": true },
     "SyncPanel": { "kind": "visibility", "visible": true },
+    "WebsharePanel": { "kind": "visibility", "visible": true },
     "SettingsPanel": { "kind": "visibility", "visible": true }
   }
 }

@@ -37,6 +37,21 @@ internal static class WindowBoundsPolicy
             pixels.Height * DipDpi / dpiY);
     }
 
+    /// <summary>Preserves a saved size where possible, but keeps it fully usable on the current work area.</summary>
+    internal static Rect ClampSaved(Rect saved, WpfSize minimum, Rect workArea)
+    {
+        RequirePositive(minimum.Width, nameof(minimum));
+        RequirePositive(minimum.Height, nameof(minimum));
+        RequirePositive(workArea.Width, nameof(workArea));
+        RequirePositive(workArea.Height, nameof(workArea));
+
+        var width = Math.Clamp(saved.Width, Math.Min(minimum.Width, workArea.Width), workArea.Width);
+        var height = Math.Clamp(saved.Height, Math.Min(minimum.Height, workArea.Height), workArea.Height);
+        var left = Math.Clamp(saved.Left, workArea.Left, workArea.Right - width);
+        var top = Math.Clamp(saved.Top, workArea.Top, workArea.Bottom - height);
+        return new Rect(left, top, width, height);
+    }
+
     private static void RequirePositive(double value, string parameter)
     {
         if (!double.IsFinite(value) || value <= 0)
