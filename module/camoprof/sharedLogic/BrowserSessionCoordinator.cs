@@ -23,6 +23,8 @@ internal sealed class ProfileSessionChangedEventArgs : EventArgs
 /// </summary>
 internal sealed class BrowserSessionCoordinator : IDisposable
 {
+    private const int MaxProxyOpenAttempts = 3;
+
     private sealed record SessionRegistration(string SessionId, bool Headless);
 
     private readonly Dictionary<string, SessionRegistration> _sessions =
@@ -30,13 +32,18 @@ internal sealed class BrowserSessionCoordinator : IDisposable
     private readonly SemaphoreSlim _operationGate = new(1, 1);
     private readonly object _sync = new();
     private readonly Func<string, JsonObject, CancellationToken, Task<JsonObject>> _sendSessionCommand;
+    private readonly Func<string, string?, bool, ProxyLaunchOptions?, CancellationToken, Task<JsonObject>> _openSession;
+    private readonly ProxyPoolAdapter? _proxyPool;
     private PyHost? _host;
     private int _disposed;
 
-    public BrowserSessionCoordinator()
+    public BrowserSessionCoordinator(ProxyPoolAdapter? proxyPool = null)
     {
+        _proxyPool = proxyPool;
         _sendSessionCommand = (command, payload, token) =>
             EnsureHost().SendAsync(command, payload, TimeSpan.FromSeconds(120), token);
+        _openSession = (profile, startUrl, headless, proxy, token) =>
+            EnsureHost().OpenSessionAsync(profile, startUrl, headless, token, proxy);
     }
 
     // Test boundary: seed a known session and replace only process I/O.
@@ -49,6 +56,14 @@ internal sealed class BrowserSessionCoordinator : IDisposable
     {
         _sendSessionCommand = sendSessionCommand;
         _sessions.Add(profile, new SessionRegistration(sessionId, false));
+    }
+
+    internal BrowserSessionCoordinator(
+        ProxyPoolAdapter proxyPool,
+        Func<string, string?, bool, ProxyLaunchOptions?, CancellationToken, Task<JsonObject>> openSession)
+        : this(proxyPool)
+    {
+        _openSession = openSession ?? throw new ArgumentNullException(nameof(openSession));
     }
 
     public event EventHandler<ProfileSessionChangedEventArgs>? SessionChanged;
@@ -95,11 +110,11 @@ internal sealed class BrowserSessionCoordinator : IDisposable
                 throw new PyHostException("PROFILE_BUSY", "profile sudah punya session: " + profile);
             }
 
-            var response = await EnsureHost().OpenSessionAsync(
+            var response = await OpenWithProxyFailoverAsync(
                 profile,
                 startUrl,
                 headless,
-                cancellationToken);
+                cancellationToken).ConfigureAwait(false);
             var session = response["session"]?.GetValue<string>()
                 ?? throw new PyHostException("BAD_RESPONSE", "session.open tidak mengembalikan session id");
             lock (_sync)
@@ -369,6 +384,46 @@ internal sealed class BrowserSessionCoordinator : IDisposable
         {
             SessionChanged?.Invoke(this, new ProfileSessionChangedEventArgs(profile, false));
         }
+    }
+
+    private async Task<JsonObject> OpenWithProxyFailoverAsync(
+        string profile,
+        string? startUrl,
+        bool headless,
+        CancellationToken cancellationToken)
+    {
+        var attempts = _proxyPool?.Enabled == true ? MaxProxyOpenAttempts : 1;
+        for (var attempt = 1; ; attempt++)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var lease = _proxyPool?.Acquire();
+            try
+            {
+                return await _openSession(
+                    profile,
+                    startUrl,
+                    headless,
+                    lease?.ToLaunchOptions(),
+                    cancellationToken).ConfigureAwait(false);
+            }
+            catch (Exception ex) when (
+                lease is not null
+                && IsRetryableProxyOpenFailure(ex, cancellationToken))
+            {
+                _proxyPool?.ReportFailure(lease);
+                if (attempt >= attempts) throw;
+            }
+        }
+    }
+
+    private static bool IsRetryableProxyOpenFailure(
+        Exception error,
+        CancellationToken cancellationToken)
+    {
+        if (cancellationToken.IsCancellationRequested) return false;
+        return error is TimeoutException
+            || error is PyHostException pyhost
+                && pyhost.Code is "BROWSER_LAUNCH" or "TIMEOUT";
     }
 
     private PyHost EnsureHost()

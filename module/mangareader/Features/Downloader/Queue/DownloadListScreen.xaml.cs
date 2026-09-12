@@ -14,14 +14,18 @@ namespace Module.Mangareader.Features.Downloader.Queue;
 /// </summary>
 public partial class DownloadListScreen : UserControl, IDisposable
 {
-    private readonly ObservableCollection<DownloadJobRecord> _rows = [];
+    private QueueGroupProjection _projection = new();
     private DownloadQueueFeature? _queue;
     private bool _disposed;
 
     public DownloadListScreen()
     {
         InitializeComponent();
-        JobTable.ItemsSource = _rows;
+        JobTable.ItemsSource = _projection.Visible;
+        JobTable.Loaded += (_, _) =>
+        {
+            foreach (var column in JobTable.InteractiveColumns) column.SortDirection = null;
+        };
     }
 
     /// <summary>The only way back to the Downloader tab; the MangaReader parent selects it.</summary>
@@ -37,6 +41,9 @@ public partial class DownloadListScreen : UserControl, IDisposable
         if (_disposed || _queue is not null) return;
 
         _queue = queue;
+        _projection = QueueGroupProjection.For(queue);
+        _projection.SelectionChanged += UpdateSelection;
+        JobTable.ItemsSource = _projection.Visible;
         queue.QueueSummaryChanged += Queue_QueueSummaryChanged;
         Render(queue.Snapshot(), queue.Summary());
     }
@@ -55,34 +62,9 @@ public partial class DownloadListScreen : UserControl, IDisposable
 
     private void Render(IReadOnlyList<DownloadJobRecord> jobs, QueueSummary summary)
     {
-        // Queue order is stable. Preserve existing row containers during progress
-        // updates so DataGrid virtualization and the user's scroll position remain
-        // effective; rebuild only for a structural insert/remove/reorder.
-        var structureMatches = _rows.Count == jobs.Count;
-        if (structureMatches)
-        {
-            for (var index = 0; index < jobs.Count; index++)
-            {
-                if (string.Equals(_rows[index].JobId, jobs[index].JobId, StringComparison.Ordinal)) continue;
-                structureMatches = false;
-                break;
-            }
-        }
-
-        if (!structureMatches)
-        {
-            _rows.Clear();
-            foreach (var job in jobs) _rows.Add(job);
-        }
-        else
-        {
-            for (var index = 0; index < jobs.Count; index++)
-            {
-                if (_rows[index] != jobs[index]) _rows[index] = jobs[index];
-            }
-        }
-
-        EmptyText.Visibility = _rows.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+        _projection.Update(jobs);
+        UpdateSelection();
+        EmptyText.Visibility = jobs.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
         SummaryText.Text = summary.Total == 0
             ? "No jobs"
             : $"{summary.Active} active · {summary.Paused} paused · {summary.Failed} failed · {summary.Total} total";
@@ -107,21 +89,53 @@ public partial class DownloadListScreen : UserControl, IDisposable
 
     private void PauseResume_Click(object sender, RoutedEventArgs e)
     {
-        if (Row(sender) is not { } job || _queue is null) return;
-
-        // A paused or failed job resumes; anything else is asked to park. Pause
-        // never terminates the browser or the pyhost process.
+        if ((sender as FrameworkElement)?.Tag is not QueueDisplayRow row || _queue is null) return;
         Run(() =>
         {
-            if (job.State is DownloadJobState.Paused or DownloadJobState.Failed)
+            var stop = (sender as ContentControl)?.Content?.ToString() == "Stop";
+            if (row.IsGroup)
             {
-                _queue.Resume(job.JobId);
+                if (stop) _queue.StopGroup(row.GroupKey); else _queue.ResumeGroup(row.GroupKey);
             }
             else
             {
-                _queue.Pause(job.JobId);
+                if (stop) _queue.Stop(row.Id);
+                else if (row.Job.State == DownloadJobState.Failed) _queue.Retry(row.Id);
+                else _queue.Start(row.Id);
             }
         });
+    }
+
+    private void StopAll_Click(object sender, RoutedEventArgs e) { if (_queue is not null) Run(_queue.StopAll); }
+
+    private void Expand_Click(object sender, RoutedEventArgs e)
+    {
+        if ((sender as FrameworkElement)?.Tag is QueueDisplayRow row) _projection.Toggle(row);
+    }
+
+    private void UpdateSelection()
+    {
+        RemoveSelectedButton.Content = $"Remove selected ({_projection.SelectedIds.Count})";
+        RemoveSelectedButton.IsEnabled = _projection.SelectedIds.Count > 0;
+    }
+
+    private async void RemoveSelected_Click(object sender, RoutedEventArgs e)
+    {
+        if (_queue is null) return;
+        var ids = _projection.SelectedIds;
+        if (ids.Count == 0 || !SettingDialog.Confirm(Window.GetWindow(this), "Downloader",
+                $"Remove {ids.Count} selected jobs and their staged pages? Published CBZ files remain intact.", "Remove")) return;
+        await RemoveAsync(ids);
+    }
+
+    private async Task RemoveAsync(IReadOnlyList<string> ids)
+    {
+        try
+        {
+            await _queue!.RemoveManyAsync(ids);
+            if (!_disposed) SetStatus(null);
+        }
+        catch (Exception ex) { if (!_disposed) SetStatus("Remove failed: " + ex.Message); }
     }
 
     /// <summary>
@@ -175,7 +189,7 @@ public partial class DownloadListScreen : UserControl, IDisposable
         }
     }
 
-    private void Remove_Click(object sender, RoutedEventArgs e)
+    private async void Remove_Click(object sender, RoutedEventArgs e)
     {
         if (Row(sender) is not { } job || _queue is null) return;
 
@@ -191,7 +205,7 @@ public partial class DownloadListScreen : UserControl, IDisposable
             if (!confirmed) return;
         }
 
-        Run(() => _queue.Remove(job.JobId));
+        await RemoveAsync([job.JobId]);
     }
 
     private void Run(Action action)
@@ -210,7 +224,7 @@ public partial class DownloadListScreen : UserControl, IDisposable
     }
 
     private static DownloadJobRecord? Row(object sender) =>
-        (sender as FrameworkElement)?.Tag as DownloadJobRecord;
+        ((sender as FrameworkElement)?.Tag as QueueDisplayRow)?.Job;
 
     private void SetStatus(string? message)
     {
@@ -227,6 +241,6 @@ public partial class DownloadListScreen : UserControl, IDisposable
 
         // The queue itself outlives this screen: only the subscription goes.
         if (_queue is not null) _queue.QueueSummaryChanged -= Queue_QueueSummaryChanged;
-        _rows.Clear();
+        _projection.SelectionChanged -= UpdateSelection;
     }
 }

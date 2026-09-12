@@ -60,15 +60,12 @@ public partial class CatalogScreen : UserControl, IDisposable
     private DownloaderContext? _context;
     private CatalogFeature? _catalog;
     private CancellationTokenSource? _actionCancellation;
-    private CancellationTokenSource? _browseCancellation;
     private CancellationTokenSource? _coverFetchCancellation;
     private CancellationTokenSource? _coverCancellation;
     private CancellationTokenSource? _coverBatch;
     private int _coverGeneration;
     private bool _settingSource;
     private bool _settingGroup;
-    private bool _browseActive;
-    private bool _stopping;
     private bool _manualDetail;
     private MangaViewMode _viewMode;
     private bool _disposed;
@@ -125,7 +122,8 @@ public partial class CatalogScreen : UserControl, IDisposable
         if (_disposed || _context is not null) return;
 
         _context = context;
-        _catalog = new CatalogFeature(context.Sources, () => context.LibraryRoot.CurrentRoot is not null);
+        _context.ProxyPool.Enabled = ProxyModeToggle.IsChecked == true;
+        _catalog = context.OnlineProcess.Catalog;
         _catalog.StateChanged += Catalog_StateChanged;
         _lister = context.Lister;
         InstallFetchCoverAction();
@@ -134,7 +132,9 @@ public partial class CatalogScreen : UserControl, IDisposable
         try
         {
             SourcePicker.ItemsSource = _catalog.AvailableSources;
-            SourcePicker.SelectedItem = _catalog.AvailableSources.FirstOrDefault();
+            SourcePicker.SelectedItem = _catalog.AvailableSources.FirstOrDefault(source =>
+                string.Equals(source.Id, _catalog.State.SelectedSourceId, StringComparison.Ordinal))
+                ?? _catalog.AvailableSources.FirstOrDefault();
         }
         finally
         {
@@ -143,7 +143,10 @@ public partial class CatalogScreen : UserControl, IDisposable
 
         if (SourcePicker.SelectedItem is MangaSourceRegistration selected)
         {
-            _catalog.SelectSource(selected.Id);
+            if (_catalog.State.SelectedSourceId is null)
+            {
+                _catalog.SelectSource(selected.Id);
+            }
             HostFilterPanel();
         }
 
@@ -187,6 +190,12 @@ public partial class CatalogScreen : UserControl, IDisposable
         await StartCatalogAsync();
     }
 
+    private void ProxyModeToggle_Changed(object sender, RoutedEventArgs e)
+    {
+        if (_disposed || _context is null) return;
+        _context.ProxyPool.Enabled = ProxyModeToggle.IsChecked == true;
+    }
+
     private async void SearchButton_Click(object sender, RoutedEventArgs e)
     {
         await StartCatalogAsync();
@@ -226,7 +235,7 @@ public partial class CatalogScreen : UserControl, IDisposable
 
     private async Task StartCatalogAsync()
     {
-        if (_disposed || _catalog is null || _context is null || _browseActive) return;
+        if (_disposed || _catalog is null || _context is null) return;
         if (_catalog.State.IsActionBusy) return;
 
         // Preserve the established Start behavior: the requested mode is applied
@@ -234,24 +243,17 @@ public partial class CatalogScreen : UserControl, IDisposable
         // Start therefore replaces a headed session with headless (or vice versa)
         // and returns the catalog in the same operation.
         _context.Browser.ShowBrowser = ShowBrowserToggle.IsChecked == true;
-        await RunBrowseAsync(token => _catalog.StartAsync(SearchField.Text, token));
+        await _context.OnlineProcess.StartAsync(SearchField.Text);
     }
 
     /// <summary>Stops only the Downloader-owned online provider process.</summary>
     private void StopButton_Click(object sender, RoutedEventArgs e)
     {
-        if (_stopping || _catalog is null || _context is null) return;
+        if (_catalog is null || _context is null) return;
 
-        _stopping = true;
-        _catalog.AbandonActiveBrowse();
-        _browseCancellation?.Cancel();
-        _context.Browser.AbortSession();
-        if (!_browseActive)
-        {
-            _stopping = false;
-            SetStatus("Provider process stopped.", isError: false);
-            Render(_catalog.State);
-        }
+        _context.OnlineProcess.Stop();
+        SetStatus("Provider process stopped.", isError: false);
+        Render(_catalog.State);
     }
 
     private async void LoadMoreButton_Click(object sender, RoutedEventArgs e)
@@ -498,7 +500,7 @@ public partial class CatalogScreen : UserControl, IDisposable
     {
         ProviderControlsPanel.Visibility = _manualDetail ? Visibility.Collapsed : Visibility.Visible;
         RenderRequestButtons(state);
-        LoadMoreButton.IsEnabled = !state.IsBusy && !_stopping && state.CanLoadMore;
+        LoadMoreButton.IsEnabled = !state.IsBusy && state.CanLoadMore;
         SourcePicker.IsEnabled = !state.IsBusy;
         SearchField.IsEnabled = !state.IsBusy;
 
@@ -530,19 +532,19 @@ public partial class CatalogScreen : UserControl, IDisposable
     /// </summary>
     private void RenderRequestButtons(CatalogState state)
     {
-        var processBusy = _browseActive || _stopping;
-        var hasSession = !_browseActive && _context?.Browser.HasSession == true;
+        var processBusy = state.IsBrowseBusy;
+        var hasSession = _context?.Browser.HasSession == true;
         ShowBrowserToggle.IsEnabled = !processBusy && !state.IsActionBusy;
+        ProxyModeToggle.IsEnabled = !processBusy && !state.IsActionBusy;
         StartButton.Content = "Start";
         StartButton.IsEnabled = state.SelectedSourceId is not null
             && !processBusy
             && !state.IsActionBusy;
-        SearchButton.Content = _browseActive ? "Searching…" : "Search";
+        SearchButton.Content = state.IsBrowseBusy ? "Searching…" : "Search";
         SearchButton.IsEnabled = !processBusy
             && !state.IsActionBusy;
         ManualButton.IsEnabled = !processBusy && !state.IsActionBusy;
-        StopButton.IsEnabled = !_stopping
-            && (hasSession || _browseActive);
+        StopButton.IsEnabled = hasSession || state.IsBrowseBusy;
     }
 
     private void RenderDetail(CatalogState state)
@@ -1001,7 +1003,7 @@ public partial class CatalogScreen : UserControl, IDisposable
     /// Decodes a remote cover at the same width Library uses for its card
     /// covers, so the two grids render identically.
     /// </summary>
-    private static async Task<BitmapSource?> LoadCoverAsync(
+    private async Task<BitmapSource?> LoadCoverAsync(
         IReadOnlyList<string> urls,
         int decodePixelWidth,
         CancellationToken cancellationToken)
@@ -1011,8 +1013,13 @@ public partial class CatalogScreen : UserControl, IDisposable
         {
             try
             {
-                var bytes = await CoverClient.GetByteArrayAsync(url, cancellationToken)
-                    .ConfigureAwait(true);
+                var bytes = _context is null
+                    ? await CoverClient.GetByteArrayAsync(url, cancellationToken).ConfigureAwait(true)
+                    : await _context.HttpTransport.GetByteArrayAsync(
+                        "downloader-detail-cover",
+                        CoverClient,
+                        url,
+                        cancellationToken).ConfigureAwait(true);
                 if (bytes.Length == 0) continue;
 
                 using var stream = new MemoryStream(bytes, writable: false);
@@ -1087,47 +1094,6 @@ public partial class CatalogScreen : UserControl, IDisposable
         }
     }
 
-    /// <summary>
-    /// Runs one Browse under its own cancellation source. Only this lifecycle is
-    /// reachable from Stop, and only it drives the request button's activity state.
-    /// A later Browse supersedes the previous one, which is also what the feature's
-    /// latest-request-wins generation guard expects.
-    /// </summary>
-    private async Task RunBrowseAsync(Func<CancellationToken, Task> browse)
-    {
-        var previous = _browseCancellation;
-        var cancellation = new CancellationTokenSource();
-        _browseCancellation = cancellation;
-        previous?.Cancel();
-
-        _browseActive = true;
-        if (_catalog is not null) Render(_catalog.State);
-
-        try
-        {
-            await browse(cancellation.Token);
-        }
-        finally
-        {
-            var current = ReferenceEquals(_browseCancellation, cancellation);
-            if (current)
-            {
-                _browseCancellation = null;
-            }
-
-            cancellation.Dispose();
-
-            if (current)
-            {
-                // The bounded inline command has now settled, so a parked Stop
-                // returns to Start for every terminal Browse result.
-                _browseActive = false;
-                _stopping = false;
-                if (!_disposed && _catalog is not null) Render(_catalog.State);
-            }
-        }
-    }
-
     private async Task RunActionAsync(Func<CancellationToken, Task> action)
     {
         var previous = _actionCancellation;
@@ -1175,10 +1141,6 @@ public partial class CatalogScreen : UserControl, IDisposable
         var actionCancellation = _actionCancellation;
         _actionCancellation = null;
         actionCancellation?.Cancel();
-
-        var browseCancellation = _browseCancellation;
-        _browseCancellation = null;
-        browseCancellation?.Cancel();
 
         var coverFetchCancellation = _coverFetchCancellation;
         _coverFetchCancellation = null;

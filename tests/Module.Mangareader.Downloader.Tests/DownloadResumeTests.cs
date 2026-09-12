@@ -116,7 +116,20 @@ public sealed class DownloadResumeTests : IDisposable
         Assert.Equal(
             [TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(2), TimeSpan.FromSeconds(4)],
             ChapterDownloadPipeline.RetryDelays);
-        Assert.Equal(2, ChapterDownloadPipeline.PageConcurrency);
+        Assert.Equal(2, ChapterDownloadPipeline.DirectPageConcurrency);
+        Assert.Equal(8, ChapterDownloadPipeline.ProxyPageConcurrency);
+    }
+
+    [Theory]
+    [InlineData(PageFetchOutcome.NetworkFailed, true)]
+    [InlineData(PageFetchOutcome.Rejected, true)]
+    [InlineData(PageFetchOutcome.Throttled, true)]
+    [InlineData(PageFetchOutcome.Challenge, true)]
+    [InlineData(PageFetchOutcome.NotFound, false)]
+    [InlineData(PageFetchOutcome.TooLarge, false)]
+    public void NativeRetryIsLimitedToTransientOutcomes(PageFetchOutcome outcome, bool expected)
+    {
+        Assert.Equal(expected, ChapterDownloadPipeline.ShouldRetryNative(outcome));
     }
 
     [Fact]

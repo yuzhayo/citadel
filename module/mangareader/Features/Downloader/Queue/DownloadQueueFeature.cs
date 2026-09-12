@@ -28,19 +28,19 @@ public sealed record QueueAddResult(
 /// </summary>
 public sealed class DownloadQueueFeature : IDisposable
 {
-    internal const int JobConcurrency = 2;
+    internal const int JobConcurrency = QueueScheduler.AutomaticLimit;
 
     private readonly LibraryRootContext _root;
     private readonly MangaSourceRegistry _sources;
     private readonly DownloaderPyHostClient _browser;
+    private readonly ProxyHttpTransport? _httpTransport;
     private readonly DownloadQueueStore _store;
     private readonly DownloadSourceIndex _index;
     private readonly object _gate = new();
     private List<DownloadJobRecord> _jobs = [];
-    private readonly Dictionary<string, CancellationTokenSource> _running = new(StringComparer.Ordinal);
-    private readonly CancellationTokenSource _lifetime = new();
-    private Task? _scheduler;
-    private bool _started;
+    private readonly QueueScheduler _scheduler;
+    private readonly QueueSharedSessionAdapter _shared;
+    private readonly HashSet<string> _removing = new(StringComparer.Ordinal);
     private int _disposed;
 
     public DownloadQueueFeature(
@@ -49,12 +49,26 @@ public sealed class DownloadQueueFeature : IDisposable
         DownloaderPyHostClient browser,
         DownloadQueueStore store,
         DownloadSourceIndex index)
+        : this(root, sources, browser, store, index, null)
+    {
+    }
+
+    internal DownloadQueueFeature(
+        LibraryRootContext root,
+        MangaSourceRegistry sources,
+        DownloaderPyHostClient browser,
+        DownloadQueueStore store,
+        DownloadSourceIndex index,
+        ProxyHttpTransport? httpTransport)
     {
         _root = root ?? throw new ArgumentNullException(nameof(root));
         _sources = sources ?? throw new ArgumentNullException(nameof(sources));
         _browser = browser ?? throw new ArgumentNullException(nameof(browser));
         _store = store ?? throw new ArgumentNullException(nameof(store));
         _index = index ?? throw new ArgumentNullException(nameof(index));
+        _httpTransport = httpTransport;
+        _scheduler = new QueueScheduler(_gate, Snapshot, RunClaimedJobAsync);
+        _shared = new QueueSharedSessionAdapter(browser, reason => StopAll(reason));
         LoadPersisted();
     }
 
@@ -235,32 +249,82 @@ public sealed class DownloadQueueFeature : IDisposable
             .Select(job => job.Identity.Key)
             .ToHashSet(StringComparer.Ordinal);
 
-    public void Pause(string jobId) => Transition(jobId, job => job.State switch
+    public void Pause(string jobId) => Stop(jobId);
+
+    public void Stop(string jobId) => StopMany([jobId], null);
+    public void StopAll() => StopAll(null);
+    private void StopAll(string? reason)
     {
-        DownloadJobState.Completed or DownloadJobState.Failed => job,
-        DownloadJobState.Queued => job with
+        lock (_gate) StopMany(_jobs.Select(job => job.JobId).ToArray(), reason);
+    }
+
+    private Task StopMany(IReadOnlyCollection<string> ids, string? reason)
+    {
+        var targets = ids.ToHashSet(StringComparer.Ordinal);
+        lock (_gate)
         {
-            State = DownloadJobState.Paused,
-            UpdatedUtc = DateTimeOffset.UtcNow,
-        },
-        _ => job with
+            Commit(jobs =>
+            {
+                for (var i = 0; i < jobs.Count; i++)
+                {
+                    var job = jobs[i];
+                    if (!targets.Contains(job.JobId) || job.State == DownloadJobState.Completed) continue;
+                    jobs[i] = job with
+                    {
+                        State = _scheduler.IsActive(job.JobId) ? DownloadJobState.Pausing : DownloadJobState.Paused,
+                        Warning = reason ?? job.Warning,
+                        UpdatedUtc = DateTimeOffset.UtcNow,
+                    };
+                }
+            });
+            return _scheduler.Cancel(targets);
+        }
+    }
+
+    public void Start(string jobId)
+    {
+        lock (_gate)
         {
-            State = DownloadJobState.Pausing,
-            UpdatedUtc = DateTimeOffset.UtcNow,
-        },
-    });
+            if (_removing.Contains(jobId) || _scheduler.IsActive(jobId)) return;
+            Transition(jobId, job => job.State is DownloadJobState.Paused or DownloadJobState.Failed or DownloadJobState.Queued
+                ? job with { State = DownloadJobState.Queued, Warning = null, UpdatedUtc = DateTimeOffset.UtcNow }
+                : job);
+            if (_jobs.Any(job => job.JobId == jobId && job.State == DownloadJobState.Queued))
+                _scheduler.MarkManual(jobId);
+        }
+        EnsureStarted();
+    }
+
+    public void Retry(string jobId) => Start(jobId);
+
+    public static string TitleGroupKey(DownloadJobRecord job) =>
+        System.Text.Json.JsonSerializer.Serialize(new[] { job.Identity.SourceId, job.Identity.TitleId, job.Identity.TitleHid });
+
+    public void StopGroup(string groupKey)
+    {
+        lock (_gate) StopMany(_jobs.Where(job => TitleGroupKey(job) == groupKey).Select(job => job.JobId).ToArray(), null);
+    }
+
+    public void ResumeGroup(string groupKey) => ResumeMatching(job => TitleGroupKey(job) == groupKey);
+
+    private void ResumeMatching(Func<DownloadJobRecord, bool> matches)
+    {
+        Commit(jobs =>
+        {
+            for (var i = 0; i < jobs.Count; i++)
+            {
+                var job = jobs[i];
+                if (!matches(job) || _removing.Contains(job.JobId) || _scheduler.IsActive(job.JobId)
+                    || job.State is not (DownloadJobState.Paused or DownloadJobState.Failed)) continue;
+                jobs[i] = job with { State = DownloadJobState.Queued, Warning = null, UpdatedUtc = DateTimeOffset.UtcNow };
+            }
+        });
+        EnsureStarted();
+    }
 
     public void Resume(string jobId)
     {
-        Transition(jobId, job => job.State is DownloadJobState.Paused or DownloadJobState.Failed
-            ? job with
-            {
-                State = DownloadJobState.Queued,
-                Warning = null,
-                UpdatedUtc = DateTimeOffset.UtcNow,
-            }
-            : job);
-        EnsureStarted();
+        ResumeMatching(job => job.JobId == jobId);
     }
 
     /// <summary>
@@ -275,7 +339,8 @@ public sealed class DownloadQueueFeature : IDisposable
             for (var index = 0; index < jobs.Count; index++)
             {
                 var job = jobs[index];
-                if (job.State is not (DownloadJobState.Paused or DownloadJobState.Failed)) continue;
+                if (job.State is not (DownloadJobState.Paused or DownloadJobState.Failed)
+                    || _removing.Contains(job.JobId) || _scheduler.IsActive(job.JobId)) continue;
 
                 jobs[index] = job with
                 {
@@ -322,26 +387,19 @@ public sealed class DownloadQueueFeature : IDisposable
         EnsureStarted();
     }
 
-    public void Remove(string jobId)
+    public void Remove(string jobId) => RemoveManyAsync([jobId]).GetAwaiter().GetResult();
+
+    public async Task RemoveManyAsync(IEnumerable<string> jobIds)
     {
-        string? stagingJobId = null;
-        Commit(jobs =>
+        var ids = jobIds.Distinct(StringComparer.Ordinal).ToArray();
+        lock (_gate) _removing.UnionWith(ids);
+        try
         {
-            var index = jobs.FindIndex(candidate =>
-                string.Equals(candidate.JobId, jobId, StringComparison.Ordinal));
-            if (index < 0) return;
-
-            stagingJobId = jobs[index].JobId;
-            jobs.RemoveAt(index);
-        });
-
-        // Staging is deleted only after the queue state is committed, so a
-        // crash in between can never leave an orphaned job pointing at deleted
-        // pages.
-        if (stagingJobId is not null)
-        {
-            TryDeleteStaging(stagingJobId);
+            await StopMany(ids, null).ConfigureAwait(false);
+            Commit(jobs => jobs.RemoveAll(job => ids.Contains(job.JobId, StringComparer.Ordinal)));
+            foreach (var id in ids) TryDeleteStaging(id);
         }
+        finally { lock (_gate) _removing.ExceptWith(ids); }
     }
 
     /// <summary>
@@ -364,24 +422,14 @@ public sealed class DownloadQueueFeature : IDisposable
     public void Dispose()
     {
         if (Interlocked.Exchange(ref _disposed, 1) != 0) return;
-
-        _lifetime.Cancel();
-        lock (_gate)
+        try { StopAll(); }
+        catch (QueuePersistenceException ex)
         {
-            foreach (var source in _running.Values) source.Cancel();
-            _running.Clear();
+            // Tray Exit must still stop owned work if durable state is unavailable.
+            // Preserve the file; restart already parks any in-flight records.
+            System.Diagnostics.Trace.TraceError("Queue shutdown persistence: {0}", ex.Message);
         }
-
-        try
-        {
-            _scheduler?.Wait(TimeSpan.FromSeconds(5));
-        }
-        catch (AggregateException)
-        {
-            // Shutdown does not need the scheduler's failure.
-        }
-
-        _lifetime.Dispose();
+        finally { _scheduler.ShutdownAsync().GetAwaiter().GetResult(); }
     }
 
     /// <summary>
@@ -475,108 +523,23 @@ public sealed class DownloadQueueFeature : IDisposable
 
     private void EnsureStarted()
     {
-        if (Volatile.Read(ref _disposed) != 0) return;
-        lock (_gate)
-        {
-            if (_started) return;
-            _started = true;
-            _scheduler = Task.Run(() => RunSchedulerAsync(_lifetime.Token));
-        }
+        if (Volatile.Read(ref _disposed) == 0) _scheduler.Start();
     }
 
-    /// <summary>
-    /// Runs at most two chapters in durable queue order. Each chapter keeps its
-    /// own cancellation source and staging folder, so one stalled job cannot
-    /// block the next slot and a third job remains queued until a slot is free.
-    /// </summary>
-    private async Task RunSchedulerAsync(CancellationToken lifetime)
-    {
-        var workers = new List<Task>(JobConcurrency);
-        try
-        {
-            while (!lifetime.IsCancellationRequested)
-            {
-                var claimed = new List<DownloadJobRecord>(JobConcurrency);
-                lock (_gate)
-                {
-                    while (_running.Count < JobConcurrency)
-                    {
-                        var next = _jobs.FirstOrDefault(job =>
-                            job.State == DownloadJobState.Queued
-                            && !_running.ContainsKey(job.JobId));
-                        if (next is null) break;
-
-                        _running[next.JobId] =
-                            CancellationTokenSource.CreateLinkedTokenSource(lifetime);
-                        claimed.Add(next);
-                    }
-                }
-
-                foreach (var job in claimed)
-                {
-                    workers.Add(Task.Run(
-                        () => RunClaimedJobAsync(job, lifetime),
-                        CancellationToken.None));
-                }
-
-                if (workers.Count == 0)
-                {
-                    await Task.Delay(TimeSpan.FromMilliseconds(500), lifetime).ConfigureAwait(false);
-                    continue;
-                }
-
-                await Task.WhenAny(workers).WaitAsync(lifetime).ConfigureAwait(false);
-                for (var index = workers.Count - 1; index >= 0; index--)
-                {
-                    if (!workers[index].IsCompleted) continue;
-                    await workers[index].ConfigureAwait(false);
-                    workers.RemoveAt(index);
-                }
-            }
-        }
-        catch (OperationCanceledException) when (lifetime.IsCancellationRequested)
-        {
-            // Normal feature shutdown.
-        }
-        finally
-        {
-            if (workers.Count > 0)
-            {
-                try
-                {
-                    await Task.WhenAll(workers).ConfigureAwait(false);
-                }
-                catch (OperationCanceledException) when (lifetime.IsCancellationRequested)
-                {
-                    // Workers observe the same feature lifetime.
-                }
-            }
-        }
-    }
-
-    private async Task RunClaimedJobAsync(
-        DownloadJobRecord job,
-        CancellationToken lifetime)
+    private async Task RunClaimedJobAsync(DownloadJobRecord job, CancellationToken token)
     {
         try
         {
-            await RunJobAsync(job, lifetime).ConfigureAwait(false);
+            token.ThrowIfCancellationRequested();
+            await RunJobAsync(job, token).ConfigureAwait(false);
         }
-        catch (OperationCanceledException) when (lifetime.IsCancellationRequested)
-        {
-            // Normal feature shutdown.
-        }
+        catch (OperationCanceledException) when (token.IsCancellationRequested) { }
+        catch (QueueSessionUnavailableException exception) { StopAll(exception.Message); }
         catch (Exception exception)
         {
             Fail(job.JobId, "Job gagal: " + exception.GetBaseException().Message);
         }
-        finally
-        {
-            lock (_gate)
-            {
-                if (_running.Remove(job.JobId, out var source)) source.Dispose();
-            }
-        }
+        finally { ParkIfPausing(job.JobId); }
     }
 
     private async Task RunJobAsync(DownloadJobRecord job, CancellationToken lifetime)
@@ -596,14 +559,7 @@ public sealed class DownloadQueueFeature : IDisposable
             return;
         }
 
-        CancellationTokenSource linked;
-        lock (_gate)
-        {
-            if (!_running.TryGetValue(job.JobId, out linked!))
-            {
-                linked = CancellationTokenSource.CreateLinkedTokenSource(lifetime);
-            }
-        }
+        lifetime.ThrowIfCancellationRequested();
 
         var sourceId = job.Identity.SourceId;
         var source = _sources.FindSource(sourceId);
@@ -613,7 +569,19 @@ public sealed class DownloadQueueFeature : IDisposable
             return;
         }
 
-        if (source is IQueueSourceReadiness readiness)
+        var independentMode = _httpTransport?.IsProxyMode == true;
+        using var independent = independentMode
+            ? new QueueIndependentSession(job.JobId, sourceId, _httpTransport!.Pool, _shared,
+                status => UpdateRoute(job.JobId, status)) : null;
+        var manifestSession = independentMode && sourceId == "comix"
+            ? new QueueManifestSession(_browser.StagingRoot,
+                Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(
+                    System.Text.Encoding.UTF8.GetBytes(job.JobId))).ToLowerInvariant()[..32],
+                _httpTransport!.Pool, source, _shared,
+                status => UpdateRoute(job.JobId, status))
+            : null;
+
+        if (manifestSession is null && source is IQueueSourceReadiness readiness)
         {
             var providerState = readiness.GetQueueReadiness();
             if (!providerState.IsReady)
@@ -643,14 +611,21 @@ public sealed class DownloadQueueFeature : IDisposable
         RemoteChapterManifest manifest;
         try
         {
-            manifest = await source.GetManifestAsync(chapterIdentity, linked.Token).ConfigureAwait(false);
+            var snapshot = new QueueManifestStore(_browser.ResolveContained(
+                Path.Combine("jobs", job.JobId, "manifest.json")));
+            manifest = snapshot.Read(chapterIdentity)
+                ?? await (manifestSession is null
+                    ? source.GetManifestAsync(chapterIdentity, lifetime)
+                    : manifestSession.GetAsync(chapterIdentity, lifetime)).ConfigureAwait(false);
+            snapshot.Write(manifest);
+            lifetime.ThrowIfCancellationRequested();
         }
         catch (OperationCanceledException)
         {
             ParkIfPausing(job.JobId);
             return;
         }
-        catch (Exception exception) when (exception is not OperationCanceledException)
+        catch (Exception exception) when (exception is not (OperationCanceledException or QueueSessionUnavailableException))
         {
             Fail(job.JobId, "Manifest gagal diselesaikan: " + exception.GetBaseException().Message);
             return;
@@ -661,7 +636,7 @@ public sealed class DownloadQueueFeature : IDisposable
         Commit(jobs =>
         {
             var index = FindIndex(jobs, job.JobId);
-            if (index < 0) return;
+            if (index < 0 || lifetime.IsCancellationRequested || jobs[index].State == DownloadJobState.Pausing) return;
             jobs[index] = jobs[index] with
             {
                 ManifestHash = manifest.ManifestHash,
@@ -671,10 +646,13 @@ public sealed class DownloadQueueFeature : IDisposable
             };
         });
 
-        var transport = new PageTransport(_browser, _browser.StagingRoot);
-        var pipeline = new ChapterDownloadPipeline(transport, source, _browser.StagingRoot);
-        var progress = new Progress<ChapterDownloadProgress>(update =>
-            UpdateProgress(job.JobId, update));
+        lifetime.ThrowIfCancellationRequested();
+        using var transport = new PageTransport(_browser, _browser.StagingRoot, _httpTransport, independent);
+        var pipeline = new ChapterDownloadPipeline(transport, source, _browser.StagingRoot)
+        {
+            ManifestResolver = manifestSession is null ? null : manifestSession.GetAsync,
+        };
+        var progress = new InlineProgress(update => UpdateProgress(job.JobId, update));
 
         PipelineResult result;
         try
@@ -684,11 +662,17 @@ public sealed class DownloadQueueFeature : IDisposable
                 manifest,
                 ComixReferer(sourceId),
                 progress,
-                linked.Token).ConfigureAwait(false);
+                lifetime).ConfigureAwait(false);
         }
         catch (OperationCanceledException)
         {
             ParkIfPausing(job.JobId);
+            return;
+        }
+        catch (QueueSessionUnavailableException) { throw; }
+        catch (Exception exception)
+        {
+            Fail(job.JobId, "Download pipeline gagal: " + exception.GetBaseException().Message);
             return;
         }
 
@@ -699,9 +683,16 @@ public sealed class DownloadQueueFeature : IDisposable
         }
 
         var publishIncomplete = result.CanPublishIncomplete(manifest.PageCount);
+        if (independentMode && result.FailureEvidence.Any(failure => failure.Outcome is
+                PageFetchOutcome.Rejected or PageFetchOutcome.Challenge or PageFetchOutcome.Throttled))
+        {
+            Fail(job.JobId, "Provider rejected/challenged or throttled the request; no proxy rotation or further provider requests. "
+                + string.Join("; ", result.FailureEvidence.Select(item => item.Detail).Distinct()));
+            return;
+        }
         if (!result.Complete && !publishIncomplete)
         {
-            await EnterFallbackOrFailAsync(job, source, chapterIdentity, result, linked.Token)
+            await EnterFallbackOrFailAsync(job, source, chapterIdentity, result, lifetime, manifestSession)
                 .ConfigureAwait(false);
             return;
         }
@@ -727,14 +718,14 @@ public sealed class DownloadQueueFeature : IDisposable
                     manifest.PageCount,
                     result.FailureEvidence,
                     current.Target,
-                    linked.Token).ConfigureAwait(false)
+                    lifetime).ConfigureAwait(false)
                 : await publisher.PublishAsync(
                     chapterIdentity,
                     current.GroupDisplayName,
                     manifest.ManifestHash,
                     result.Pages,
                     current.Target,
-                    linked.Token).ConfigureAwait(false);
+                    lifetime).ConfigureAwait(false);
         }
         catch (OperationCanceledException)
         {
@@ -786,20 +777,22 @@ public sealed class DownloadQueueFeature : IDisposable
         IMangaSource source,
         RemoteChapterIdentity chapterIdentity,
         PipelineResult result,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        QueueManifestSession? manifestSession = null)
     {
         var detail = result.Detail ?? $"{result.FailedPages.Count} page gagal setelah recovery.";
         IReadOnlyList<RemoteAlternateChapter> candidates = [];
         try
         {
-            candidates = await source
-                .FindAlternateGroupsAsync(chapterIdentity, cancellationToken)
-                .ConfigureAwait(false);
+            candidates = await (manifestSession is null
+                ? source.FindAlternateGroupsAsync(chapterIdentity, cancellationToken)
+                : manifestSession.FindAlternatesAsync(chapterIdentity, cancellationToken)).ConfigureAwait(false);
         }
         catch (OperationCanceledException)
         {
             throw;
         }
+        catch (QueueSessionUnavailableException) { throw; }
         catch (Exception)
         {
             // An unreachable provider leaves the job failed with staging intact;
@@ -847,8 +840,11 @@ public sealed class DownloadQueueFeature : IDisposable
             if (index >= 0)
             {
                 var current = _jobs[index];
+                if (!current.IsInFlight || current.State == DownloadJobState.Pausing) return;
                 var pageCount = update.PageCount == 0 ? current.PageCount : update.PageCount;
-                if (current.CompletedPages != update.CompletedPages || current.PageCount != pageCount)
+                if (current.CompletedPages != update.CompletedPages
+                    || current.PageCount != pageCount
+                    || !string.Equals(current.Warning, update.StatusText, StringComparison.Ordinal))
                 {
                     // Per-page durability belongs to the staging journal. Keeping
                     // this projection in memory avoids rewriting the complete
@@ -856,8 +852,9 @@ public sealed class DownloadQueueFeature : IDisposable
                     // transition persists the latest projection with the job.
                     _jobs[index] = current with
                     {
-                        CompletedPages = update.CompletedPages,
+                        CompletedPages = Math.Max(current.CompletedPages, update.CompletedPages),
                         PageCount = pageCount,
+                        Warning = update.StatusText,
                         UpdatedUtc = DateTimeOffset.UtcNow,
                     };
                     changed = true;
@@ -868,11 +865,27 @@ public sealed class DownloadQueueFeature : IDisposable
         if (changed) Notify();
     }
 
+    private void UpdateRoute(string jobId, string status)
+    {
+        lock (_gate)
+        {
+            var index = FindIndex(_jobs, jobId);
+            if (index < 0 || !_jobs[index].IsInFlight || _jobs[index].State == DownloadJobState.Pausing) return;
+            _jobs[index] = _jobs[index] with { RouteText = status };
+        }
+        Notify();
+    }
+
+    private sealed class InlineProgress(Action<ChapterDownloadProgress> report) : IProgress<ChapterDownloadProgress>
+    {
+        public void Report(ChapterDownloadProgress value) => report(value);
+    }
+
     private void SetState(string jobId, DownloadJobState state, string? warning) =>
         Commit(jobs =>
         {
             var index = FindIndex(jobs, jobId);
-            if (index < 0) return;
+            if (index < 0 || jobs[index].State is DownloadJobState.Pausing or DownloadJobState.Completed) return;
             jobs[index] = jobs[index] with
             {
                 State = state,
@@ -943,9 +956,9 @@ public sealed class DownloadQueueFeature : IDisposable
     {
         lock (_gate)
         {
-            if (_running.TryGetValue(jobId, out var source)) source.Cancel();
+            var index = FindIndex(_jobs, jobId);
+            if (index < 0 || _jobs[index].State != DownloadJobState.Pausing) return;
         }
-
         Commit(jobs =>
         {
             var index = FindIndex(jobs, jobId);
@@ -997,10 +1010,7 @@ public sealed class DownloadQueueFeature : IDisposable
 
         lock (_gate)
         {
-            // Cancel bounded native work; an already-written pyhost command still
-            // reaches its own terminal response. A job that finished in the meantime
-            // has already left the running set, and there is nothing to cancel.
-            if (_running.TryGetValue(jobId, out var source)) source.Cancel();
+            _ = _scheduler.Cancel([jobId]);
         }
     }
 

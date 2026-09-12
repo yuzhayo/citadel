@@ -1,6 +1,7 @@
 using System.IO;
 using System.Text.Json.Nodes;
 using CitadelBridge;
+using Module.Mangareader.ShareLogic;
 
 namespace Module.Mangareader.Features.Downloader;
 
@@ -18,8 +19,9 @@ public sealed record BrowserFetchEvidence(
 /// <summary>
 /// The Downloader's own command/payload adapter over the shared pyhost
 /// transport. It owns this feature's browser lifetime: the host is started
-/// lazily, held only while work needs it, released after bounded idle, and
-/// never shares CamoProf's process, profile, or session registry.
+/// lazily and remains available across navigation and close-to-tray. It ends
+/// only through the feature's explicit Stop command or application shutdown,
+/// and never shares CamoProf's process, profile, or session registry.
 ///
 /// Timeouts are fixed per operation class rather than negotiated per call.
 /// </summary>
@@ -34,28 +36,82 @@ public sealed class DownloaderPyHostClient : IDisposable
     /// <summary>Each single page attempt.</summary>
     public static readonly TimeSpan PageTimeout = TimeSpan.FromSeconds(30);
 
-    /// <summary>An unused browser is released after this long.</summary>
-    public static readonly TimeSpan IdleReleaseAfter = TimeSpan.FromSeconds(60);
-
     private const string PluginName = "mangareader_downloader";
-    private static readonly TimeSpan IdleCheckPeriod = TimeSpan.FromSeconds(15);
+    private const int MaxProxyOpenAttempts = 3;
 
     private readonly SemaphoreSlim _gate = new(1, 1);
-    private readonly Timer _idleTimer;
+    private readonly ProxyPoolAdapter? _proxyPool;
+    private readonly string? _profileIdentity;
+    private readonly ProxyLease? _fixedLease;
+    private ProxyReservation? _sessionReservation;
+    private readonly AsyncLocal<bool> _borrowOnly = new();
+    private readonly AsyncLocal<string?> _borrowedSession = new();
+    private readonly AsyncLocal<long> _borrowedGeneration = new();
+    private long _sessionGeneration;
+    private readonly Func<JsonObject, CancellationToken, Task<JsonObject>>? _openSessionOverride;
+    private readonly Func<string, JsonObject, CancellationToken, Task<JsonObject>>? _commandOverride;
     private PyHost? _host;
     private string? _session;
     private string? _sessionProvider;
     private bool? _sessionHeadless;
+    private bool _sessionProxyMode;
     private int _showBrowser;
-    private DateTimeOffset _lastUsedUtc = DateTimeOffset.UtcNow;
     private int _disposed;
 
-    public DownloaderPyHostClient(string stagingRoot)
+    public DownloaderPyHostClient(string stagingRoot) : this(stagingRoot, null)
+    {
+    }
+
+    internal DownloaderPyHostClient(string stagingRoot, ProxyPoolAdapter? proxyPool)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(stagingRoot);
         StagingRoot = Path.GetFullPath(stagingRoot);
+        _proxyPool = proxyPool;
         Directory.CreateDirectory(StagingRoot);
-        _idleTimer = new Timer(OnIdleTick, null, IdleCheckPeriod, IdleCheckPeriod);
+    }
+
+    internal DownloaderPyHostClient(string stagingRoot, ProxyPoolAdapter pool,
+        string profileIdentity, ProxyLease fixedLease,
+        Func<JsonObject, CancellationToken, Task<JsonObject>>? openSession = null,
+        Func<string, JsonObject, CancellationToken, Task<JsonObject>>? command = null) : this(stagingRoot, pool)
+    {
+        if (!System.Text.RegularExpressions.Regex.IsMatch(profileIdentity, @"^queue-[a-f0-9]{32}$"))
+            throw new ArgumentException("Invalid Queue profile identity.", nameof(profileIdentity));
+        _profileIdentity = profileIdentity;
+        _fixedLease = fixedLease;
+        _openSessionOverride = openSession;
+        _commandOverride = command;
+    }
+
+    internal bool HasSessionFor(string provider, bool proxyMode) =>
+        HasSessionFor(provider) && _sessionProxyMode == proxyMode;
+
+    // Called only inside QueueSharedSessionAdapter's serial gate. Ensuring the
+    // borrowed source may reuse this session, but can never bootstrap or replace it.
+    internal IDisposable BorrowExistingSession()
+    {
+        _borrowOnly.Value = true;
+        _borrowedSession.Value = _session;
+        _borrowedGeneration.Value = Volatile.Read(ref _sessionGeneration);
+        return new BorrowScope(this);
+    }
+
+    private sealed class BorrowScope(DownloaderPyHostClient owner) : IDisposable
+    {
+        public void Dispose()
+        {
+            owner._borrowOnly.Value = false;
+            owner._borrowedSession.Value = null;
+        }
+    }
+
+    internal DownloaderPyHostClient(
+        string stagingRoot,
+        ProxyPoolAdapter proxyPool,
+        Func<JsonObject, CancellationToken, Task<JsonObject>> openSession)
+        : this(stagingRoot, proxyPool)
+    {
+        _openSessionOverride = openSession ?? throw new ArgumentNullException(nameof(openSession));
     }
 
     /// <summary>Absolute root every browser write must stay inside.</summary>
@@ -111,33 +167,35 @@ public sealed class DownloaderPyHostClient : IDisposable
         try
         {
             ThrowIfDisposed();
+            if (_borrowOnly.Value)
+            {
+                if (!HasSessionFor(provider) || _session != _borrowedSession.Value
+                    || _sessionGeneration != _borrowedGeneration.Value)
+                    throw new PyHostException("NO_BROWSER_SESSION", "Shared session is no longer available.");
+                return _session!;
+            }
             if (_session is not null
                 && string.Equals(_sessionProvider, provider, StringComparison.Ordinal)
-                && _sessionHeadless == headless)
+                && _sessionHeadless == headless
+                && _sessionProxyMode == (_fixedLease is not null || _proxyPool?.IsProxyMode == true))
             {
-                _lastUsedUtc = DateTimeOffset.UtcNow;
                 return _session;
             }
 
             await CloseSessionCoreAsync(cancellationToken).ConfigureAwait(false);
 
-            var host = await EnsureHostCoreAsync().ConfigureAwait(false);
-            var parameters = new JsonObject
-            {
-                ["provider"] = provider,
-                ["url"] = url,
-                ["headless"] = headless,
-                ["timeout_ms"] = (int)BootstrapTimeout.TotalMilliseconds,
-            };
-            var response = await host
-                .SendAsync("downloader.open", parameters, BootstrapTimeout, cancellationToken)
-                .ConfigureAwait(false);
+            var response = await OpenWithProxyFailoverAsync(
+                provider,
+                url,
+                headless,
+                cancellationToken).ConfigureAwait(false);
 
             _session = response["session"]?.GetValue<string>()
                 ?? throw new PyHostException("BAD_RESPONSE", "downloader.open tidak mengembalikan session");
             _sessionProvider = provider;
             _sessionHeadless = headless;
-            _lastUsedUtc = DateTimeOffset.UtcNow;
+            _sessionProxyMode = _fixedLease is not null || _proxyPool?.IsProxyMode == true;
+            Interlocked.Increment(ref _sessionGeneration);
             return _session;
         }
         finally
@@ -169,6 +227,7 @@ public sealed class DownloaderPyHostClient : IDisposable
         string url,
         string relativePath,
         string? referer,
+        bool requiredProxyMode,
         CancellationToken cancellationToken)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(url);
@@ -190,7 +249,8 @@ public sealed class DownloaderPyHostClient : IDisposable
             },
             null,
             PageTimeout,
-            cancellationToken).ConfigureAwait(false);
+            cancellationToken,
+            requiredProxyMode).ConfigureAwait(false);
 
         return new BrowserFetchEvidence(
             response["status"]?.GetValue<int>() ?? 0,
@@ -201,8 +261,9 @@ public sealed class DownloaderPyHostClient : IDisposable
     }
 
     /// <summary>
-    /// Releases the browser without ending the host, so a later explicit action
-    /// can start one again. Never called by a timer while work is in flight.
+    /// Releases the browser without ending the host, so a failed provider
+    /// handshake can retry cleanly. It is never triggered by inactivity or
+    /// routed-view navigation.
     /// </summary>
     public async Task ReleaseSessionAsync(CancellationToken cancellationToken = default)
     {
@@ -233,7 +294,9 @@ public sealed class DownloaderPyHostClient : IDisposable
         Interlocked.Exchange(ref _session, null);
         Interlocked.Exchange(ref _sessionProvider, null);
         _sessionHeadless = null;
+        _sessionProxyMode = false;
         host?.Abort();
+        Interlocked.Exchange(ref _sessionReservation, null)?.Dispose();
     }
 
     /// <summary>Canonicalizes a staging-relative path and refuses escapes.</summary>
@@ -258,8 +321,6 @@ public sealed class DownloaderPyHostClient : IDisposable
             return;
         }
 
-        _idleTimer.Dispose();
-
         PyHost? host;
         string? session;
         _gate.Wait();
@@ -271,6 +332,7 @@ public sealed class DownloaderPyHostClient : IDisposable
             _session = null;
             _sessionProvider = null;
             _sessionHeadless = null;
+            _sessionProxyMode = false;
         }
         finally
         {
@@ -305,6 +367,7 @@ public sealed class DownloaderPyHostClient : IDisposable
             }
 
             host.Dispose();
+            Interlocked.Exchange(ref _sessionReservation, null)?.Dispose();
         });
 
         _gate.Dispose();
@@ -315,32 +378,54 @@ public sealed class DownloaderPyHostClient : IDisposable
         Action<JsonObject> configure,
         Action<JsonObject>? configureExtra,
         TimeSpan timeout,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        bool? requiredProxyMode = null)
     {
         ThrowIfDisposed();
         await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
             ThrowIfDisposed();
-            if (_session is null)
+            if (_session is null || (_borrowOnly.Value && (_session != _borrowedSession.Value
+                || _sessionGeneration != _borrowedGeneration.Value)))
             {
                 throw new PyHostException(
                     "NO_BROWSER_SESSION",
                     "tidak ada session browser Downloader; buka provider lebih dulu");
             }
+            if (requiredProxyMode is { } expected && _sessionProxyMode != expected)
+            {
+                throw new PyHostException(
+                    "SESSION_TRANSPORT_MISMATCH",
+                    "session browser tidak memakai mode proxy/direct yang dikunci untuk chapter ini");
+            }
 
-            var host = await EnsureHostCoreAsync().ConfigureAwait(false);
             var payload = new JsonObject { ["session"] = _session };
             configure(payload);
             configureExtra?.Invoke(payload);
+            if (_commandOverride is not null)
+                return await _commandOverride(command, payload, cancellationToken).ConfigureAwait(false);
+            var host = await EnsureHostCoreAsync().ConfigureAwait(false);
 
             try
             {
                 var response = await host
                     .SendAsync(command, payload, timeout, cancellationToken)
                     .ConfigureAwait(false);
-                _lastUsedUtc = DateTimeOffset.UtcNow;
                 return response;
+            }
+            catch (PyHostException ex) when (_borrowOnly.Value && ex.Code == "TIMEOUT")
+            {
+                // The protocol owner dispatches serially. A successful ping is
+                // a settlement barrier for the previous timed-out command. Do
+                // not release the borrowed gate/staging merely because C# timed out.
+                while (true)
+                {
+                    try { await host.PingAsync(CancellationToken.None).ConfigureAwait(false); break; }
+                    catch (PyHostException pending) when (pending.Code == "TIMEOUT") { }
+                    catch (Exception) { break; } // stopped/exited host can no longer write
+                }
+                throw;
             }
             catch (PyHostException ex) when (ex.Code is "BROWSER_GONE" or "HOST_EXITED" or "SESSION_NOT_FOUND")
             {
@@ -357,6 +442,68 @@ public sealed class DownloaderPyHostClient : IDisposable
         }
     }
 
+    private async Task<JsonObject> OpenWithProxyFailoverAsync(
+        string provider,
+        string url,
+        bool headless,
+        CancellationToken cancellationToken)
+    {
+        var attempts = _fixedLease is not null ? 1 : _proxyPool?.IsProxyMode == true ? MaxProxyOpenAttempts : 1;
+        for (var attempt = 1; ; attempt++)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var lease = _fixedLease ?? _proxyPool?.Acquire(ProxyTarget.Browser);
+            if (lease is not null && _fixedLease is null)
+                _sessionReservation = await _proxyPool!.Reservations.ReserveAsync(
+                    "downloader-browser", [lease.Endpoint], cancellationToken).ConfigureAwait(false);
+            var parameters = new JsonObject
+            {
+                ["provider"] = provider,
+                ["url"] = url,
+                ["headless"] = headless,
+                ["timeout_ms"] = (int)BootstrapTimeout.TotalMilliseconds,
+            };
+            if (lease is not null) parameters["proxy"] = lease.ToLaunchOptions().ToJson();
+            if (_profileIdentity is not null) parameters["profile_identity"] = _profileIdentity;
+
+            try
+            {
+                if (_openSessionOverride is not null)
+                {
+                    return await _openSessionOverride(parameters, cancellationToken).ConfigureAwait(false);
+                }
+
+                var host = await EnsureHostCoreAsync().ConfigureAwait(false);
+                return await host
+                    .SendAsync("downloader.open", parameters, BootstrapTimeout, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+            catch (Exception ex) when (
+                lease is not null
+                && IsRetryableProxyOpenFailure(ex, cancellationToken))
+            {
+                _proxyPool?.ReportFailure(lease);
+                Interlocked.Exchange(ref _sessionReservation, null)?.Dispose();
+                if (attempt >= attempts) throw;
+            }
+            catch
+            {
+                Interlocked.Exchange(ref _sessionReservation, null)?.Dispose();
+                throw;
+            }
+        }
+    }
+
+    private static bool IsRetryableProxyOpenFailure(
+        Exception error,
+        CancellationToken cancellationToken)
+    {
+        if (cancellationToken.IsCancellationRequested) return false;
+        return error is TimeoutException
+            || error is PyHostException pyhost
+                && pyhost.Code is "BROWSER_LAUNCH" or "TIMEOUT";
+    }
+
     private async Task CloseSessionCoreAsync(CancellationToken cancellationToken)
     {
         var host = _host;
@@ -364,8 +511,10 @@ public sealed class DownloaderPyHostClient : IDisposable
         _session = null;
         _sessionProvider = null;
         _sessionHeadless = null;
+        _sessionProxyMode = false;
         if (host is null || session is null)
         {
+            Interlocked.Exchange(ref _sessionReservation, null)?.Dispose();
             return;
         }
 
@@ -377,10 +526,14 @@ public sealed class DownloaderPyHostClient : IDisposable
                 ApiTimeout,
                 cancellationToken).ConfigureAwait(false);
         }
-        catch (PyHostException)
+        catch
         {
-            // A vanished browser is already the desired end state.
+            // A failed close must settle the owned host before releasing its proxy.
+            host.Abort();
+            _host = null;
+            throw;
         }
+        finally { Interlocked.Exchange(ref _sessionReservation, null)?.Dispose(); }
     }
 
     private async Task<PyHost> EnsureHostCoreAsync()
@@ -409,33 +562,6 @@ public sealed class DownloaderPyHostClient : IDisposable
         _host = PyHost.Start(python, script, CredenzPath.Resolve(), PluginName);
         await Task.CompletedTask.ConfigureAwait(false);
         return _host;
-    }
-
-    private void OnIdleTick(object? state)
-    {
-        if (Volatile.Read(ref _disposed) != 0)
-        {
-            return;
-        }
-
-        // A local idle check only: this never issues a remote request or a
-        // health probe, so it cannot create background network traffic.
-        if (DateTimeOffset.UtcNow - _lastUsedUtc < IdleReleaseAfter)
-        {
-            return;
-        }
-
-        _ = Task.Run(async () =>
-        {
-            try
-            {
-                await ReleaseSessionAsync(CancellationToken.None).ConfigureAwait(false);
-            }
-            catch (Exception)
-            {
-                // Idle release is best effort; the next action re-bootstraps.
-            }
-        });
     }
 
     private void ThrowIfDisposed()

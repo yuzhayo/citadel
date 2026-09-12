@@ -17,6 +17,20 @@ public sealed class PyHostException : Exception
     public string Code { get; }
 }
 
+/// <summary>Optional proxy data accepted by the shared browser launch seam.</summary>
+public sealed record ProxyLaunchOptions(
+    string Server,
+    string? Username = null,
+    string? Password = null)
+{
+    internal JsonObject ToJson() => new()
+    {
+        ["server"] = Server,
+        ["username"] = Username,
+        ["password"] = Password,
+    };
+}
+
 /// <summary>
 /// Client for module/sharedLogic/pyhost — the only C#↔Python seam.
 /// Owns one python process; NDJSON over stdin/stdout; exactly one response
@@ -98,7 +112,8 @@ public sealed class PyHost : IDisposable
         string profile,
         string? startUrl,
         bool headless = false,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        ProxyLaunchOptions? proxy = null)
     {
         var parameters = new JsonObject
         {
@@ -108,6 +123,10 @@ public sealed class PyHost : IDisposable
         if (!string.IsNullOrWhiteSpace(startUrl))
         {
             parameters["start_url"] = startUrl;
+        }
+        if (proxy is not null)
+        {
+            parameters["proxy"] = proxy.ToJson();
         }
 
         return await SendAsync("session.open", parameters, DefaultTimeout, cancellationToken)

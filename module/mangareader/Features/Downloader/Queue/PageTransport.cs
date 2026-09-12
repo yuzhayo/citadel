@@ -2,6 +2,7 @@ using System.IO;
 using System.Net.Http;
 using System.Security.Cryptography;
 using Module.Mangareader.Sources;
+using Module.Mangareader.ShareLogic;
 
 namespace Module.Mangareader.Features.Downloader.Queue;
 
@@ -60,97 +61,107 @@ public sealed record PageFetchResult(
 public sealed class PageTransport : IDisposable
 {
     private const long MaximumPageBytes = 25 * 1024 * 1024;
+    internal static readonly TimeSpan NativePageTimeout = TimeSpan.FromSeconds(30);
     private static readonly HttpClient Client = CreateClient();
 
     private readonly DownloaderPyHostClient _browser;
+    private readonly ProxyHttpTransport? _httpTransport;
+    private readonly bool _useProxy;
+    private readonly QueueIndependentSession? _independent;
     private readonly string _stagingRoot;
     private int _disposed;
 
     public PageTransport(DownloaderPyHostClient browser, string stagingRoot)
+        : this(browser, stagingRoot, null)
+    {
+    }
+
+    internal PageTransport(
+        DownloaderPyHostClient browser,
+        string stagingRoot,
+        ProxyHttpTransport? httpTransport,
+        QueueIndependentSession? independent = null)
     {
         _browser = browser ?? throw new ArgumentNullException(nameof(browser));
         ArgumentException.ThrowIfNullOrWhiteSpace(stagingRoot);
         _stagingRoot = Path.GetFullPath(stagingRoot);
+        _httpTransport = httpTransport;
+        _useProxy = independent is not null || httpTransport?.IsProxyMode == true;
+        _independent = independent;
     }
 
     /// <summary>Absolute root every staged page lives under.</summary>
     public string StagingRoot => _stagingRoot;
 
-    public async Task<PageFetchResult> FetchAsync(
+    /// <summary>Transport mode frozen when this chapter pipeline is created.</summary>
+    internal bool UsesProxy => _useProxy;
+    internal bool HasIndependentSession => _independent is not null;
+
+    internal Task<PageFetchResult> FetchIndependentAsync(RemotePage page, string path,
+        string? referer, IReadOnlyDictionary<string, string>? headers, CancellationToken token) =>
+        _independent!.FetchAsync(page,
+            (lease, ct) => FetchNativeAsync(page, path, referer, headers, ct, lease),
+            ct => FetchBrowserFallbackAsync(page, path, referer, ct), token);
+
+    internal async Task<PageFetchResult> FetchNativeAsync(
         RemotePage page,
         string relativePath,
         string? referer,
         IReadOnlyDictionary<string, string>? manifestHeaders,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        ProxyLease? explicitLease = null)
     {
         ArgumentNullException.ThrowIfNull(page);
         var target = _browser.ResolveContained(relativePath);
-
-        var native = await FetchNativeAsync(page, target, referer, manifestHeaders, cancellationToken)
-            .ConfigureAwait(false);
-        if (native.Succeeded || !native.IsFallbackEligible)
-        {
-            return native;
-        }
-
-        // At most one browser-context fetch per attempt, and only for the
-        // outcomes the browser can actually satisfy. A successful fallback
-        // still passes the same byte-format and size validation.
-        var fallback = await FetchThroughBrowserAsync(page, target, referer, cancellationToken)
-            .ConfigureAwait(false);
-        return fallback with { UsedBrowserFallback = true };
-    }
-
-    private async Task<PageFetchResult> FetchNativeAsync(
-        RemotePage page,
-        string target,
-        string? referer,
-        IReadOnlyDictionary<string, string>? manifestHeaders,
-        CancellationToken cancellationToken)
-    {
         var temporary = target + ".part";
         Directory.CreateDirectory(Path.GetDirectoryName(target)!);
+        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        var timeout = explicitLease is null ? NativePageTimeout : TimeSpan.FromSeconds(3);
+        deadline.CancelAfter(timeout);
+        var requestToken = deadline.Token;
+        using var request = new HttpRequestMessage(HttpMethod.Get, page.Url);
+        if (!string.IsNullOrWhiteSpace(referer))
+        {
+            request.Headers.TryAddWithoutValidation("Referer", referer);
+        }
+
+        if (manifestHeaders is not null)
+        {
+            foreach (var header in manifestHeaders)
+            {
+                if (string.Equals(header.Key, "Referer", StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                request.Headers.TryAddWithoutValidation(header.Key, header.Value);
+            }
+        }
 
         try
         {
-            using var request = new HttpRequestMessage(HttpMethod.Get, page.Url);
-            if (!string.IsNullOrWhiteSpace(referer))
-            {
-                request.Headers.TryAddWithoutValidation("Referer", referer);
-            }
-
-            if (manifestHeaders is not null)
-            {
-                foreach (var header in manifestHeaders)
-                {
-                    if (string.Equals(header.Key, "Referer", StringComparison.OrdinalIgnoreCase))
-                    {
-                        continue;
-                    }
-
-                    request.Headers.TryAddWithoutValidation(header.Key, header.Value);
-                }
-            }
-
-            HttpResponseMessage response;
-            try
-            {
-                response = await Client
-                    .SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken)
-                    .ConfigureAwait(false);
-            }
-            catch (HttpRequestException exception)
-            {
-                return Failure(PageFetchOutcome.NetworkFailed, exception.Message);
-            }
-            catch (TaskCanceledException) when (!cancellationToken.IsCancellationRequested)
-            {
-                return Failure(PageFetchOutcome.NetworkFailed, "native page request timed out");
-            }
+            var response = explicitLease is not null
+                ? await _independent!.Transport.SendWithLeaseAsync(
+                    _independent.Owner, Client, request, explicitLease, requestToken).ConfigureAwait(false)
+                : _httpTransport is null
+                ? await Client.SendAsync(
+                    request, HttpCompletionOption.ResponseHeadersRead, requestToken).ConfigureAwait(false)
+                : await _httpTransport.SendAsync(
+                    "downloader-pages",
+                     Client,
+                     request,
+                     HttpCompletionOption.ResponseHeadersRead,
+                     _useProxy,
+                     requestToken).ConfigureAwait(false);
 
             using (response)
             {
                 var status = (int)response.StatusCode;
+                if (status == 407)
+                {
+                    _httpTransport?.ReportResponseFailure(request);
+                    return Failure(PageFetchOutcome.NetworkFailed, "HTTP 407 proxy authentication required");
+                }
                 if (status is 404 or 410)
                 {
                     return Failure(PageFetchOutcome.NotFound, $"HTTP {status}");
@@ -176,22 +187,10 @@ public sealed class PageTransport : IDisposable
                     return Failure(PageFetchOutcome.TooLarge, "declared size exceeds the page bound");
                 }
 
-                long written;
-                try
-                {
-                    written = await StreamToAsync(
-                        response.Content, temporary, cancellationToken).ConfigureAwait(false);
-                }
-                catch (HttpRequestException exception)
-                {
-                    return Failure(PageFetchOutcome.NetworkFailed, exception.Message);
-                }
-                catch (TaskCanceledException) when (!cancellationToken.IsCancellationRequested)
-                {
-                    return Failure(PageFetchOutcome.NetworkFailed, "native page stream timed out");
-                }
+                var written = await StreamToAsync(
+                    response.Content, temporary, requestToken).ConfigureAwait(false);
 
-                var bytes = await File.ReadAllBytesAsync(temporary, cancellationToken)
+                var bytes = await File.ReadAllBytesAsync(temporary, requestToken)
                     .ConfigureAwait(false);
                 string format;
                 try
@@ -216,24 +215,51 @@ public sealed class PageTransport : IDisposable
                     UsedBrowserFallback: false);
             }
         }
+        catch (OperationCanceledException) when (
+            !cancellationToken.IsCancellationRequested && deadline.IsCancellationRequested)
+        {
+            _httpTransport?.ReportResponseFailure(request);
+            return Failure(PageFetchOutcome.NetworkFailed, $"native page request exceeded {timeout.TotalSeconds} seconds");
+        }
+        catch (HttpRequestException exception)
+        {
+            _httpTransport?.ReportResponseFailure(request);
+            return Failure(PageFetchOutcome.NetworkFailed, exception.Message);
+        }
+        catch (InvalidDataException exception)
+        {
+            return Failure(PageFetchOutcome.TooLarge, exception.Message);
+        }
+        catch (IOException exception)
+        {
+            _httpTransport?.ReportResponseFailure(request);
+            return Failure(PageFetchOutcome.NetworkFailed, exception.Message);
+        }
         finally
         {
             TryDelete(temporary);
         }
     }
 
-    private async Task<PageFetchResult> FetchThroughBrowserAsync(
+    internal async Task<PageFetchResult> FetchBrowserFallbackAsync(
         RemotePage page,
-        string target,
+        string relativePath,
         string? referer,
         CancellationToken cancellationToken)
     {
+        ArgumentNullException.ThrowIfNull(page);
+        var target = _browser.ResolveContained(relativePath);
         BrowserFetchEvidence evidence;
         try
         {
             evidence = await _browser
-                .FetchToStagingAsync(page.Url, Path.GetRelativePath(_stagingRoot, target), referer, cancellationToken)
-                .ConfigureAwait(false);
+                .FetchToStagingAsync(
+                    page.Url,
+                    Path.GetRelativePath(_stagingRoot, target),
+                    referer,
+                    _useProxy,
+                    cancellationToken)
+                 .ConfigureAwait(false);
         }
         catch (Exception exception) when (
             exception is IOException or InvalidOperationException
@@ -367,8 +393,10 @@ public sealed class PageTransport : IDisposable
     {
         var client = new HttpClient
         {
-            // Per-attempt bound; the caller's token carries the job lifetime.
-            Timeout = TimeSpan.FromSeconds(30),
+            // FetchNativeAsync owns one deadline covering headers and the full
+            // streamed body. HttpClient's ResponseHeadersRead timeout alone
+            // cannot provide that contract.
+            Timeout = Timeout.InfiniteTimeSpan,
         };
         client.DefaultRequestHeaders.UserAgent.ParseAdd("Citadel-MangaReader-Downloader/1.0");
         return client;

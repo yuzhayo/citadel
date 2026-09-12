@@ -24,53 +24,40 @@ namespace Module.Mangareader;
 
 public partial class MangaReaderView : UserControl, IContentHeaderActionProvider
 {
-    private readonly ReadingHistory _history = new();
-    private readonly LibraryRootContext _libraryRoot = new();
+    private readonly ReadingHistory _history;
+    private readonly LibraryRootContext _libraryRoot;
     private readonly HttpClient _coverClient = new() { Timeout = TimeSpan.FromSeconds(20) };
-    private readonly DownloaderPyHostClient _downloaderBrowser;
+    private readonly ProxyPoolAdapter _catalogProxyPool;
+    private readonly ProxyHttpTransport _catalogHttpTransport;
     private readonly DownloadQueueFeature _queue;
     private readonly CatalogContext _catalogContext;
     private ReaderWindow? _readerWindow;
     private bool _disposed;
 
-    public MangaReaderView(Lifetime lifetime)
+    internal MangaReaderView(
+        Lifetime lifetime,
+        ReadingHistory history,
+        LibraryRootContext libraryRoot,
+        DownloaderContext downloader)
     {
         ArgumentNullException.ThrowIfNull(lifetime);
+        _history = history ?? throw new ArgumentNullException(nameof(history));
+        _libraryRoot = libraryRoot ?? throw new ArgumentNullException(nameof(libraryRoot));
+        ArgumentNullException.ThrowIfNull(downloader);
+        _queue = downloader.Queue;
         InitializeComponent();
         // Recording is owned here, not by the History screen, so a chapter is
         // recorded whether or not that tab has ever been opened.
         HistoryTab.UseHistory(_history);
 
-        // Library owns one root for the whole module lifetime. Injected before
+        // Library owns one root for the whole application lifetime. Injected before
         // either child receives Loaded, so the single restore happens through
         // the shared owner instead of a second reader of the preference file.
         LibraryTab.UseLibraryRoot(_libraryRoot);
 
-        var stagingRoot = DownloaderJson.DefaultRoot();
-        _downloaderBrowser = new DownloaderPyHostClient(stagingRoot);
-        var sources = MangaSourceRegistry.CreateDefault(_downloaderBrowser);
-        var index = new DownloadSourceIndex(stagingRoot);
-        _queue = new DownloadQueueFeature(
-            _libraryRoot,
-            sources,
-            _downloaderBrowser,
-            new DownloadQueueStore(stagingRoot),
-            index);
-
-        // Lister and Auto Cover both resolve the destination through the one
-        // deterministic folder rule the index owns, so a probe, a queue target and
-        // a cover destination always name the same folder for the same title.
-        var lister = new ListerFeature(
-            new LocalTitleProbe(),
-            () => _libraryRoot.CurrentRoot,
-            (root, title) => index.DeterministicFolderName(root, title));
-
-        // Auto Cover owns its own command and its own transport seam. The root
-        // supplies the fetch delegate only; it never decides when a cover is
-        // written, and cover success is connected to nothing else.
-        var autoCover = new AutoCoverFeature(
-            (url, token) => _coverClient.GetByteArrayAsync(url, token),
-            lister);
+        var sources = downloader.Sources;
+        var index = downloader.Index;
+        var lister = downloader.Lister;
 
         // The same registered source directory serves both feature entry points.
         // The root only translates record shapes and forwards results: it never
@@ -87,8 +74,7 @@ public partial class MangaReaderView : UserControl, IContentHeaderActionProvider
             () => _libraryRoot.CurrentRoot,
             request => MangaReaderHandoffs.EnqueueUpdate(request, _queue)));
 
-        DownloaderTab.UseContext(
-            new DownloaderContext(sources, _queue, _downloaderBrowser, _libraryRoot, index, lister, autoCover));
+        DownloaderTab.UseContext(downloader);
 
         // Catalog Mirror composes the same source directory read-only through
         // its neutral projection, plus its own snapshot store. When no source
@@ -100,8 +86,11 @@ public partial class MangaReaderView : UserControl, IContentHeaderActionProvider
             "catalog");
         var catalogPaths = new CatalogMirrorPaths(catalogRoot);
         var catalogStore = new CatalogSnapshotStore(catalogPaths);
+        _catalogProxyPool = new ProxyPoolAdapter("MangaReader Catalog");
+        _catalogHttpTransport = new ProxyHttpTransport(_catalogProxyPool);
         var catalogBrowser = new CatalogBrowserClient(
-            Path.Combine(catalogRoot, "browser-staging"));
+            Path.Combine(catalogRoot, "browser-staging"),
+            _catalogProxyPool);
         var catalogSources = new CatalogSourceDirectory(catalogBrowser);
         var snapshotSource = catalogSources.AvailableSources
             .OfType<ICatalogSnapshotSource>()
@@ -116,12 +105,17 @@ public partial class MangaReaderView : UserControl, IContentHeaderActionProvider
         var catalogDetail = new CatalogMirrorDetailFeature(
             catalogSources,
             new CatalogEnrichmentStore(catalogPaths),
-            new CatalogMirrorCoverCache(catalogPaths, _coverClient),
+            new CatalogMirrorCoverCache(catalogPaths, _coverClient, _catalogHttpTransport),
             (request, token) => MangaReaderHandoffs.CheckCatalogAvailability(lister, request, token));
         var catalogLoad = new CatalogMirrorLoadFeature(catalogStore);
         var catalogFeature = new CatalogMirrorFeature(
             catalogLoad, catalogSync, catalogGenreSync, catalogDetail);
-        _catalogContext = new CatalogContext(catalogFeature, catalogBrowser, catalogSources);
+        _catalogContext = new CatalogContext(
+            catalogFeature,
+            catalogBrowser,
+            catalogSources,
+            _catalogProxyPool,
+            _catalogHttpTransport);
         CatalogTab.UseContext(_catalogContext);
         CatalogTab.UseQueueTarget(request => MangaReaderHandoffs.ConfirmQueueTarget(
             _libraryRoot, index, () => Window.GetWindow(CatalogTab), request));
@@ -131,11 +125,6 @@ public partial class MangaReaderView : UserControl, IContentHeaderActionProvider
         // it sees the queue owner, never the whole Downloader context.
         DownloadQueueTab.UseQueue(_queue);
         DownloaderTab.OpenDownloadQueue += DownloaderTab_OpenDownloadQueue;
-
-        // The module lifetime owns queue execution independently of which routed
-        // screen is visible. A restart parks every job, so starting here causes
-        // no automatic network activity.
-        _queue.Start();
 
         lifetime.Add(DisposeView);
     }
@@ -266,9 +255,9 @@ public partial class MangaReaderView : UserControl, IContentHeaderActionProvider
         if (_disposed) return;
         _disposed = true;
 
-        // Unsubscribe order is locked: the Queue screen drops its queue
-        // subscription first so no late event reaches a disposed view, then
-        // feature views, then the queue owner and shared clients last.
+        // Routed-view cleanup owns presentation only. Queue, provider session,
+        // and Downloader transports belong to the application background
+        // service and must survive navigation and close-to-tray.
         DownloadQueueTab.BackRequested -= DownloadQueueTab_BackRequested;
         DownloaderTab.OpenDownloadQueue -= DownloaderTab_OpenDownloadQueue;
         CatalogTab.QueueHandoffRequested -= CatalogTab_QueueHandoffRequested;
@@ -282,8 +271,7 @@ public partial class MangaReaderView : UserControl, IContentHeaderActionProvider
         _readerWindow?.Close();
         _readerWindow = null;
 
-        _queue.Dispose();
-        _downloaderBrowser.Dispose();
+        _catalogHttpTransport.Dispose();
         _coverClient.Dispose();
     }
 }

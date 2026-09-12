@@ -68,6 +68,15 @@
                 </setting:SettingActionCard.Content>
                 <setting:SettingActionCard.ActionContent>
                     <WrapPanel Orientation="Horizontal">
+                        <setting:SettingToggle x:Name="ProxyModeToggle"
+                                               setting:UiPreference.Key="mangareader.catalog.use-proxy-pool"
+                                               Margin="0,0,8,0"
+                                               IsChecked="False"
+                                               Content="Use proxy pool"
+                                               ToolTip="Route new Catalog browser sessions and HTTP requests through the Proxy pool"
+                                               AutomationProperties.Name="Use Proxy pool for Catalog"
+                                               Checked="ProxyModeToggle_Changed"
+                                               Unchecked="ProxyModeToggle_Changed" />
                         <setting:SettingToggle x:Name="ShowBrowserToggle"
                                                setting:UiPreference.Key="mangareader.catalog.show-browser"
                                                Margin="0,0,8,0"

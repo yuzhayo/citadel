@@ -70,6 +70,15 @@
 
                 <setting:SettingActionCard Grid.Column="1" Padding="10,5">
                     <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                        <setting:SettingToggle x:Name="ProxyModeToggle"
+                                               setting:UiPreference.Key="mangareader.downloader.use-proxy-pool"
+                                               Margin="0,0,8,0"
+                                               IsChecked="False"
+                                               Content="Use proxy pool"
+                                               ToolTip="Route new Downloader browser sessions and HTTP requests through the Proxy pool"
+                                               AutomationProperties.Name="Use Proxy pool for Downloader"
+                                               Checked="ProxyModeToggle_Changed"
+                                               Unchecked="ProxyModeToggle_Changed" />
                         <setting:SettingToggle x:Name="ShowBrowserToggle"
                                                setting:UiPreference.Key="mangareader.downloader.show-browser"
                                                Margin="0,0,8,0"

@@ -3,7 +3,10 @@
 import importlib.util
 import os
 import sys
+import tempfile
+import types
 import unittest
+from unittest import mock
 
 
 REPO = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
@@ -17,11 +20,27 @@ BROWSER = os.path.join(
     "mangareader_downloader",
     "browser.py",
 )
+CATALOG_BROWSER = os.path.join(
+    REPO,
+    "module",
+    "mangareader",
+    "Features",
+    "Catalog",
+    "mangareader_catalog",
+    "browser.py",
+)
 sys.path.insert(0, PYHOST)
 
-SPEC = importlib.util.spec_from_file_location("mangareader_downloader_browser_tests", BROWSER)
-BROWSER_MODULE = importlib.util.module_from_spec(SPEC)
-SPEC.loader.exec_module(BROWSER_MODULE)
+
+def _load(name, path):
+    spec = importlib.util.spec_from_file_location(name, path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+BROWSER_MODULE = _load("mangareader_downloader_browser_tests", BROWSER)
+CATALOG_BROWSER_MODULE = _load("mangareader_catalog_browser_tests", CATALOG_BROWSER)
 
 
 class BrowserProfileIsolationTests(unittest.TestCase):
@@ -64,6 +83,93 @@ class ComixPageReadinessTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual("domcontentloaded", page.load_state)
 
 
+class ProxyLaunchTests(unittest.IsolatedAsyncioTestCase):
+    async def test_queue_profile_is_isolated_and_invalid_identity_is_rejected(self):
+        captured = []
+        api = types.ModuleType("camoufox.async_api")
+
+        class Context:
+            pages = [types.SimpleNamespace(url="https://comix.ws/browse")]
+
+        class Manager:
+            async def __aenter__(self):
+                return Context()
+
+        def factory(**kwargs):
+            captured.append(kwargs["user_data_dir"])
+            return Manager()
+
+        api.AsyncCamoufox = factory
+        package = types.ModuleType("camoufox")
+        package.async_api = api
+        base = {"provider": "comix", "url": "https://comix.ws/browse", "headless": True}
+        with tempfile.TemporaryDirectory() as root:
+            with mock.patch.dict(os.environ, {"LOCALAPPDATA": root}), mock.patch.dict(
+                    sys.modules, {"camoufox": package, "camoufox.async_api": api}), mock.patch.object(
+                    BROWSER_MODULE, "_navigate_application_page", new=mock.AsyncMock()):
+                await BROWSER_MODULE.cmd_open(_Host(), base)
+                await BROWSER_MODULE.cmd_open(_Host(), dict(base, profile_identity="queue-" + "a" * 32))
+                await BROWSER_MODULE.cmd_open(_Host(), dict(base, profile_identity="queue-" + "b" * 32))
+                with self.assertRaises(BROWSER_MODULE.PyhostError):
+                    await BROWSER_MODULE.cmd_open(_Host(), dict(base, profile_identity="../escape"))
+        self.assertEqual(3, len(set(captured)))
+        self.assertEqual(os.path.join(captured[0], "queue", "queue-" + "a" * 32), captured[1])
+
+    async def test_downloader_and_catalog_forward_proxy_without_echoing_credentials(self):
+        for browser in (BROWSER_MODULE, CATALOG_BROWSER_MODULE):
+            with self.subTest(browser=browser.__name__):
+                captured = {}
+
+                class Page:
+                    url = "https://comix.ws/browse"
+
+                class Context:
+                    pages = [Page()]
+
+                class CamoufoxContext:
+                    async def __aenter__(self):
+                        return Context()
+
+                    async def __aexit__(self, *_args):
+                        return None
+
+                def factory(**kwargs):
+                    captured.update(kwargs)
+                    return CamoufoxContext()
+
+                api = types.ModuleType("camoufox.async_api")
+                api.AsyncCamoufox = factory
+                package = types.ModuleType("camoufox")
+                package.async_api = api
+                host = _Host()
+                payload = {
+                    "provider": "comix",
+                    "url": "https://comix.ws/browse",
+                    "headless": True,
+                    "proxy": {
+                        "server": "http://proxy.test:8080",
+                        "username": "user",
+                        "password": "secret",
+                    },
+                }
+
+                with tempfile.TemporaryDirectory(prefix="CitadelMangaProxy-") as local_app_data:
+                    with mock.patch.dict(os.environ, {"LOCALAPPDATA": local_app_data}):
+                        with mock.patch.dict(sys.modules, {
+                            "camoufox": package,
+                            "camoufox.async_api": api,
+                        }):
+                            with mock.patch.object(
+                                    browser,
+                                    "_navigate_application_page",
+                                    new=mock.AsyncMock()):
+                                response = await browser.cmd_open(host, payload)
+
+                self.assertEqual(payload["proxy"], captured["proxy"])
+                self.assertNotIn("secret", repr(response))
+                host.sessions.clear()
+
+
 class _BridgePage:
     url = "https://comix.ws/browse"
 
@@ -98,6 +204,18 @@ class _ChallengePage:
     async def wait_for_load_state(self, state, *, timeout):
         self.load_state = state
         self.wait_timeout = timeout
+
+
+class _Host:
+    def __init__(self):
+        self.sessions = {}
+        self.next_sid = 0
+
+    def _profile_busy(self, profile):
+        return any(item.get("profile") == profile for item in self.sessions.values())
+
+    async def _drop_session(self, sid, forget_on_failure=False):
+        self.sessions.pop(sid, None)
 
 
 if __name__ == "__main__":

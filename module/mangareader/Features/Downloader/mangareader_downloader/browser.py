@@ -23,6 +23,8 @@ import re
 import uuid
 from urllib.parse import parse_qsl, urlparse
 
+from proxy_launch import proxy_launch_options
+
 from providers import PyhostError
 
 NAME_RE = re.compile(r"^[A-Za-z0-9._-]+$")
@@ -274,6 +276,11 @@ async def cmd_open(host, msg):
     start_url = _require_http_url(msg.get("url"), "url")
 
     profile = "downloader-" + (provider if isinstance(provider, str) else "x")
+    profile_identity = msg.get("profile_identity")
+    if profile_identity is not None:
+        if not isinstance(profile_identity, str) or not re.fullmatch(r"queue-[a-f0-9]{32}", profile_identity):
+            raise PyhostError("BAD_PROFILE", "invalid Queue profile identity")
+        profile = profile_identity
     if host._profile_busy(profile):
         existing = _live_provider_session(host, profile)
         if existing is not None:
@@ -286,10 +293,13 @@ async def cmd_open(host, msg):
         await _forget_dead_provider_session(host, profile)
 
     pdir = _provider_dir(provider)
+    if profile_identity is not None:
+        pdir = os.path.join(pdir, "queue", profile_identity)
     os.makedirs(pdir, exist_ok=True)
 
     from camoufox.async_api import AsyncCamoufox  # berat: impor saat dipakai
 
+    launch_options = proxy_launch_options(msg)
     cm = AsyncCamoufox(
         persistent_context=True,
         user_data_dir=pdir,
@@ -299,6 +309,7 @@ async def cmd_open(host, msg):
         disable_coop=True,
         i_know_what_im_doing=True,
         config={"forceScopeAccess": True},
+        **launch_options,
     )
 
     # Session didaftarkan SEBELUM masuk context, mengikuti pola core: kalau

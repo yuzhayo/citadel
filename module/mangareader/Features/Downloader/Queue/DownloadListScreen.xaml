@@ -19,7 +19,7 @@
 
             <setting:SettingActionCard>
                 <setting:SettingActionCard.Content>
-                    <StackPanel Orientation="Horizontal">
+                    <WrapPanel>
                         <setting:SettingButton x:Name="BackButton"
                                                MinWidth="140"
                                                Content="Back to Catalog"
@@ -37,7 +37,12 @@
                                                Content="Resume"
                                                Click="ResumeButton_Click"
                                                AutomationProperties.Name="Resume paused and failed jobs" />
-                    </StackPanel>
+                        <setting:SettingButton Content="Stop All" Margin="10,0,0,0"
+                                               Click="StopAll_Click" AutomationProperties.Name="Stop all queue jobs" />
+                        <setting:SettingButton x:Name="RemoveSelectedButton" Content="Remove selected (0)"
+                                               Margin="10,0,0,0" Click="RemoveSelected_Click"
+                                               AutomationProperties.Name="Remove selected queue jobs" />
+                    </WrapPanel>
                 </setting:SettingActionCard.Content>
                 <setting:SettingActionCard.ActionContent>
                     <TextBlock x:Name="SummaryText"
@@ -56,19 +61,29 @@
                          queue order. The Action column is never sortable. -->
                     <setting:SettingTable x:Name="JobTable"
                                           setting:UiPreference.Key="mangareader.queue.table"
-                                          CanUserSortColumns="True"
+                                          CanUserSortColumns="False"
                                           AutomationProperties.Name="Download queue">
                         <setting:SettingTable.InteractiveColumns>
                             <DataGridTemplateColumn Header="Title"
                                                     CanUserSort="True"
                                                     SortMemberPath="TitleDisplayName"
+                                                    Width="220"
                                                     MinWidth="160">
                                 <DataGridTemplateColumn.CellTemplate>
                                     <DataTemplate>
-                                        <TextBlock Text="{Binding TitleDisplayName}"
+                                        <StackPanel Orientation="Horizontal">
+                                        <CheckBox IsChecked="{Binding Selected, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                                  VerticalAlignment="Center" Tag="{Binding}"
+                                                  AutomationProperties.Name="Select queue row" />
+                                        <setting:SettingButton Content="{Binding Chevron}" Click="Expand_Click"
+                                                               Tag="{Binding}" Margin="6,0,6,0"
+                                                               Visibility="{Binding IsGroup, Converter={StaticResource BoolToVisibility}}"
+                                                               AutomationProperties.Name="Expand or collapse title" />
+                                        <TextBlock Text="{Binding TitleDisplayName}" VerticalAlignment="Center"
                                                    FontWeight="SemiBold"
                                                    TextTrimming="CharacterEllipsis"
                                                    ToolTip="{Binding TitleDisplayName}" />
+                                        </StackPanel>
                                     </DataTemplate>
                                 </DataGridTemplateColumn.CellTemplate>
                             </DataGridTemplateColumn>
@@ -147,11 +162,11 @@
                                         -->
                                         <setting:SettingTableActions>
                                             <setting:SettingTableActions.PrimaryContent>
-                                                <Grid>
+                                                <WrapPanel>
                                                     <setting:SettingButton MinWidth="88"
-                                                                           AutomationProperties.Name="Pause job"
+                                                                           AutomationProperties.Name="Stop job or title group"
                                                                            Click="PauseResume_Click"
-                                                                           Content="Pause"
+                                                                           Content="Stop"
                                                                            IsEnabled="{Binding CanActNow}"
                                                                            Tag="{Binding}"
                                                                            Visibility="{Binding CanPause, Converter={StaticResource BoolToVisibility}}" />
@@ -175,13 +190,14 @@
                                                                            Content="Open folder"
                                                                            Tag="{Binding}"
                                                                            Visibility="{Binding CanOpenFolder, Converter={StaticResource BoolToVisibility}}" />
-                                                </Grid>
+                                                </WrapPanel>
                                             </setting:SettingTableActions.PrimaryContent>
                                             <setting:SettingTableActions.SecondaryContent>
                                                 <setting:SettingButton MinWidth="80"
                                                                        AutomationProperties.Name="Remove job"
                                                                        Click="Remove_Click"
                                                                        Content="Remove"
+                                                                       Visibility="{Binding IsChapter, Converter={StaticResource BoolToVisibility}}"
                                                                        Tag="{Binding}" />
                                             </setting:SettingTableActions.SecondaryContent>
                                         </setting:SettingTableActions>

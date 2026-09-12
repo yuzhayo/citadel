@@ -1,8 +1,10 @@
 using Module.Mangareader.Features.Downloader.AutoCover;
+using Module.Mangareader.Features.Downloader.Catalog;
 using Module.Mangareader.Features.Downloader.Lister;
 using Module.Mangareader.Features.Downloader.Queue;
 using Module.Mangareader.Features.Downloader.Sources;
 using Module.Mangareader.Library;
+using Module.Mangareader.ShareLogic;
 
 namespace Module.Mangareader.Features.Downloader;
 
@@ -22,7 +24,10 @@ public sealed class DownloaderContext
         LibraryRootContext libraryRoot,
         DownloadSourceIndex index,
         ListerFeature lister,
-        AutoCoverFeature autoCover)
+        AutoCoverFeature autoCover,
+        DownloaderOnlineProcess onlineProcess,
+        ProxyPoolAdapter proxyPool,
+        ProxyHttpTransport httpTransport)
     {
         Sources = sources;
         Queue = queue;
@@ -31,6 +36,9 @@ public sealed class DownloaderContext
         Index = index;
         Lister = lister;
         AutoCover = autoCover;
+        OnlineProcess = onlineProcess ?? throw new ArgumentNullException(nameof(onlineProcess));
+        ProxyPool = proxyPool ?? throw new ArgumentNullException(nameof(proxyPool));
+        HttpTransport = httpTransport ?? throw new ArgumentNullException(nameof(httpTransport));
     }
 
     public MangaSourceRegistry Sources { get; }
@@ -46,4 +54,10 @@ public sealed class DownloaderContext
     public ListerFeature Lister { get; }
 
     public AutoCoverFeature AutoCover { get; }
+
+    public DownloaderOnlineProcess OnlineProcess { get; }
+
+    internal ProxyPoolAdapter ProxyPool { get; }
+
+    internal ProxyHttpTransport HttpTransport { get; }
 }

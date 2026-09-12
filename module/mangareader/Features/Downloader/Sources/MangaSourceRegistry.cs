@@ -1,5 +1,6 @@
 using System.Windows;
 using Module.Mangareader.Sources;
+using Module.Mangareader.ShareLogic;
 
 namespace Module.Mangareader.Features.Downloader.Sources;
 
@@ -106,12 +107,23 @@ public sealed class MangaSourceRegistry : IMangaSourceDirectory
     /// composition are never edited for it.
     /// </summary>
     public static MangaSourceRegistry CreateDefault(DownloaderPyHostClient client)
+        => CreateDefault(client, null);
+
+    internal static MangaSourceRegistry CreateDefault(
+        DownloaderPyHostClient client,
+        ProxyHttpTransport? transport)
     {
         ArgumentNullException.ThrowIfNull(client);
         var comix = new Comix.ComixSource(client);
-        var cucumberManga = new CucumberManga.CucumberMangaSource();
-        var drakeScans = new DrakeScans.DrakeScansSource();
-        var dynamicManual = new global::Module.Mangareader.Features.Downloader.ManualUrl.DynamicManualSource();
+        var cucumberManga = transport is null
+            ? new CucumberManga.CucumberMangaSource()
+            : new CucumberManga.CucumberMangaSource(transport);
+        var drakeScans = transport is null
+            ? new DrakeScans.DrakeScansSource()
+            : new DrakeScans.DrakeScansSource(transport);
+        var dynamicManual = transport is null
+            ? new global::Module.Mangareader.Features.Downloader.ManualUrl.DynamicManualSource()
+            : new global::Module.Mangareader.Features.Downloader.ManualUrl.DynamicManualSource(transport);
         return new MangaSourceRegistry(
         [
             new MangaSourceRegistration(

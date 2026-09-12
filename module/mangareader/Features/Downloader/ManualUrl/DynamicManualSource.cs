@@ -5,6 +5,7 @@ using System.Net.Http;
 using System.Security.Cryptography;
 using System.Text;
 using Module.Mangareader.Sources;
+using Module.Mangareader.ShareLogic;
 
 namespace Module.Mangareader.Features.Downloader.ManualUrl;
 
@@ -21,15 +22,27 @@ public sealed class DynamicManualSource : IMangaSource
     private const int MaximumHtmlBytes = 8 * 1024 * 1024;
     private static readonly HttpClient SharedClient = CreateClient();
     private readonly HttpClient _client;
+    private readonly ProxyHttpTransport? _transport;
     private readonly ConcurrentDictionary<string, DynamicManualTitlePage> _titleCache =
         new(StringComparer.Ordinal);
 
-    public DynamicManualSource() : this(SharedClient)
+    public DynamicManualSource() : this(SharedClient, null)
     {
     }
 
-    internal DynamicManualSource(HttpClient client) =>
+    internal DynamicManualSource(HttpClient client) : this(client, null)
+    {
+    }
+
+    internal DynamicManualSource(ProxyHttpTransport transport) : this(SharedClient, transport)
+    {
+    }
+
+    private DynamicManualSource(HttpClient client, ProxyHttpTransport? transport)
+    {
         _client = client ?? throw new ArgumentNullException(nameof(client));
+        _transport = transport;
+    }
 
     public static RemoteSourceGroup Group { get; } = new(
         new RemoteGroupIdentity(SourceId, SourceId),
@@ -168,10 +181,9 @@ public sealed class DynamicManualSource : IMangaSource
         CancellationToken cancellationToken)
     {
         using (request)
-        using (var response = await _client.SendAsync(
-                   request,
-                   HttpCompletionOption.ResponseHeadersRead,
-                   cancellationToken).ConfigureAwait(false))
+        using (var response = _transport is null
+                   ? await _client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false)
+                   : await _transport.SendAsync("manual-url", _client, request, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false))
         {
             if (response.Content.Headers.ContentLength is > MaximumHtmlBytes)
             {

@@ -28,6 +28,13 @@
                                                IsChecked="True"
                                                ToolTip="Off uses a temporary headless browser; relog always opens headed"
                                                AutomationProperties.Name="Show browser while checking" />
+                        <setting:SettingToggle x:Name="ProxyModeToggle"
+                                               setting:UiPreference.Key="camoprof.launcher.use-proxy-pool"
+                                               Margin="12,0,0,0"
+                                               Content="Use proxy pool"
+                                               IsChecked="False"
+                                               Click="ProxyModeToggle_Click"
+                                               AutomationProperties.Name="Use proxy pool for CamoProf" />
                     </StackPanel>
                     <TextBlock x:Name="StatusText"
                                Margin="0,8,0,0"

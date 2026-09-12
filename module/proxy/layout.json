@@ -1,7 +1,7 @@
 {
   "slots": {
-    "LauncherPanel": { "kind": "visibility", "visible": true },
-    "EditorPanel": { "kind": "visibility", "visible": true },
-    "RuntimePanel": { "kind": "visibility", "visible": true }
+    "PoolPanel": { "kind": "visibility", "visible": true },
+    "SyncPanel": { "kind": "visibility", "visible": true },
+    "SettingsPanel": { "kind": "visibility", "visible": true }
   }
 }

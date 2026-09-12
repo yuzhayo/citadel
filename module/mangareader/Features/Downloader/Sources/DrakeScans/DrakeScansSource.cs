@@ -4,6 +4,7 @@ using System.Net.Http;
 using System.Security.Cryptography;
 using System.Text;
 using Module.Mangareader.Sources;
+using Module.Mangareader.ShareLogic;
 
 namespace Module.Mangareader.Features.Downloader.Sources.DrakeScans;
 
@@ -11,13 +12,25 @@ public sealed class DrakeScansSource : IMangaSource
 {
     private static readonly HttpClient SharedClient = CreateClient();
     private readonly HttpClient _client;
+    private readonly ProxyHttpTransport? _transport;
 
-    public DrakeScansSource() : this(SharedClient)
+    public DrakeScansSource() : this(SharedClient, null)
     {
     }
 
-    internal DrakeScansSource(HttpClient client) =>
+    internal DrakeScansSource(HttpClient client) : this(client, null)
+    {
+    }
+
+    internal DrakeScansSource(ProxyHttpTransport transport) : this(SharedClient, transport)
+    {
+    }
+
+    private DrakeScansSource(HttpClient client, ProxyHttpTransport? transport)
+    {
         _client = client ?? throw new ArgumentNullException(nameof(client));
+        _transport = transport;
+    }
 
     public static RemoteSourceGroup Group { get; } = new(
         new RemoteGroupIdentity(DrakeScansContract.SourceId, DrakeScansContract.GroupId),
@@ -196,10 +209,9 @@ public sealed class DrakeScansSource : IMangaSource
         string expectedMediaType,
         CancellationToken cancellationToken)
     {
-        using var response = await _client.SendAsync(
-            request,
-            HttpCompletionOption.ResponseHeadersRead,
-            cancellationToken).ConfigureAwait(false);
+        using var response = _transport is null
+            ? await _client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false)
+            : await _transport.SendAsync("drake", _client, request, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
         if (response.Content.Headers.ContentLength is > DrakeScansContract.MaximumResponseBytes)
         {
             throw new DrakeScansContractException("Drake Scans response exceeds the 8 MiB bound.");

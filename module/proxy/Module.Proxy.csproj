@@ -2,4 +2,8 @@
 
   <Import Project="..\..\core\Citizen.targets" />
 
+  <ItemGroup>
+    <Compile Include="..\sharedLogic\cs\ProxyPoolContract.cs" />
+  </ItemGroup>
+
 </Project>

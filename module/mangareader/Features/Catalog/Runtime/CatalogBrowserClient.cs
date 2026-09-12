@@ -1,6 +1,7 @@
 using System.IO;
 using System.Text.Json.Nodes;
 using CitadelBridge;
+using Module.Mangareader.ShareLogic;
 
 namespace Module.Mangareader.Features.Catalog.Runtime;
 
@@ -35,21 +36,39 @@ public sealed class CatalogBrowserClient : IDisposable
     public static readonly TimeSpan PageTimeout = TimeSpan.FromSeconds(30);
 
     private const string PluginName = "mangareader_catalog";
+    private const int MaxProxyOpenAttempts = 3;
 
     private readonly SemaphoreSlim _gate = new(1, 1);
+    private readonly ProxyPoolAdapter? _proxyPool;
+    private readonly Func<JsonObject, CancellationToken, Task<JsonObject>>? _openSessionOverride;
     private PyHost? _host;
     private string? _session;
     private string? _sessionProvider;
     private bool? _sessionHeadless;
+    private bool _sessionProxyMode;
     private int _showBrowser;
     private DateTimeOffset _lastUsedUtc = DateTimeOffset.UtcNow;
     private int _disposed;
 
-    public CatalogBrowserClient(string stagingRoot)
+    public CatalogBrowserClient(string stagingRoot) : this(stagingRoot, null)
+    {
+    }
+
+    internal CatalogBrowserClient(string stagingRoot, ProxyPoolAdapter? proxyPool)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(stagingRoot);
         StagingRoot = Path.GetFullPath(stagingRoot);
+        _proxyPool = proxyPool;
         Directory.CreateDirectory(StagingRoot);
+    }
+
+    internal CatalogBrowserClient(
+        string stagingRoot,
+        ProxyPoolAdapter proxyPool,
+        Func<JsonObject, CancellationToken, Task<JsonObject>> openSession)
+        : this(stagingRoot, proxyPool)
+    {
+        _openSessionOverride = openSession ?? throw new ArgumentNullException(nameof(openSession));
     }
 
     /// <summary>Absolute root every browser write must stay inside.</summary>
@@ -102,7 +121,8 @@ public sealed class CatalogBrowserClient : IDisposable
             ThrowIfDisposed();
             if (_session is not null
                 && string.Equals(_sessionProvider, provider, StringComparison.Ordinal)
-                && _sessionHeadless == headless)
+                && _sessionHeadless == headless
+                && _sessionProxyMode == (_proxyPool?.IsProxyMode == true))
             {
                 _lastUsedUtc = DateTimeOffset.UtcNow;
                 return _session;
@@ -110,22 +130,17 @@ public sealed class CatalogBrowserClient : IDisposable
 
             await CloseSessionCoreAsync(cancellationToken).ConfigureAwait(false);
 
-            var host = await EnsureHostCoreAsync().ConfigureAwait(false);
-            var parameters = new JsonObject
-            {
-                ["provider"] = provider,
-                ["url"] = url,
-                ["headless"] = headless,
-                ["timeout_ms"] = (int)BootstrapTimeout.TotalMilliseconds,
-            };
-            var response = await host
-                .SendAsync("catalog.open", parameters, BootstrapTimeout, cancellationToken)
-                .ConfigureAwait(false);
+            var response = await OpenWithProxyFailoverAsync(
+                provider,
+                url,
+                headless,
+                cancellationToken).ConfigureAwait(false);
 
             _session = response["session"]?.GetValue<string>()
                 ?? throw new PyHostException("BAD_RESPONSE", "catalog.open tidak mengembalikan session");
             _sessionProvider = provider;
             _sessionHeadless = headless;
+            _sessionProxyMode = _proxyPool?.IsProxyMode == true;
             _lastUsedUtc = DateTimeOffset.UtcNow;
             return _session;
         }
@@ -222,6 +237,7 @@ public sealed class CatalogBrowserClient : IDisposable
         Interlocked.Exchange(ref _session, null);
         Interlocked.Exchange(ref _sessionProvider, null);
         _sessionHeadless = null;
+        _sessionProxyMode = false;
         host?.Abort();
     }
 
@@ -258,6 +274,7 @@ public sealed class CatalogBrowserClient : IDisposable
             _session = null;
             _sessionProvider = null;
             _sessionHeadless = null;
+            _sessionProxyMode = false;
         }
         finally
         {
@@ -344,6 +361,58 @@ public sealed class CatalogBrowserClient : IDisposable
         }
     }
 
+    private async Task<JsonObject> OpenWithProxyFailoverAsync(
+        string provider,
+        string url,
+        bool headless,
+        CancellationToken cancellationToken)
+    {
+        var attempts = _proxyPool?.IsProxyMode == true ? MaxProxyOpenAttempts : 1;
+        for (var attempt = 1; ; attempt++)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var lease = _proxyPool?.Acquire(ProxyTarget.Browser);
+            var parameters = new JsonObject
+            {
+                ["provider"] = provider,
+                ["url"] = url,
+                ["headless"] = headless,
+                ["timeout_ms"] = (int)BootstrapTimeout.TotalMilliseconds,
+            };
+            if (lease is not null) parameters["proxy"] = lease.ToLaunchOptions().ToJson();
+
+            try
+            {
+                if (_openSessionOverride is not null)
+                {
+                    return await _openSessionOverride(parameters, cancellationToken).ConfigureAwait(false);
+                }
+
+                var host = await EnsureHostCoreAsync().ConfigureAwait(false);
+                return await host
+                    .SendAsync("catalog.open", parameters, BootstrapTimeout, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+            catch (Exception ex) when (
+                lease is not null
+                && IsRetryableProxyOpenFailure(ex, cancellationToken))
+            {
+                _proxyPool?.ReportFailure(lease);
+                if (attempt >= attempts) throw;
+            }
+        }
+    }
+
+    private static bool IsRetryableProxyOpenFailure(
+        Exception error,
+        CancellationToken cancellationToken)
+    {
+        if (cancellationToken.IsCancellationRequested) return false;
+        return error is TimeoutException
+            || error is PyHostException pyhost
+                && pyhost.Code is "BROWSER_LAUNCH" or "TIMEOUT";
+    }
+
     private async Task CloseSessionCoreAsync(CancellationToken cancellationToken)
     {
         var host = _host;
@@ -351,6 +420,7 @@ public sealed class CatalogBrowserClient : IDisposable
         _session = null;
         _sessionProvider = null;
         _sessionHeadless = null;
+        _sessionProxyMode = false;
         if (host is null || session is null)
         {
             return;

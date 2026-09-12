@@ -1,0 +1,82 @@
+<UserControl x:Class="Module.Proxy.Features.Pool.PoolView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:setting="clr-namespace:Citadel.Setting.Components;assembly=Citadel.Setting"
+             Background="{DynamicResource Bg}"
+             Foreground="{DynamicResource Fg}">
+    <setting:SettingViewport Mode="Contained">
+        <Grid>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="*" />
+            </Grid.RowDefinitions>
+
+            <setting:SettingActionCard>
+                <StackPanel>
+                    <TextBlock x:Name="SummaryText"
+                               FontWeight="SemiBold"
+                               Text="Committed pool: 0 proxies" />
+                    <TextBlock x:Name="StatusText"
+                               Margin="0,4,0,0"
+                               Foreground="{DynamicResource Body}"
+                               TextWrapping="Wrap"
+                               Visibility="Collapsed" />
+                </StackPanel>
+                <setting:SettingActionCard.ActionContent>
+                    <StackPanel Orientation="Horizontal">
+                        <setting:SettingButton Content="Reload"
+                                               Click="ReloadButton_Click"
+                                               AutomationProperties.Name="Reload committed proxy pool" />
+                        <setting:SettingButton x:Name="BanButton"
+                                               Margin="8,0,0,0"
+                                               Content="Ban selected"
+                                               Click="BanButton_Click"
+                                               AutomationProperties.Name="Ban selected proxies" />
+                    </StackPanel>
+                </setting:SettingActionCard.ActionContent>
+            </setting:SettingActionCard>
+
+            <Border Grid.Row="1" Style="{DynamicResource SettingCardStyle}">
+                <Grid>
+                    <setting:SettingTable x:Name="PoolTable"
+                                          setting:UiPreference.Key="proxy.pool.table"
+                                          CanUserSortColumns="True"
+                                          AutomationProperties.Name="Committed proxy pool">
+                        <setting:SettingTable.InteractiveColumns>
+                            <DataGridCheckBoxColumn Header=""
+                                                    Binding="{Binding Selected}"
+                                                    CanUserSort="False"
+                                                    Width="42" />
+                            <DataGridTextColumn Header="Endpoint"
+                                                Binding="{Binding Masked}"
+                                                SortMemberPath="Masked"
+                                                MinWidth="220"
+                                                Width="*" />
+                            <DataGridTextColumn Header="Scheme"
+                                                Binding="{Binding Scheme}"
+                                                SortMemberPath="Scheme"
+                                                Width="100" />
+                            <DataGridTextColumn Header="Host"
+                                                Binding="{Binding Host}"
+                                                SortMemberPath="Host"
+                                                MinWidth="140"
+                                                Width="Auto" />
+                            <DataGridTextColumn Header="Port"
+                                                Binding="{Binding Port}"
+                                                SortMemberPath="Port"
+                                                Width="90" />
+                        </setting:SettingTable.InteractiveColumns>
+                    </setting:SettingTable>
+                    <TextBlock x:Name="EmptyText"
+                               HorizontalAlignment="Center"
+                               VerticalAlignment="Center"
+                               FontSize="16"
+                               FontWeight="SemiBold"
+                               IsHitTestVisible="False"
+                               Text="No committed proxies."
+                               Visibility="Collapsed" />
+                </Grid>
+            </Border>
+        </Grid>
+    </setting:SettingViewport>
+</UserControl>

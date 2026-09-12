@@ -27,7 +27,7 @@ public partial class DownloaderView : UserControl, IDisposable
     public DownloaderView() => InitializeComponent();
 
     /// <summary>
-    /// Attaches the module-lifetime context to the Catalog child. Called by the
+    /// Attaches the application-lifetime context to the Catalog child. Called by the
     /// MangaReader composition before this view is loaded.
     /// </summary>
     public void UseContext(DownloaderContext context)

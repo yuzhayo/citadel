@@ -90,7 +90,14 @@ public partial class CatalogMirrorView : UserControl, IDisposable
         ArgumentNullException.ThrowIfNull(context);
         if (_disposed || _context is not null) return;
         _context = context;
+        _context.ProxyPool.Enabled = ProxyModeToggle.IsChecked == true;
         UseFeature(context.Feature);
+    }
+
+    private void ProxyModeToggle_Changed(object sender, RoutedEventArgs e)
+    {
+        if (_disposed || _context is null) return;
+        _context.ProxyPool.Enabled = ProxyModeToggle.IsChecked == true;
     }
 
     public void UseFeature(CatalogMirrorFeature feature)

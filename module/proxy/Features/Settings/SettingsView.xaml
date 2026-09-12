@@ -1,0 +1,51 @@
+<UserControl x:Class="Module.Proxy.Features.Settings.SettingsView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:setting="clr-namespace:Citadel.Setting.Components;assembly=Citadel.Setting"
+             Background="{DynamicResource Bg}"
+             Foreground="{DynamicResource Fg}">
+    <setting:SettingViewport Mode="Document">
+        <StackPanel>
+            <setting:SettingActionCard>
+                <StackPanel>
+                    <TextBlock Text="Sync limits" FontWeight="SemiBold" />
+                    <TextBlock x:Name="StatusText"
+                               Margin="0,4,0,0"
+                               Foreground="{DynamicResource Body}"
+                               TextWrapping="Wrap"
+                               Visibility="Collapsed" />
+                </StackPanel>
+                <setting:SettingActionCard.ActionContent>
+                    <StackPanel Orientation="Horizontal">
+                        <setting:SettingButton Content="Save"
+                                               Click="SaveButton_Click" />
+                        <setting:SettingButton Margin="8,0,0,0"
+                                               Content="Reset"
+                                               Click="ResetButton_Click" />
+                    </StackPanel>
+                </setting:SettingActionCard.ActionContent>
+            </setting:SettingActionCard>
+
+            <Grid Margin="0,8,0,0">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="220" />
+                    <ColumnDefinition Width="220" />
+                </Grid.ColumnDefinitions>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
+                <TextBlock Grid.Row="0" Text="Target usable entries" VerticalAlignment="Center" />
+                <setting:SettingField x:Name="TargetField" Grid.Row="0" Grid.Column="1" />
+                <TextBlock Grid.Row="1" Margin="0,8,0,0" Text="Source timeout (seconds)" VerticalAlignment="Center" />
+                <setting:SettingField x:Name="SourceTimeoutField" Grid.Row="1" Grid.Column="1" Margin="0,8,0,0" />
+                <TextBlock Grid.Row="2" Margin="0,8,0,0" Text="Proxy validation timeout (seconds)" VerticalAlignment="Center" />
+                <setting:SettingField x:Name="TcpTimeoutField" Grid.Row="2" Grid.Column="1" Margin="0,8,0,0" />
+                <TextBlock Grid.Row="3" Margin="0,8,0,0" Text="Parallel TCP checks" VerticalAlignment="Center" />
+                <setting:SettingField x:Name="ParallelField" Grid.Row="3" Grid.Column="1" Margin="0,8,0,0" />
+            </Grid>
+        </StackPanel>
+    </setting:SettingViewport>
+</UserControl>

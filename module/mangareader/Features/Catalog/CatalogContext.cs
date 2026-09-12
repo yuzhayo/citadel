@@ -1,6 +1,7 @@
 using Module.Mangareader.Features.Catalog.Runtime;
 using Module.Mangareader.Features.CatalogMirror;
 using Module.Mangareader.Sources;
+using Module.Mangareader.ShareLogic;
 
 namespace Module.Mangareader.Features.Catalog;
 
@@ -9,21 +10,33 @@ namespace Module.Mangareader.Features.Catalog;
 /// browser profile, provider directory, sync/database coordinator, and
 /// cancellation lifetime are separate from Downloader.
 /// </summary>
-public sealed class CatalogContext(
-    CatalogMirrorFeature feature,
-    CatalogBrowserClient browser,
-    IMangaSourceDirectory sources) : IDisposable
+public sealed class CatalogContext : IDisposable
 {
     private int _disposed;
 
-    public CatalogMirrorFeature Feature { get; } =
-        feature ?? throw new ArgumentNullException(nameof(feature));
+    internal CatalogContext(
+        CatalogMirrorFeature feature,
+        CatalogBrowserClient browser,
+        IMangaSourceDirectory sources,
+        ProxyPoolAdapter proxyPool,
+        ProxyHttpTransport httpTransport)
+    {
+        Feature = feature ?? throw new ArgumentNullException(nameof(feature));
+        Browser = browser ?? throw new ArgumentNullException(nameof(browser));
+        Sources = sources ?? throw new ArgumentNullException(nameof(sources));
+        ProxyPool = proxyPool ?? throw new ArgumentNullException(nameof(proxyPool));
+        HttpTransport = httpTransport ?? throw new ArgumentNullException(nameof(httpTransport));
+    }
 
-    public CatalogBrowserClient Browser { get; } =
-        browser ?? throw new ArgumentNullException(nameof(browser));
+    public CatalogMirrorFeature Feature { get; }
 
-    public IMangaSourceDirectory Sources { get; } =
-        sources ?? throw new ArgumentNullException(nameof(sources));
+    public CatalogBrowserClient Browser { get; }
+
+    public IMangaSourceDirectory Sources { get; }
+
+    internal ProxyPoolAdapter ProxyPool { get; }
+
+    internal ProxyHttpTransport HttpTransport { get; }
 
     public async Task StartOnlineAsync(bool showBrowser, CancellationToken cancellationToken)
     {

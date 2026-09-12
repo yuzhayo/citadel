@@ -31,7 +31,8 @@ public partial class CamoprofView : UserControl
 
         var credentials = new GoogleCredentialStore();
         var catalog = new ProfileCatalog(credentials);
-        _sessions = new BrowserSessionCoordinator();
+        var proxyPool = new ProxyPoolAdapter();
+        _sessions = new BrowserSessionCoordinator(proxyPool);
         _network = new NetworkMonitor();
         var google = new GoogleAccountService(_network, credentials, _sessions);
         var addProfile = new AddProfileFeature(_sessions, credentials);
@@ -45,7 +46,8 @@ public partial class CamoprofView : UserControl
             _sessions,
             _network,
             addProfile,
-            profileActions);
+            profileActions,
+            proxyPool);
         _runtime = new RuntimeView(_sessions);
 
         LauncherHost.Content = _launcher;

@@ -3,6 +3,7 @@ using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Media.Imaging;
+using Module.Mangareader.ShareLogic;
 
 namespace Module.Mangareader.Features.CatalogMirror;
 
@@ -11,12 +12,28 @@ namespace Module.Mangareader.Features.CatalogMirror;
 // changes snapshot or enrichment metadata, never uses the browser, and never
 // accepts an unvalidated path. The caller fetches only when no valid cache
 // exists; a cover failure returns null and never fails the detail flow.
-public sealed class CatalogMirrorCoverCache(CatalogMirrorPaths paths, HttpClient http)
+public sealed class CatalogMirrorCoverCache
 {
     public const long MaxCoverBytes = 20_971_520;
 
-    private readonly CatalogMirrorPaths _paths = paths;
-    private readonly HttpClient _http = http;
+    private readonly CatalogMirrorPaths _paths;
+    private readonly HttpClient _http;
+    private readonly ProxyHttpTransport? _httpTransport;
+
+    public CatalogMirrorCoverCache(CatalogMirrorPaths paths, HttpClient http)
+        : this(paths, http, null)
+    {
+    }
+
+    internal CatalogMirrorCoverCache(
+        CatalogMirrorPaths paths,
+        HttpClient http,
+        ProxyHttpTransport? httpTransport)
+    {
+        _paths = paths ?? throw new ArgumentNullException(nameof(paths));
+        _http = http ?? throw new ArgumentNullException(nameof(http));
+        _httpTransport = httpTransport;
+    }
 
     /// <summary>
     /// Local cover path, fetching once when no valid cache exists. Returns
@@ -133,8 +150,15 @@ public sealed class CatalogMirrorCoverCache(CatalogMirrorPaths paths, HttpClient
     private async Task<byte[]> FetchBoundedAsync(string coverUrl, CancellationToken cancellationToken)
     {
         using var request = new HttpRequestMessage(HttpMethod.Get, coverUrl);
-        using var response = await _http.SendAsync(
-            request, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
+        using var response = _httpTransport is null
+            ? await _http.SendAsync(
+                request, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false)
+            : await _httpTransport.SendAsync(
+                "catalog-cover",
+                _http,
+                request,
+                HttpCompletionOption.ResponseHeadersRead,
+                cancellationToken).ConfigureAwait(false);
         if (!response.IsSuccessStatusCode)
         {
             return [];

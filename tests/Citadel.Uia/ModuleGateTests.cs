@@ -1,5 +1,9 @@
 using Citadel.Core;
+using Citadel.Core.Modules;
+using Citadel.Core.Rpl;
 using Citadel.Shell;
+using System.Windows;
+using System.Windows.Controls;
 
 namespace Citadel.Uia;
 
@@ -155,5 +159,46 @@ public class ModuleGateTests
             Assert.Empty(shell.Gate.Snapshot());
             Assert.Empty(shell.Gate.Failures());
         });
+    }
+
+    [Fact]
+    public void ResidentModule_StopsOnlyWithApplicationLifetime()
+    {
+        Sta.Run(() =>
+        {
+            var shell = new ShellHarness();
+            var module = new RecordingResidentModule("resident");
+            shell.Gate.Register(new ModuleDescriptor(
+                module.Route,
+                "Resident",
+                null,
+                10,
+                module,
+                null));
+            shell.Main.Pump();
+
+            shell.Router.Navigate("resident");
+            shell.Router.Navigate(Router.FallbackRoute);
+            Assert.False(module.Stopped);
+
+            shell.Gate.Unregister("resident");
+            shell.Main.Pump();
+            Assert.False(module.Stopped);
+
+            shell.Dispose();
+            Assert.True(module.Stopped);
+        });
+    }
+
+    private sealed class RecordingResidentModule(string route) : IModule, IResidentModule
+    {
+        public string Route { get; } = route;
+
+        public bool Stopped { get; private set; }
+
+        public FrameworkElement CreateView(Lifetime lifetime) => new Border();
+
+        public void AttachApplicationLifetime(Lifetime applicationLifetime) =>
+            applicationLifetime.Add(() => Stopped = true);
     }
 }

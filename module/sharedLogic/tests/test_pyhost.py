@@ -30,6 +30,8 @@ PYHOST = os.path.join(ROOT, "pyhost", "pyhost.py")
 sys.path.insert(0, os.path.join(ROOT, "pyhost"))
 
 from providers.google import detect_google_email
+from proxy_launch import proxy_launch_options
+from providers import PyhostError
 
 SPEC = importlib.util.spec_from_file_location("citadel_pyhost_tests", PYHOST)
 PYHOST_MODULE = importlib.util.module_from_spec(SPEC)
@@ -175,6 +177,20 @@ class PyHostResponseBoundTest(unittest.TestCase):
         self.assertFalse(message["ok"])
         self.assertEqual(message["error"]["code"], "RESPONSE_TOO_LARGE")
         self.assertLess(len(line.encode("utf-8")), 4096)
+
+
+class ProxyLaunchValidationTest(unittest.TestCase):
+    def test_missing_proxy_preserves_direct_launch(self):
+        self.assertEqual({}, proxy_launch_options({}))
+
+    def test_invalid_or_unsupported_proxy_is_rejected(self):
+        for payload in (
+                "not-an-object",
+                {"server": "socks4://proxy.test:1080"},
+                {"server": "http://user:secret@proxy.test:8080"},
+                {"server": "http://proxy.test:8080", "password": "secret"}):
+            with self.assertRaises(PyhostError):
+                proxy_launch_options({"proxy": payload})
 
 
 class PyHostCancellationTest(unittest.IsolatedAsyncioTestCase):
@@ -437,6 +453,48 @@ class PyHostCancellationTest(unittest.IsolatedAsyncioTestCase):
             self.assertTrue(response["ok"])
             self.assertTrue(response["headless"])
             self.assertTrue(captured["headless"])
+            await host._drop_session(response["session"])
+
+    async def test_open_forwards_valid_proxy_without_returning_credentials(self):
+        captured = {}
+
+        class Page:
+            async def goto(self, *_args, **_kwargs):
+                return None
+
+        class Context:
+            pages = [Page()]
+
+        class CamoufoxContext:
+            async def __aenter__(self):
+                return Context()
+
+            async def __aexit__(self, *_args):
+                return None
+
+        def factory(**kwargs):
+            captured.update(kwargs)
+            return CamoufoxContext()
+
+        secret = "proxy-password-not-for-response"
+        with tempfile.TemporaryDirectory(prefix="CitadelProxyLaunch-") as root:
+            host = PYHOST_MODULE._Host()
+            host.credenz = root
+            with mock.patch.dict(sys.modules, self._fake_camoufox(factory)):
+                response = await PYHOST_MODULE._handle(host, {
+                    "id": 1,
+                    "cmd": "session.open",
+                    "profile": "probe",
+                    "proxy": {
+                        "server": "socks5://proxy.test:1080",
+                        "username": "user",
+                        "password": secret,
+                    },
+                })
+            self.assertTrue(response["ok"])
+            self.assertEqual(captured["proxy"]["server"], "socks5://proxy.test:1080")
+            self.assertEqual(captured["proxy"]["password"], secret)
+            self.assertNotIn(secret, json.dumps(response))
             await host._drop_session(response["session"])
 
     async def test_google_inspect_detects_email(self):

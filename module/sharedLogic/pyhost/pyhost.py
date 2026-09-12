@@ -27,6 +27,7 @@ from urllib.parse import urlparse
 from providers import PyhostError as _PyhostError, log as _log
 from providers.google import is_browser_closed_error as _is_browser_closed_error
 from providers.google import inspection, relogin
+from proxy_launch import proxy_launch_options
 
 PROTOCOL_VERSION = 1
 DEFAULT_TIMEOUT_SEC = 120.0
@@ -262,6 +263,7 @@ class _Host:
 
         from camoufox.async_api import AsyncCamoufox  # lazim: dependensi berat
 
+        launch_options = proxy_launch_options(msg)
         cm = AsyncCamoufox(
             persistent_context=True,
             user_data_dir=pdir,
@@ -271,6 +273,7 @@ class _Host:
             disable_coop=True,
             i_know_what_im_doing=True,
             config={"forceScopeAccess": True},
+            **launch_options,
         )
         # Daftarkan session SEBELUM masuk context: kalau timeout/cancel terjadi
         # saat launch, cleanup punya pegangan. (codex audit #3)

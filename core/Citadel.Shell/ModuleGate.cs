@@ -9,7 +9,13 @@ namespace Citadel.Shell;
 /// Why a registration was refused. Settings lists these, so the reason has to
 /// survive as data rather than only as a log line.
 /// </summary>
-public enum RegistrationRefusal { DuplicateRoute, ReservedRoute, ViewFailed }
+public enum RegistrationRefusal
+{
+    DuplicateRoute,
+    ReservedRoute,
+    ViewFailed,
+    ResidentStartFailed,
+}
 
 /// <summary>One refused registration, kept for Settings and for the log.</summary>
 public sealed record RegistrationFailure(
@@ -115,6 +121,22 @@ public sealed class ModuleGate : IModuleGate
             Refuse(descriptor.Route, RegistrationRefusal.DuplicateRoute,
                 $"'{descriptor.Route}' is already registered");
             return;
+        }
+
+        if (descriptor.Instance is IResidentModule resident)
+        {
+            try
+            {
+                resident.AttachApplicationLifetime(_lifetime);
+            }
+            catch (Exception exception)
+            {
+                Refuse(
+                    descriptor.Route,
+                    RegistrationRefusal.ResidentStartFailed,
+                    $"'{descriptor.Route}' could not attach its background service: {exception.Message}");
+                return;
+            }
         }
 
         _registered.Add(descriptor);

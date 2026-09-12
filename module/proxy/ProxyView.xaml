@@ -6,30 +6,17 @@
              Foreground="{DynamicResource Fg}"
              UseLayoutRounding="True"
              SnapsToDevicePixels="True">
-    <!-- CamoProf's tab composition, without CamoProf business features. -->
     <setting:SettingTabs x:Name="WorkspaceTabs"
                          setting:UiPreference.Key="proxy.workspace.tab"
                          SelectedIndex="0">
-        <TabItem x:Name="LauncherPanel" Header="Launcher">
-            <setting:SettingViewport Mode="Contained">
-                <TextBlock Text="Proxy Launcher"
-                           FontSize="13"
-                           Foreground="{DynamicResource Body}" />
-            </setting:SettingViewport>
+        <TabItem x:Name="PoolPanel" Header="Pool">
+            <ContentControl x:Name="PoolHost" />
         </TabItem>
-        <TabItem x:Name="EditorPanel" Header="Editor">
-            <setting:SettingViewport Mode="Contained">
-                <TextBlock Text="Proxy Editor"
-                           FontSize="13"
-                           Foreground="{DynamicResource Body}" />
-            </setting:SettingViewport>
+        <TabItem x:Name="SyncPanel" Header="Sync">
+            <ContentControl x:Name="SyncHost" />
         </TabItem>
-        <TabItem x:Name="RuntimePanel" Header="Runtime">
-            <setting:SettingViewport Mode="Contained">
-                <TextBlock Text="Proxy Runtime"
-                           FontSize="13"
-                           Foreground="{DynamicResource Body}" />
-            </setting:SettingViewport>
+        <TabItem x:Name="SettingsPanel" Header="Settings">
+            <ContentControl x:Name="SettingsHost" />
         </TabItem>
     </setting:SettingTabs>
 </UserControl>

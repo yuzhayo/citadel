@@ -248,7 +248,7 @@ public sealed class DownloadQueuePersistenceTests : IDisposable
     }
 
     [Fact]
-    public async Task SchedulerRunsTwoChaptersInParallelAndKeepsTheThirdQueued()
+    public async Task SchedulerRunsFourAutomaticChaptersAndManualStartBypassesTheLimit()
     {
         var source = new ParallelBlockingSource();
         using var feature = CreateFeature(
@@ -263,15 +263,21 @@ public sealed class DownloadQueuePersistenceTests : IDisposable
         var result = feature.QueueChapters(
             Title(),
             OfficialGroup(),
-            [Chapter("1"), Chapter("2"), Chapter("3")],
+            [Chapter("1"), Chapter("2"), Chapter("3"), Chapter("4"), Chapter("5")],
             "Some Folder");
 
-        Assert.Equal(3, result.Queued);
-        await source.TwoEntered.Task.WaitAsync(TimeSpan.FromSeconds(2));
+        Assert.Equal(5, result.Queued);
+        await source.FirstEntered.Task.WaitAsync(TimeSpan.FromSeconds(2));
         await Task.Delay(100);
 
-        Assert.Equal(2, source.ManifestCalls);
-        Assert.Equal(1, feature.Snapshot().Count(job => job.State == DownloadJobState.Queued));
+        await source.FourEntered.Task.WaitAsync(TimeSpan.FromSeconds(2));
+        Assert.Equal(4, source.ManifestCalls);
+        var pending = Assert.Single(feature.Snapshot(), job => job.State == DownloadJobState.Queued);
+        feature.Start(pending.JobId);
+        feature.Start(pending.JobId);
+        await source.FiveEntered.Task.WaitAsync(TimeSpan.FromSeconds(2));
+        Assert.Equal(5, source.ManifestCalls);
+        feature.StopAll();
     }
 
     /// <summary>
@@ -279,8 +285,39 @@ public sealed class DownloadQueuePersistenceTests : IDisposable
     /// genuinely in flight so the queue has a running cancellation source to protect.
     /// Every other call is unsupported: the queue must not reach for anything else.
     /// </summary>
+    [Fact]
+    public async Task BatchRemoveWaitsForSettlementBeforeDeletingStagingAndKeepsPublishedFiles()
+    {
+        new DownloadQueueStore(_root).Save([Job("settling", DownloadJobState.Paused)]);
+        var source = new BlockingSource { HoldCancellation = true };
+        using var feature = CreateFeature(new MangaSourceRegistry([
+            new MangaSourceRegistration(source, () => throw new NotSupportedException()),
+        ]));
+        var job = Assert.Single(feature.Snapshot());
+        var stage = Path.Combine(_root, "downloads", "jobs", job.JobId);
+        Directory.CreateDirectory(stage);
+        File.WriteAllText(Path.Combine(stage, "page.raw"), "staged");
+        Directory.CreateDirectory(job.Target.FolderPath);
+        File.WriteAllText(job.Target.FilePath, "published archive must survive removal");
+        feature.Start(job.JobId);
+        await source.Entered.Task.WaitAsync(TimeSpan.FromSeconds(2));
+        var removing = feature.RemoveManyAsync([job.JobId]);
+        Assert.False(removing.IsCompleted);
+        Assert.Equal(DownloadJobState.Pausing, Assert.Single(feature.Snapshot()).State);
+        Assert.True(Directory.Exists(stage));
+        feature.Start(job.JobId); // cannot restart an execution being removed
+        source.Completion.TrySetCanceled();
+        await removing.WaitAsync(TimeSpan.FromSeconds(2));
+        Assert.Empty(feature.Snapshot());
+        Assert.False(Directory.Exists(stage));
+        Assert.True(File.Exists(job.Target.FilePath));
+    }
+
     private sealed class BlockingSource : IMangaSource
     {
+        public bool HoldCancellation { get; init; }
+        public TaskCompletionSource<RemoteChapterManifest> Completion { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
         public TaskCompletionSource Entered { get; } =
             new(TaskCreationOptions.RunContinuationsAsynchronously);
 
@@ -297,12 +334,11 @@ public sealed class DownloadQueuePersistenceTests : IDisposable
             CancellationToken cancellationToken)
         {
             ProviderToken = cancellationToken;
-            var completion = new TaskCompletionSource<RemoteChapterManifest>(
-                TaskCreationOptions.RunContinuationsAsynchronously);
+            var completion = Completion;
 
             // Honours the queue's own shutdown, so disposing the feature does not
             // leave this test waiting on a call that will never answer.
-            cancellationToken.Register(() => completion.TrySetCanceled(cancellationToken));
+            if (!HoldCancellation) cancellationToken.Register(() => completion.TrySetCanceled(cancellationToken));
             Entered.TrySetResult();
             return completion.Task;
         }
@@ -333,10 +369,12 @@ public sealed class DownloadQueuePersistenceTests : IDisposable
     {
         private int _manifestCalls;
 
-        public TaskCompletionSource TwoEntered { get; } =
+        public TaskCompletionSource FirstEntered { get; } =
             new(TaskCreationOptions.RunContinuationsAsynchronously);
 
         public int ManifestCalls => Volatile.Read(ref _manifestCalls);
+        public TaskCompletionSource FourEntered { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public TaskCompletionSource FiveEntered { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
         public string Id => "comix";
 
@@ -348,7 +386,10 @@ public sealed class DownloadQueuePersistenceTests : IDisposable
             RemoteChapterIdentity chapter,
             CancellationToken cancellationToken)
         {
-            if (Interlocked.Increment(ref _manifestCalls) == 2) TwoEntered.TrySetResult();
+            var count = Interlocked.Increment(ref _manifestCalls);
+            if (count == 1) FirstEntered.TrySetResult();
+            if (count == 4) FourEntered.TrySetResult();
+            if (count == 5) FiveEntered.TrySetResult();
 
             var completion = new TaskCompletionSource<RemoteChapterManifest>(
                 TaskCreationOptions.RunContinuationsAsynchronously);

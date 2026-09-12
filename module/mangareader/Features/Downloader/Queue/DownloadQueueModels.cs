@@ -84,6 +84,8 @@ public sealed record DownloadJobRecord
     public DownloadJobState State { get; init; } = DownloadJobState.Queued;
 
     public string? Warning { get; init; }
+    [System.Text.Json.Serialization.JsonIgnore]
+    public string? RouteText { get; init; }
 
     public string? ManifestHash { get; init; }
 
@@ -111,6 +113,8 @@ public sealed record DownloadJobRecord
     public string StateText => State switch
     {
         DownloadJobState.AwaitingSourceFallback => "Awaiting source",
+        DownloadJobState.Pausing => "Stopping",
+        DownloadJobState.Paused => "Stopped",
         _ => State.ToString(),
     };
 

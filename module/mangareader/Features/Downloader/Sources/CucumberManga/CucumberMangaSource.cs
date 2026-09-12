@@ -5,6 +5,7 @@ using System.Net.Http;
 using System.Security.Cryptography;
 using System.Text;
 using Module.Mangareader.Sources;
+using Module.Mangareader.ShareLogic;
 
 namespace Module.Mangareader.Features.Downloader.Sources.CucumberManga;
 
@@ -118,13 +119,25 @@ public sealed class CucumberMangaSource : IMangaSource
     private const int MaximumHtmlBytes = 8 * 1024 * 1024;
     private static readonly HttpClient SharedClient = CreateClient();
     private readonly HttpClient _client;
+    private readonly ProxyHttpTransport? _transport;
 
-    public CucumberMangaSource() : this(SharedClient)
+    public CucumberMangaSource() : this(SharedClient, null)
     {
     }
 
-    internal CucumberMangaSource(HttpClient client) =>
+    internal CucumberMangaSource(HttpClient client) : this(client, null)
+    {
+    }
+
+    internal CucumberMangaSource(ProxyHttpTransport transport) : this(SharedClient, transport)
+    {
+    }
+
+    private CucumberMangaSource(HttpClient client, ProxyHttpTransport? transport)
+    {
         _client = client ?? throw new ArgumentNullException(nameof(client));
+        _transport = transport;
+    }
 
     public static RemoteSourceGroup Group { get; } = new(
         new RemoteGroupIdentity(CucumberMangaContract.SourceId, CucumberMangaContract.GroupId),
@@ -409,9 +422,9 @@ public sealed class CucumberMangaSource : IMangaSource
         HttpRequestMessage request,
         CancellationToken cancellationToken)
     {
-        using var response = await _client
-            .SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken)
-            .ConfigureAwait(false);
+        using var response = _transport is null
+            ? await _client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false)
+            : await _transport.SendAsync("cucumber", _client, request, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
         if (response.Content.Headers.ContentLength is > MaximumHtmlBytes)
         {
             throw new CucumberMangaContractException(

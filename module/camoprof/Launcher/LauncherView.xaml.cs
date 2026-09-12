@@ -20,6 +20,7 @@ public partial class LauncherView : UserControl, IDisposable
     private readonly NetworkMonitor _network;
     private readonly AddProfileFeature _addProfile;
     private readonly ProfileActionsFeature _profileActions;
+    private readonly ProxyPoolAdapter _proxyPool;
     private readonly ObservableCollection<LauncherProfileRow> _profiles = [];
     private CancellationTokenSource? _addProfileCancellation;
     private bool _busy;
@@ -30,18 +31,21 @@ public partial class LauncherView : UserControl, IDisposable
         BrowserSessionCoordinator sessions,
         NetworkMonitor network,
         AddProfileFeature addProfile,
-        ProfileActionsFeature profileActions)
+        ProfileActionsFeature profileActions,
+        ProxyPoolAdapter proxyPool)
     {
         _catalog = catalog;
         _sessions = sessions;
         _network = network;
         _addProfile = addProfile;
         _profileActions = profileActions;
+        _proxyPool = proxyPool ?? throw new ArgumentNullException(nameof(proxyPool));
         InitializeComponent();
         ProfileTable.ItemsSource = _profiles;
         _sessions.SessionChanged += Sessions_SessionChanged;
         _network.SnapshotChanged += Network_SnapshotChanged;
         RenderNetwork(_network.Current);
+        Loaded += LauncherView_Loaded;
     }
 
     internal async Task RefreshAsync()
@@ -98,6 +102,17 @@ public partial class LauncherView : UserControl, IDisposable
 
     private async void RefreshButton_Click(object sender, RoutedEventArgs e)
         => await RefreshAsync();
+
+    private void LauncherView_Loaded(object sender, RoutedEventArgs e) =>
+        _proxyPool.Enabled = ProxyModeToggle.IsChecked == true;
+
+    private void ProxyModeToggle_Click(object sender, RoutedEventArgs e)
+    {
+        _proxyPool.Enabled = ProxyModeToggle.IsChecked == true;
+        SetStatus(_proxyPool.Enabled
+            ? "Proxy pool will be used for newly opened browsers."
+            : "Direct mode will be used for newly opened browsers.");
+    }
 
     private async void LaunchClose_Click(object sender, RoutedEventArgs e)
     {
@@ -248,6 +263,7 @@ public partial class LauncherView : UserControl, IDisposable
         AddProfileButton.IsEnabled = false;
         RefreshButton.IsEnabled = false;
         CheckModeToggle.IsEnabled = false;
+        ProxyModeToggle.IsEnabled = false;
         try
         {
             await action();
@@ -280,6 +296,7 @@ public partial class LauncherView : UserControl, IDisposable
                 AddProfileButton.IsEnabled = true;
                 RefreshButton.IsEnabled = true;
                 CheckModeToggle.IsEnabled = true;
+                ProxyModeToggle.IsEnabled = true;
             }
             _busy = false;
         }
@@ -344,6 +361,7 @@ public partial class LauncherView : UserControl, IDisposable
             return;
         }
         _disposed = true;
+        Loaded -= LauncherView_Loaded;
         // Navigation away must not orphan a running Add Profile run:
         // the linked token cancels the dialog's run and its best-effort
         // teardown; the pyhost lifecycle hook is the final backstop.

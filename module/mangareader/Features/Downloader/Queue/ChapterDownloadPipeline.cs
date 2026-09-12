@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.IO;
 using System.Security.Cryptography;
 using System.Text.Json;
@@ -101,14 +102,18 @@ public sealed class ChapterDownloadPipeline
         TimeSpan.FromSeconds(4),
     ];
 
-    /// <summary>Initial default: two concurrently streamed pages.</summary>
-    public const int PageConcurrency = 2;
+    public const int DirectPageConcurrency = 2;
+    public const int ProxyPageConcurrency = 8;
+    private const int JournalCheckpointInterval = 8;
 
     private readonly PageTransport _transport;
     private readonly IMangaSource _source;
     private readonly string _stagingRoot;
     private readonly string _jobsRoot;
     private readonly IReadOnlyList<TimeSpan> _retryDelays;
+    private readonly object _journalGate = new();
+    private int _pagesSinceStart;
+    internal Func<RemoteChapterIdentity, CancellationToken, Task<RemoteChapterManifest>>? ManifestResolver { get; set; }
 
     public ChapterDownloadPipeline(
         PageTransport transport,
@@ -162,12 +167,15 @@ public sealed class ChapterDownloadPipeline
                 "Manifest provider berubah sejak staging dibuat; job perlu dimulai ulang.");
         }
 
-        var records = new Dictionary<int, StagedPageRecord>(
+        var records = new ConcurrentDictionary<int, StagedPageRecord>(
             (journal?.Pages ?? []).ToDictionary(record => record.Ordinal));
-        var failures = new Dictionary<int, PageFailureEvidence>();
+        var failures = new ConcurrentDictionary<int, PageFailureEvidence>();
         var completed = 0;
 
         Report(progress, completed, manifest.PageCount, "Memulai chapter");
+
+        try
+        {
 
         // First pass: every expected page, continuing past failures.
         completed = await RunPassAsync(
@@ -175,17 +183,18 @@ public sealed class ChapterDownloadPipeline
             Enumerable.Range(0, manifest.PageCount).ToList(),
             progress, completed, cancellationToken).ConfigureAwait(false);
 
-        if (failures.Count > 0)
+        if (failures.Count > 0 && (!_transport.HasIndependentSession || failures.Values.All(
+                failure => failure.Outcome == PageFetchOutcome.NetworkFailed)))
         {
             // Recovery pass: refresh the same chapter and retry only the
             // failures, never the pages that already validated.
             RemoteChapterManifest refreshed;
             try
             {
-                refreshed = await _source.GetManifestAsync(manifest.Chapter, cancellationToken)
+                refreshed = await (ManifestResolver ?? _source.GetManifestAsync)(manifest.Chapter, cancellationToken)
                     .ConfigureAwait(false);
             }
-            catch (Exception exception) when (exception is not OperationCanceledException)
+            catch (Exception exception) when (exception is not (OperationCanceledException or QueueSessionUnavailableException))
             {
                 return new PipelineResult(
                     false,
@@ -246,6 +255,13 @@ public sealed class ChapterDownloadPipeline
 
         Report(progress, manifest.PageCount, manifest.PageCount, "Lengkap");
         return new PipelineResult(true, staged, [], null, ManifestConflict: false);
+        }
+        finally
+        {
+            // Parallel.ForEachAsync has settled every worker before this runs.
+            // Include the tail smaller than the periodic checkpoint batch.
+            WriteJournal(jobRoot, manifest.ManifestHash, records);
+        }
     }
 
     /// <summary>Removes one job's staging. Only called after queue state is committed.</summary>
@@ -262,8 +278,8 @@ public sealed class ChapterDownloadPipeline
         RemoteChapterManifest manifest,
         string referer,
         string jobRoot,
-        Dictionary<int, StagedPageRecord> records,
-        Dictionary<int, PageFailureEvidence> failures,
+        ConcurrentDictionary<int, StagedPageRecord> records,
+        ConcurrentDictionary<int, PageFailureEvidence> failures,
         IReadOnlyList<int> ordinals,
         IProgress<ChapterDownloadProgress>? progress,
         int completed,
@@ -273,7 +289,9 @@ public sealed class ChapterDownloadPipeline
         var options = new ParallelOptions
         {
             CancellationToken = cancellationToken,
-            MaxDegreeOfParallelism = PageConcurrency,
+            MaxDegreeOfParallelism = _transport.UsesProxy
+                ? ProxyPageConcurrency
+                : DirectPageConcurrency,
         };
 
         await Parallel.ForEachAsync(ordinals, options, async (ordinal, token) =>
@@ -295,23 +313,18 @@ public sealed class ChapterDownloadPipeline
                 .ConfigureAwait(false);
             if (attempt.Record is null)
             {
-                lock (failures)
-                {
-                    failures[ordinal] = attempt.Failure ?? new PageFailureEvidence(
-                        ordinal,
-                        page.RemoteKey,
-                        PageFetchOutcome.NetworkFailed,
-                        "page attempt ended without failure evidence");
-                }
+                failures[ordinal] = attempt.Failure ?? new PageFailureEvidence(
+                    ordinal,
+                    page.RemoteKey,
+                    PageFetchOutcome.NetworkFailed,
+                    "page attempt ended without failure evidence");
 
                 Report(progress, Volatile.Read(ref counter), manifest.PageCount, $"Page {ordinal + 1} gagal");
                 return;
             }
 
-            lock (records)
-            {
-                records[ordinal] = attempt.Record;
-            }
+            records[ordinal] = attempt.Record;
+            CheckpointJournal(jobRoot, manifest.ManifestHash, records);
 
             var done = Interlocked.Increment(ref counter);
             Report(progress, done, manifest.PageCount, $"Page {ordinal + 1} tersimpan");
@@ -321,9 +334,8 @@ public sealed class ChapterDownloadPipeline
     }
 
     /// <summary>
-    /// One page: an initial attempt plus up to three retries on the fixed
-    /// 1/2/4 second schedule. Whether a failed attempt may use the browser is
-    /// decided by the transport, not here.
+    /// One page: bounded native attempts rotate through the proxy pool, then
+    /// at most one browser fallback. Permanent failures never consume retries.
     /// </summary>
     private async Task<PageAttemptResult> AttemptPageAsync(
         RemotePage page,
@@ -337,11 +349,22 @@ public sealed class ChapterDownloadPipeline
         Directory.CreateDirectory(Path.GetDirectoryName(basePath)!);
         var rawPath = basePath + ".raw";
         var rawRelative = Path.GetRelativePath(_stagingRoot, rawPath);
+        if (_transport.HasIndependentSession)
+        {
+            var fetched = await _transport.FetchIndependentAsync(
+                page, rawRelative, referer, manifest.RequestHeaders, cancellationToken).ConfigureAwait(false);
+            if (fetched.Succeeded && fetched.StoredPath is not null)
+                return await FinalizeFetchedPageAsync(page, ordinal, jobRoot, basePath, rawPath,
+                    fetched, cancellationToken).ConfigureAwait(false);
+            return new PageAttemptResult(null, new PageFailureEvidence(
+                ordinal, page.RemoteKey, fetched.Outcome, fetched.Detail ?? fetched.Outcome.ToString()));
+        }
         var lastFailure = new PageFailureEvidence(
             ordinal,
             page.RemoteKey,
             PageFetchOutcome.NetworkFailed,
             "page request did not complete");
+        var browserFallbackEligible = false;
 
         for (var attempt = 0; attempt <= _retryDelays.Count; attempt++)
         {
@@ -355,7 +378,7 @@ public sealed class ChapterDownloadPipeline
             try
             {
                 fetch = await _transport
-                    .FetchAsync(page, rawRelative, referer, manifest.RequestHeaders, cancellationToken)
+                    .FetchNativeAsync(page, rawRelative, referer, manifest.RequestHeaders, cancellationToken)
                     .ConfigureAwait(false);
             }
             catch (OperationCanceledException)
@@ -365,6 +388,7 @@ public sealed class ChapterDownloadPipeline
             catch (Exception exception) when (exception is IOException or InvalidOperationException)
             {
                 lastFailure = lastFailure with { Detail = exception.GetBaseException().Message };
+                browserFallbackEligible = true;
                 continue;
             }
 
@@ -375,93 +399,136 @@ public sealed class ChapterDownloadPipeline
                     page.RemoteKey,
                     fetch.Outcome,
                     fetch.Detail ?? fetch.Outcome.ToString());
+                browserFallbackEligible = fetch.IsFallbackEligible;
+                if (!ShouldRetryNative(fetch.Outcome)) break;
                 continue;
             }
 
-            byte[] bytes;
-            try
-            {
-                bytes = await File.ReadAllBytesAsync(fetch.StoredPath, cancellationToken)
-                    .ConfigureAwait(false);
-            }
-            catch (IOException)
-            {
-                lastFailure = lastFailure with { Detail = "staged page could not be read" };
-                continue;
-            }
+            browserFallbackEligible = false;
+            var staged = await FinalizeFetchedPageAsync(
+                page, ordinal, jobRoot, basePath, rawPath, fetch, cancellationToken).ConfigureAwait(false);
+            if (staged.Record is not null) return staged;
 
-            var format = fetch.Format;
-            var transformed = false;
-            if (page.Transform is not null)
-            {
-                try
-                {
-                    var image = await _source
-                        .TransformPageAsync(page, bytes, cancellationToken)
-                        .ConfigureAwait(false);
-                    bytes = image.Bytes;
-                    format = image.Format;
-                    transformed = true;
-                }
-                catch (OperationCanceledException)
-                {
-                    throw;
-                }
-                catch (Exception exception) when (
-                    exception is InvalidDataException or InvalidOperationException or IOException)
-                {
-                    // An unknown algorithm or corrupt output is a visible page
-                    // failure, never a silent pass-through of scrambled bytes.
-                    lastFailure = new PageFailureEvidence(
-                        ordinal,
-                        page.RemoteKey,
-                        exception is InvalidDataException
-                            ? PageFetchOutcome.Challenge
-                            : PageFetchOutcome.NetworkFailed,
-                        exception.GetBaseException().Message);
-                    continue;
-                }
-            }
+            lastFailure = staged.Failure ?? lastFailure;
+            if (!ShouldRetryNative(lastFailure.Outcome)) break;
+        }
 
-            var finalPath = basePath + "." + format;
-            var temporary = finalPath + ".part";
-            try
+        if (browserFallbackEligible)
+        {
+            var fallback = await _transport
+                .FetchBrowserFallbackAsync(page, rawRelative, referer, cancellationToken)
+                .ConfigureAwait(false);
+            if (fallback.Succeeded && fallback.StoredPath is not null)
             {
-                await File.WriteAllBytesAsync(temporary, bytes, cancellationToken).ConfigureAwait(false);
-                File.Move(temporary, finalPath, overwrite: true);
+                var staged = await FinalizeFetchedPageAsync(
+                    page, ordinal, jobRoot, basePath, rawPath, fallback, cancellationToken).ConfigureAwait(false);
+                if (staged.Record is not null) return staged;
+                lastFailure = staged.Failure ?? lastFailure;
             }
-            catch (IOException)
+            else
             {
-                lastFailure = lastFailure with { Detail = "validated page could not be staged" };
-                continue;
-            }
-            finally
-            {
-                TryDelete(temporary);
-            }
-
-            TryDelete(rawPath);
-            return new PageAttemptResult(
-                new StagedPageRecord(
+                lastFailure = new PageFailureEvidence(
                     ordinal,
                     page.RemoteKey,
-                    Path.GetRelativePath(jobRoot, finalPath),
-                    page.ExpectedBytes,
-                    bytes.Length,
-                    Convert.ToHexString(SHA256.HashData(bytes)),
-                    format,
-                    transformed,
-                    Validated: true),
-                null);
+                    fallback.Outcome,
+                    fallback.Detail ?? fallback.Outcome.ToString());
+            }
         }
 
         TryDelete(rawPath);
         return new PageAttemptResult(null, lastFailure);
     }
 
+    internal static bool ShouldRetryNative(PageFetchOutcome outcome) =>
+        outcome is PageFetchOutcome.NetworkFailed
+            or PageFetchOutcome.Rejected
+            or PageFetchOutcome.Throttled
+            or PageFetchOutcome.Challenge;
+
+    private async Task<PageAttemptResult> FinalizeFetchedPageAsync(
+        RemotePage page,
+        int ordinal,
+        string jobRoot,
+        string basePath,
+        string rawPath,
+        PageFetchResult fetch,
+        CancellationToken cancellationToken)
+    {
+        byte[] bytes;
+        try
+        {
+            bytes = await File.ReadAllBytesAsync(fetch.StoredPath!, cancellationToken).ConfigureAwait(false);
+        }
+        catch (IOException)
+        {
+            return Failed(PageFetchOutcome.NetworkFailed, "staged page could not be read");
+        }
+
+        var format = fetch.Format;
+        var transformed = false;
+        if (page.Transform is not null)
+        {
+            try
+            {
+                var image = await _source
+                    .TransformPageAsync(page, bytes, cancellationToken)
+                    .ConfigureAwait(false);
+                bytes = image.Bytes;
+                format = image.Format;
+                transformed = true;
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch (Exception exception) when (
+                exception is InvalidDataException or InvalidOperationException or IOException)
+            {
+                return Failed(
+                    exception is InvalidDataException
+                        ? PageFetchOutcome.Challenge
+                        : PageFetchOutcome.NetworkFailed,
+                    exception.GetBaseException().Message);
+            }
+        }
+
+        var finalPath = basePath + "." + format;
+        var temporary = finalPath + ".part";
+        try
+        {
+            await File.WriteAllBytesAsync(temporary, bytes, cancellationToken).ConfigureAwait(false);
+            File.Move(temporary, finalPath, overwrite: true);
+        }
+        catch (IOException)
+        {
+            return Failed(PageFetchOutcome.NetworkFailed, "validated page could not be staged");
+        }
+        finally
+        {
+            TryDelete(temporary);
+        }
+
+        TryDelete(rawPath);
+        return new PageAttemptResult(
+            new StagedPageRecord(
+                ordinal,
+                page.RemoteKey,
+                Path.GetRelativePath(jobRoot, finalPath),
+                page.ExpectedBytes,
+                bytes.Length,
+                Convert.ToHexString(SHA256.HashData(bytes)),
+                format,
+                transformed,
+                Validated: true),
+            null);
+
+        PageAttemptResult Failed(PageFetchOutcome outcome, string detail) =>
+            new(null, new PageFailureEvidence(ordinal, page.RemoteKey, outcome, detail));
+    }
+
     private static IReadOnlyList<StagedPage> StagedPages(
         string jobRoot,
-        Dictionary<int, StagedPageRecord> records) =>
+        ConcurrentDictionary<int, StagedPageRecord> records) =>
         [.. records.OrderBy(pair => pair.Key).Select(pair =>
             new StagedPage(
                 pair.Key,
@@ -529,12 +596,29 @@ public sealed class ChapterDownloadPipeline
     private static void WriteJournal(
         string jobRoot,
         string manifestHash,
-        Dictionary<int, StagedPageRecord> records) =>
+        ConcurrentDictionary<int, StagedPageRecord> records) =>
         DownloaderJson.WriteAtomic(
             Path.Combine(jobRoot, "job.json"),
             new JobJournal(
                 manifestHash,
                 [.. records.OrderBy(pair => pair.Key).Select(pair => pair.Value)]));
+
+    /// <summary>
+    /// Persist progress in small batches so pause/crash recovery redownloads at
+    /// most a bounded tail instead of the whole chapter. Atomic writes are
+    /// serialized per pipeline because page workers finish concurrently.
+    /// </summary>
+    private void CheckpointJournal(
+        string jobRoot,
+        string manifestHash,
+        ConcurrentDictionary<int, StagedPageRecord> records)
+    {
+        if (Interlocked.Increment(ref _pagesSinceStart) % JournalCheckpointInterval != 0) return;
+        lock (_journalGate)
+        {
+            WriteJournal(jobRoot, manifestHash, records);
+        }
+    }
 
     private static void TryDelete(string path)
     {
