@@ -37,6 +37,7 @@
 
   <ItemGroup>
     <Compile Include="..\..\module\sharedLogic\cs\ProxyPoolContract.cs" />
+    <Compile Include="..\..\module\sharedLogic\cs\ProxyPoolHealthContract.cs" />
     <Compile Include="..\..\module\sharedLogic\cs\PyHost.cs" />
     <Compile Include="..\..\module\mangareader\Reader\**\*.cs" Link="Reader\%(RecursiveDir)%(Filename)%(Extension)" />
     <Page Include="..\..\module\mangareader\Reader\**\*.xaml" Link="Reader\%(RecursiveDir)%(Filename)%(Extension)" />
