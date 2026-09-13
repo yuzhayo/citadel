@@ -65,6 +65,12 @@
                                TextWrapping="Wrap" />
                 </StackPanel>
             </Border>
+
+            <setting:SettingTable x:Name="SavedKeysTable"
+                                  Margin="0,8,0,0"
+                                  AutomationProperties.Name="Saved Webshare API keys"
+                                  CanUserResizeColumns="True"
+                                  CanUserSortColumns="False" />
         </StackPanel>
     </setting:SettingViewport>
 </UserControl>

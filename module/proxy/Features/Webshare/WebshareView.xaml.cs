@@ -12,6 +12,7 @@ public partial class WebshareView : UserControl, IDisposable
     {
         _coordinator = coordinator ?? throw new ArgumentNullException(nameof(coordinator));
         InitializeComponent();
+        SavedKeysTable.SetColumns(["#", "API key"]);
         _coordinator.StateChanged += Coordinator_StateChanged;
         RenderKeySummary();
         Coordinator_StateChanged(_coordinator, _coordinator.CurrentState);
@@ -71,8 +72,13 @@ public partial class WebshareView : UserControl, IDisposable
         RenderKeySummary();
     }
 
-    private void RenderKeySummary() => KeySummaryText.Text =
-        $"{_coordinator.KeyCount} API key(s) saved in the local Credenz vault.";
+    private void RenderKeySummary()
+    {
+        var keys = _coordinator.SavedKeys;
+        KeySummaryText.Text = $"{keys.Count} API key(s) saved in the local Credenz vault.";
+        SavedKeysTable.SetRows(keys.Select((key, index) =>
+            (IReadOnlyList<string>)[$"{index + 1}", key]));
+    }
 
     public void Dispose()
     {

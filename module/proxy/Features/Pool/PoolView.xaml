@@ -63,8 +63,8 @@
                                                     CanUserSort="False"
                                                     Width="42" />
                             <DataGridTextColumn Header="Endpoint"
-                                                Binding="{Binding Masked}"
-                                                SortMemberPath="Masked"
+                                                Binding="{Binding EndpointText}"
+                                                SortMemberPath="EndpointText"
                                                 MinWidth="220"
                                                 Width="*" />
                             <DataGridTextColumn Header="Scheme"

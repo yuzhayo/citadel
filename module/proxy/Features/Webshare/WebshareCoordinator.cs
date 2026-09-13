@@ -21,6 +21,7 @@ internal sealed class WebshareCoordinator(
 
     public WebshareImportProgress CurrentState { get { lock (_gate) return _current; } }
     public int KeyCount => _credentials.Load().Count;
+    internal IReadOnlyList<string> SavedKeys => _credentials.Load();
 
     public int AddKeys(string text) => _credentials.AddFromPaste(text);
     public void ClearKeys() => _credentials.Clear();

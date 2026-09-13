@@ -21,7 +21,7 @@ internal sealed class ProxyPoolRow(ProxyEndpoint endpoint, ProxyHealthRecord? he
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(Selected)));
         }
     }
-    public string Masked => Endpoint.Masked;
+    public string EndpointText => Endpoint.Canonical;
     public string Scheme => Endpoint.Scheme;
     public string Host => Endpoint.Host;
     public int Port => Endpoint.Port;

@@ -9,9 +9,12 @@ namespace CitadelBridge;
 ///
 /// Resolution order:
 ///   1. CITADEL_CREDENZ env override (absolute) — the host's own escape.
-///   2. Dev: the repo's module/credenz, found by walking up from the shell
-///      output directory and requiring the folder to be writable.
-///   3. Installed: %LocalAppData%\Citadel\Credenz.
+///   2. %LocalAppData%\Citadel\Credenz for both development and installed
+///      application runs.
+///
+/// A pre-unification development vault at module/credenz is copied into the
+/// primary vault once per file when it is discovered. Existing primary files
+/// always win, so migration cannot overwrite newer installed credentials.
 /// </summary>
 public static class CredenzPath
 {
@@ -24,22 +27,12 @@ public static class CredenzPath
             return fromEnvironment;
         }
 
-        var cursor = new DirectoryInfo(AppContext.BaseDirectory);
-        for (var depth = 0; depth < 8 && cursor is not null; depth++)
-        {
-            var candidate = Path.Combine(cursor.FullName, "module", "credenz");
-            if (Directory.Exists(candidate) && IsWritable(candidate))
-            {
-                return candidate;
-            }
-
-            cursor = cursor.Parent;
-        }
-
-        return Path.Combine(
+        var primary = Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
             "Citadel",
             "Credenz");
+        MigrateLegacyDevelopmentVault(primary);
+        return primary;
     }
 
     public static string ProfilesRoot()
@@ -48,18 +41,35 @@ public static class CredenzPath
     public static string GoogleAccountsRoot()
         => Path.Combine(Resolve(), "google", "accounts");
 
-    private static bool IsWritable(string directory)
+    private static void MigrateLegacyDevelopmentVault(string primary)
     {
+        var legacy = FindLegacyDevelopmentVault();
+        if (legacy is null || string.Equals(legacy, primary, StringComparison.OrdinalIgnoreCase)) return;
+
         try
         {
-            var probe = Path.Combine(directory, ".write-" + Guid.NewGuid().ToString("N"));
-            File.WriteAllBytes(probe, Array.Empty<byte>());
-            File.Delete(probe);
-            return true;
+            foreach (var source in Directory.EnumerateFiles(legacy, "*", SearchOption.AllDirectories))
+            {
+                var relative = Path.GetRelativePath(legacy, source);
+                var destination = Path.Combine(primary, relative);
+                if (File.Exists(destination)) continue;
+                Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
+                File.Copy(source, destination, overwrite: false);
+            }
         }
-        catch (Exception)
+        catch (IOException) { }
+        catch (UnauthorizedAccessException) { }
+    }
+
+    private static string? FindLegacyDevelopmentVault()
+    {
+        var cursor = new DirectoryInfo(AppContext.BaseDirectory);
+        for (var depth = 0; depth < 8 && cursor is not null; depth++)
         {
-            return false;
+            var candidate = Path.Combine(cursor.FullName, "module", "credenz");
+            if (Directory.Exists(candidate)) return candidate;
+            cursor = cursor.Parent;
         }
+        return null;
     }
 }
