@@ -36,6 +36,13 @@ public sealed record PipelineResult(
 {
     public IReadOnlyList<PageFailureEvidence> FailureEvidence { get; init; } = [];
 
+    /// <summary>
+    /// The page lane exhausted a recoverable pass and asks its owner to refresh
+    /// the manifest in that owner's manifest lane. The pipeline never issues
+    /// that provider request itself.
+    /// </summary>
+    public bool ManifestRefreshRequested { get; init; }
+
     public static PipelineResult Conflict(string detail) =>
         new(false, [], [], detail, ManifestConflict: true);
 
@@ -183,15 +190,31 @@ public sealed class ChapterDownloadPipeline
             Enumerable.Range(0, manifest.PageCount).ToList(),
             progress, completed, cancellationToken).ConfigureAwait(false);
 
-        if (failures.Count > 0 && (!_transport.HasIndependentSession || failures.Values.All(
-                failure => failure.Outcome == PageFetchOutcome.NetworkFailed)))
+        var shouldRefreshManifest = failures.Count > 0 && (!_transport.HasIndependentSession || failures.Values.All(
+            failure => failure.Outcome == PageFetchOutcome.NetworkFailed));
+        if (shouldRefreshManifest && ManifestResolver is null)
+        {
+            var stagedPages = StagedPages(jobRoot, records);
+            return new PipelineResult(
+                false,
+                stagedPages,
+                [.. failures.Keys.Order()],
+                $"{failures.Count} page meminta refresh manifest sebelum fallback.",
+                ManifestConflict: false)
+            {
+                FailureEvidence = [.. failures.Values.OrderBy(failure => failure.Ordinal)],
+                ManifestRefreshRequested = true,
+            };
+        }
+
+        if (shouldRefreshManifest && ManifestResolver is not null)
         {
             // Recovery pass: refresh the same chapter and retry only the
             // failures, never the pages that already validated.
             RemoteChapterManifest refreshed;
             try
             {
-                refreshed = await (ManifestResolver ?? _source.GetManifestAsync)(manifest.Chapter, cancellationToken)
+                refreshed = await ManifestResolver(manifest.Chapter, cancellationToken)
                     .ConfigureAwait(false);
             }
             catch (Exception exception) when (exception is not (OperationCanceledException or QueueSessionUnavailableException))

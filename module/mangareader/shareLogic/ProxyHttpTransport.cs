@@ -60,16 +60,16 @@ internal sealed class ProxyHttpTransport(ProxyPoolAdapter pool) : IDisposable
         ArgumentNullException.ThrowIfNull(request);
         ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
 
-        var lease = _pool.Acquire(ProxyTarget.Http, useProxy);
-        if (lease is null)
+        if (!useProxy)
         {
             return await directClient.SendAsync(request, completion, cancellationToken).ConfigureAwait(false);
         }
 
         CopyDefaultHeaders(directClient, request);
+        var reservation = await _pool.ReserveAsync(owner,
+            _pool.AvailableCandidates(ProxyTarget.Http), cancellationToken).ConfigureAwait(false);
+        var lease = reservation.Lease;
         request.Options.Set(LeaseOption, lease);
-        var reservation = await _pool.Reservations.ReserveAsync(owner,
-            [lease.Endpoint], cancellationToken).ConfigureAwait(false);
         var key = owner + "\n" + lease.Endpoint.Canonical;
         var client = _clients.GetOrAdd(key, _ => CreateProxyClient(lease.Endpoint, directClient.Timeout));
         try
@@ -248,7 +248,7 @@ internal sealed class ProxyHttpTransport(ProxyPoolAdapter pool) : IDisposable
         }
 
         candidates ??= _pool.AvailableCandidates(ProxyTarget.Http);
-        var reservation = await _pool.Reservations.ReserveAsync(owner, candidates, cancellationToken)
+        var reservation = await _pool.ReserveAsync(owner, candidates, cancellationToken)
             .ConfigureAwait(false);
         var lease = reservation.Lease;
         CopyDefaultHeaders(directClient, request);

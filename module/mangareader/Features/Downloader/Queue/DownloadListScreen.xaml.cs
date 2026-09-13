@@ -3,6 +3,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Threading;
 using Citadel.Setting.Components;
 
 namespace Module.Mangareader.Features.Downloader.Queue;
@@ -16,11 +17,23 @@ public partial class DownloadListScreen : UserControl, IDisposable
 {
     private QueueGroupProjection _projection = new();
     private DownloadQueueFeature? _queue;
+    // Page workers can finish in parallel. The screen owns a bounded latest-
+    // snapshot render cadence instead of posting one Dispatcher item per page.
+    private readonly DispatcherTimer _renderTimer;
+    private int _renderPending;
+    private int _timerRunning;
+    private int _timerStartQueued;
+    private DateTimeOffset _lastActivityRenderUtc = DateTimeOffset.MinValue;
     private bool _disposed;
 
     public DownloadListScreen()
     {
         InitializeComponent();
+        _renderTimer = new DispatcherTimer(DispatcherPriority.Background, Dispatcher)
+        {
+            Interval = TimeSpan.FromMilliseconds(100),
+        };
+        _renderTimer.Tick += RenderTimer_Tick;
         JobTable.ItemsSource = _projection.Visible;
         JobTable.Loaded += (_, _) =>
         {
@@ -51,23 +64,63 @@ public partial class DownloadListScreen : UserControl, IDisposable
     private void Queue_QueueSummaryChanged(object? sender, EventArgs e)
     {
         if (_disposed || _queue is null) return;
-        if (!Dispatcher.CheckAccess())
+        Interlocked.Exchange(ref _renderPending, 1);
+        EnsureRenderTimerQueued();
+    }
+
+    private void EnsureRenderTimerQueued()
+    {
+        if (Volatile.Read(ref _timerRunning) != 0 || _disposed) return;
+        if (Interlocked.Exchange(ref _timerStartQueued, 1) != 0) return;
+        Dispatcher.BeginInvoke(DispatcherPriority.Background, new Action(() =>
         {
-            Dispatcher.BeginInvoke(() => Queue_QueueSummaryChanged(sender, e));
+            Interlocked.Exchange(ref _timerStartQueued, 0);
+            if (_disposed || _queue is null) return;
+            if (_renderTimer.IsEnabled) return;
+            Volatile.Write(ref _timerRunning, 1);
+            _renderTimer.Start();
+        }));
+    }
+
+    private void RenderTimer_Tick(object? sender, EventArgs e)
+    {
+        if (_disposed || _queue is null)
+        {
+            StopRenderTimer();
             return;
         }
 
-        Render(_queue.Snapshot(), _queue.Summary());
+        var jobs = _queue.Snapshot();
+        var now = DateTimeOffset.UtcNow;
+        var active = jobs.Any(job => job.IsInFlight);
+        var hasProgress = Interlocked.Exchange(ref _renderPending, 0) != 0;
+        var refreshActivityAge = active && now - _lastActivityRenderUtc >= TimeSpan.FromSeconds(1);
+        if (hasProgress || refreshActivityAge)
+        {
+            Render(jobs, _queue.Summary(), now);
+            if (refreshActivityAge) _lastActivityRenderUtc = now;
+        }
+
+        if (!active && Volatile.Read(ref _renderPending) == 0) StopRenderTimer();
     }
 
-    private void Render(IReadOnlyList<DownloadJobRecord> jobs, QueueSummary summary)
+    private void StopRenderTimer()
     {
-        _projection.Update(jobs);
+        _renderTimer.Stop();
+        Volatile.Write(ref _timerRunning, 0);
+        if (Volatile.Read(ref _renderPending) != 0) EnsureRenderTimerQueued();
+    }
+
+    private void Render(IReadOnlyList<DownloadJobRecord> jobs, QueueSummary summary, DateTimeOffset? now = null)
+    {
+        _projection.Update(jobs, now);
         UpdateSelection();
         EmptyText.Visibility = jobs.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
         SummaryText.Text = summary.Total == 0
             ? "No jobs"
-            : $"{summary.Active} active · {summary.Paused} paused · {summary.Failed} failed · {summary.Total} total";
+            : $"Manifest {summary.ManifestActive}/{DownloadQueueFeature.ManifestConcurrency} · "
+              + $"ready {summary.ManifestReady} · download {summary.DownloadActive}/{DownloadQueueFeature.JobConcurrency} · "
+              + $"{summary.Paused} paused · {summary.Failed} failed · {summary.Total} total";
         ResumeButton.IsEnabled = jobs.Any(job =>
             job.State is DownloadJobState.Paused or DownloadJobState.Failed);
     }
@@ -247,5 +300,7 @@ public partial class DownloadListScreen : UserControl, IDisposable
         // The queue itself outlives this screen: only the subscription goes.
         if (_queue is not null) _queue.QueueSummaryChanged -= Queue_QueueSummaryChanged;
         _projection.SelectionChanged -= UpdateSelection;
+        _renderTimer.Stop();
+        _renderTimer.Tick -= RenderTimer_Tick;
     }
 }

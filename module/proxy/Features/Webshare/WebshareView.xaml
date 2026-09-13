@@ -4,9 +4,15 @@
              xmlns:setting="clr-namespace:Citadel.Setting.Components;assembly=Citadel.Setting"
              Background="{DynamicResource Bg}"
              Foreground="{DynamicResource Fg}">
-    <setting:SettingViewport Mode="Document">
-        <StackPanel>
-            <setting:SettingActionCard>
+    <setting:SettingViewport Mode="Contained">
+        <Grid>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="*" />
+            </Grid.RowDefinitions>
+
+            <setting:SettingActionCard Grid.Row="0">
                 <StackPanel>
                     <TextBlock Text="Webshare API keys" FontWeight="SemiBold" />
                     <TextBlock x:Name="KeySummaryText"
@@ -46,7 +52,7 @@
                 </setting:SettingActionCard.ActionContent>
             </setting:SettingActionCard>
 
-            <Border Margin="0,8,0,0" Padding="12" Style="{DynamicResource SettingCardStyle}">
+            <Border Grid.Row="1" Margin="0,8,0,0" Padding="12" Style="{DynamicResource SettingCardStyle}">
                 <StackPanel>
                     <TextBlock x:Name="StatusText"
                                Foreground="{DynamicResource Body}"
@@ -67,10 +73,22 @@
             </Border>
 
             <setting:SettingTable x:Name="SavedKeysTable"
+                                  Grid.Row="2"
                                   Margin="0,8,0,0"
+                                  setting:UiPreference.Key="proxy.webshare.keys.table"
                                   AutomationProperties.Name="Saved Webshare API keys"
                                   CanUserResizeColumns="True"
-                                  CanUserSortColumns="False" />
-        </StackPanel>
+                                  CanUserSortColumns="False">
+                <setting:SettingTable.InteractiveColumns>
+                    <DataGridTextColumn Header="#"
+                                        Binding="{Binding Number}"
+                                        Width="42" />
+                    <DataGridTextColumn Header="API key"
+                                        Binding="{Binding Value}"
+                                        MinWidth="260"
+                                        Width="*" />
+                </setting:SettingTable.InteractiveColumns>
+            </setting:SettingTable>
+        </Grid>
     </setting:SettingViewport>
 </UserControl>

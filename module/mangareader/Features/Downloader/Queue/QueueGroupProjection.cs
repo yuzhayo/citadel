@@ -17,8 +17,9 @@ internal sealed class QueueGroupProjection
     public event Action? SelectionChanged;
     public IReadOnlyList<string> SelectedIds => _selected.ToArray();
 
-    public void Update(IReadOnlyList<DownloadJobRecord> jobs)
+    public void Update(IReadOnlyList<DownloadJobRecord> jobs, DateTimeOffset? now = null)
     {
+        var currentTime = now ?? DateTimeOffset.UtcNow;
         _jobs = jobs;
         _selected.IntersectWith(jobs.Select(job => job.JobId));
         var desired = new List<QueueDisplayRow>();
@@ -27,12 +28,12 @@ internal sealed class QueueGroupProjection
         {
             var children = group.ToArray();
             var header = Row("group:" + group.Key, true);
-            header.Update(children[0], group.Key, children, !_collapsed.Contains(group.Key), Selection(children));
+            header.Update(children[0], group.Key, children, !_collapsed.Contains(group.Key), Selection(children), currentTime);
             desired.Add(header);
             foreach (var job in children)
             {
                 var row = Row(job.JobId, false);
-                row.Update(job, group.Key, [job], false, _selected.Contains(job.JobId));
+                row.Update(job, group.Key, [job], false, _selected.Contains(job.JobId), currentTime);
                 if (header.Expanded) desired.Add(row);
             }
         }
@@ -96,6 +97,7 @@ internal sealed class QueueDisplayRow(string id, bool isGroup, Action<QueueDispl
         set { if (_selected != value) select(this, value == true); }
     }
     private IReadOnlyList<DownloadJobRecord> _children = [];
+    private int _activityAgeSeconds = -1;
     public string Chevron => Expanded ? "▾" : "▸";
     public string TitleDisplayName => IsGroup ? Job.TitleDisplayName + " / " + Job.Identity.SourceId : "";
     public string ChapterDisplayName => IsGroup ? $"{_children.Count} chapters" : Job.ChapterDisplayName;
@@ -105,7 +107,34 @@ internal sealed class QueueDisplayRow(string id, bool isGroup, Action<QueueDispl
         : Job.StateText;
     public string ProgressText => IsGroup
         ? $"{_children.Sum(job => job.CompletedPages)}/{_children.Sum(job => job.PageCount)}" : Job.ProgressText;
-    public string? Warning => IsGroup ? null : string.Join("\n", new[] { Job.RouteText, Job.Warning }.Where(value => !string.IsNullOrEmpty(value)));
+    // Raw technical context remains available for terminal/error decisions.
+    // The table binds DetailText so normal operation never reads like a log.
+    public string? Warning => IsGroup ? null : string.Join("\n", new[]
+    {
+        Job.RouteText,
+        Job.Warning,
+    }.Where(value => !string.IsNullOrEmpty(value)));
+    public string? DetailText => IsGroup ? null : Job.State switch
+    {
+        DownloadJobState.Queued => "Waiting for manifest",
+        DownloadJobState.Resolving => "Manifest resolving",
+        DownloadJobState.RefreshingManifest => "Refreshing manifest",
+        DownloadJobState.ManifestReady => Job.PageCount > 0
+            ? $"Manifest ready · {Job.PageCount} pages"
+            : "Manifest ready",
+        DownloadJobState.Downloading => WithActivity(Progress("Downloading")),
+        DownloadJobState.Recovering => WithActivity(Progress("Recovering pages")),
+        DownloadJobState.Decoding => WithActivity(Progress("Processing pages")),
+        DownloadJobState.Validating => WithActivity(Progress("Validating pages")),
+        DownloadJobState.Publishing => WithActivity("Publishing CBZ"),
+        DownloadJobState.ResolvingAlternates => "Finding alternate source",
+        DownloadJobState.AwaitingSourceFallback => FailureDetail("Page download failed; choose an alternate source."),
+        DownloadJobState.Pausing => "Stopping",
+        DownloadJobState.Paused => string.IsNullOrWhiteSpace(Job.Warning) ? "Stopped" : "Stopped — " + Job.Warning,
+        DownloadJobState.Failed => FailureDetail("Download failed."),
+        DownloadJobState.Completed => "Download complete",
+        _ => Job.StateText,
+    };
     public bool CanPause => IsGroup ? _children.Any(job => job.CanPause) : Job.CanPause;
     public bool CanResume => IsGroup ? _children.Any(job => job.CanResume) : Job.CanResume || Job.State == DownloadJobState.Queued;
     public string ResumeActionLabel => IsGroup ? "Resume" : Job.State == DownloadJobState.Failed ? "Retry" : "Start";
@@ -113,10 +142,33 @@ internal sealed class QueueDisplayRow(string id, bool isGroup, Action<QueueDispl
     public bool CanChooseFallback => !IsGroup && Job.CanChooseFallback;
     public bool CanOpenFolder => !IsGroup && Job.CanOpenFolder;
 
-    public void Update(DownloadJobRecord job, string groupKey, IReadOnlyList<DownloadJobRecord> children, bool expanded, bool? selected)
+    public void Update(
+        DownloadJobRecord job,
+        string groupKey,
+        IReadOnlyList<DownloadJobRecord> children,
+        bool expanded,
+        bool? selected,
+        DateTimeOffset now)
     {
-        if (Job == job && Expanded == expanded && Selected == selected && _children.SequenceEqual(children)) return;
+        var activityAge = !IsGroup && job.IsInFlight
+            ? Math.Max(0, (int)(now - job.UpdatedUtc).TotalSeconds)
+            : -1;
+        if (Job == job && Expanded == expanded && Selected == selected
+            && _activityAgeSeconds == activityAge && _children.SequenceEqual(children)) return;
         Job = job; GroupKey = groupKey; _children = children; Expanded = expanded; _selected = selected;
+        _activityAgeSeconds = activityAge;
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(null));
     }
+
+    private string Progress(string phase) => Job.PageCount > 0
+        ? $"{phase} {Job.CompletedPages}/{Job.PageCount}"
+        : phase;
+
+    private string WithActivity(string phase) => _activityAgeSeconds >= 0
+        ? $"{phase} · activity {_activityAgeSeconds}s ago"
+        : phase;
+
+    private string FailureDetail(string fallback) => string.IsNullOrWhiteSpace(Job.Warning)
+        ? fallback
+        : Job.Warning!;
 }

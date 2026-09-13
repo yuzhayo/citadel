@@ -32,4 +32,26 @@ public sealed class ProxyLeaseRegistryTests
         first.Dispose();
         Assert.Empty(registry.Snapshot());
     }
+
+    [Fact]
+    public async Task ManagedAccountsAreBalancedBeforeLatencyTieBreaks()
+    {
+        var registry = new ProxyLeaseRegistry();
+        var candidates = ProxyPoolContract.ParseLines(
+        [
+            "http://a-one.test:80", "http://a-two.test:81",
+            "http://b-one.test:82", "http://b-two.test:83",
+        ]).Endpoints;
+        string Account(ProxyEndpoint endpoint) => endpoint.Host.StartsWith("a-", StringComparison.Ordinal)
+            ? "ws-a"
+            : "ws-b";
+
+        using var first = await registry.ReserveAsync("one", candidates, CancellationToken.None, Account);
+        using var second = await registry.ReserveAsync("two", candidates, CancellationToken.None, Account);
+        using var third = await registry.ReserveAsync("three", candidates, CancellationToken.None, Account);
+        using var fourth = await registry.ReserveAsync("four", candidates, CancellationToken.None, Account);
+
+        Assert.Equal(2, new[] { first, second, third, fourth }.Count(item => item.AccountId == "ws-a"));
+        Assert.Equal(2, new[] { first, second, third, fourth }.Count(item => item.AccountId == "ws-b"));
+    }
 }

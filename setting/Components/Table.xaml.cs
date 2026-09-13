@@ -204,6 +204,13 @@ public sealed partial class SettingTable : UserControl
                     Header = label,
                     Binding = new Binding($"[{index}]") { Mode = BindingMode.OneWay },
                     IsReadOnly = true,
+                    // Legacy text tables have no feature-owned column
+                    // declarations. Keep compact metadata columns, but make
+                    // the final data column consume the restored viewport.
+                    Width = ColumnWidth.UnitType == DataGridLengthUnitType.Auto
+                        && index == _columns.Count - 1
+                        ? new DataGridLength(1, DataGridLengthUnitType.Star)
+                        : ColumnWidth,
                 });
             }
         }

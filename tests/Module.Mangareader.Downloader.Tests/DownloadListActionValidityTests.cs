@@ -17,6 +17,8 @@ public sealed class DownloadListActionValidityTests
         [
             (DownloadJobState.Queued, true, false, false, false, true),
             (DownloadJobState.Resolving, true, false, false, false, true),
+            (DownloadJobState.ResolvingAlternates, true, false, false, false, true),
+            (DownloadJobState.ManifestReady, true, false, false, false, true),
             (DownloadJobState.Downloading, true, false, false, false, true),
             (DownloadJobState.Recovering, true, false, false, false, true),
             (DownloadJobState.AwaitingSourceFallback, false, false, true, false, true),

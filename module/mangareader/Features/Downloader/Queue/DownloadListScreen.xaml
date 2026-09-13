@@ -138,10 +138,11 @@
 
                             <DataGridTemplateColumn Header="Detail"
                                                     CanUserSort="False"
+                                                    Width="*"
                                                     MinWidth="200">
                                 <DataGridTemplateColumn.CellTemplate>
                                     <DataTemplate>
-                                        <TextBlock Text="{Binding Warning}"
+                                        <TextBlock Text="{Binding DetailText}"
                                                    Foreground="{DynamicResource Dim}"
                                                    TextWrapping="Wrap" />
                                     </DataTemplate>

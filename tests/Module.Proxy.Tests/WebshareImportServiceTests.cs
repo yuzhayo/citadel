@@ -41,6 +41,13 @@ public sealed class WebshareImportServiceTests
 
         Assert.Equal(2, result.Candidates);
         Assert.Equal(2, result.Reachable.Count);
+        Assert.Equal(2, result.Origins.Count);
+        Assert.All(result.Origins, item =>
+        {
+            Assert.Equal("webshare", item.Origin.Source);
+            Assert.StartsWith("ws-", item.Origin.AccountId, StringComparison.Ordinal);
+            Assert.DoesNotContain("key-", item.Origin.AccountId, StringComparison.Ordinal);
+        });
         Assert.Equal(2, api.Calls);
     }
 

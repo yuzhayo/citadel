@@ -38,6 +38,39 @@ public sealed class QueueGroupProjectionTests
         Assert.Equal(2, view.Visible.Count(row => row.IsGroup));
     }
 
+    [Fact]
+    public void ActiveRowShowsElapsedTimeSinceItsLastActivity()
+    {
+        var updated = DateTimeOffset.UtcNow;
+        var job = Job("active") with
+        {
+            State = DownloadJobState.Downloading,
+            UpdatedUtc = updated,
+        };
+        var view = new QueueGroupProjection();
+
+        view.Update([job], updated.AddSeconds(3));
+
+        var row = Assert.Single(view.Visible, item => !item.IsGroup);
+        Assert.Contains("Downloading · activity 3s ago", row.DetailText ?? string.Empty, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ManifestReadyShowsItsKnownPageCount()
+    {
+        var job = Job("manifest") with
+        {
+            State = DownloadJobState.ManifestReady,
+            PageCount = 95,
+        };
+        var view = new QueueGroupProjection();
+
+        view.Update([job]);
+
+        var row = Assert.Single(view.Visible, item => !item.IsGroup);
+        Assert.Equal("Manifest ready · 95 pages", row.DetailText);
+    }
+
     private static DownloadJobRecord Job(string id) => new()
     {
         JobId = id, TitleDisplayName = "Same title", Identity = new("comix", "title", "hid", id, "group"),

@@ -106,6 +106,7 @@
                     <DataGridTemplateColumn CanUserSort="True"
                                             Header="Title"
                                             MinWidth="200"
+                                            Width="*"
                                             SortMemberPath="Title">
                         <DataGridTemplateColumn.CellTemplate>
                             <DataTemplate>

@@ -38,12 +38,14 @@ public partial class MangaReaderView : UserControl, IContentHeaderActionProvider
         Lifetime lifetime,
         ReadingHistory history,
         LibraryRootContext libraryRoot,
-        DownloaderContext downloader)
+        DownloaderContext downloader,
+        ProxyLeaseRegistry proxyReservations)
     {
         ArgumentNullException.ThrowIfNull(lifetime);
         _history = history ?? throw new ArgumentNullException(nameof(history));
         _libraryRoot = libraryRoot ?? throw new ArgumentNullException(nameof(libraryRoot));
         ArgumentNullException.ThrowIfNull(downloader);
+        ArgumentNullException.ThrowIfNull(proxyReservations);
         _queue = downloader.Queue;
         InitializeComponent();
         // Recording is owned here, not by the History screen, so a chapter is
@@ -86,7 +88,7 @@ public partial class MangaReaderView : UserControl, IContentHeaderActionProvider
             "catalog");
         var catalogPaths = new CatalogMirrorPaths(catalogRoot);
         var catalogStore = new CatalogSnapshotStore(catalogPaths);
-        _catalogProxyPool = new ProxyPoolAdapter("MangaReader Catalog");
+        _catalogProxyPool = new ProxyPoolAdapter("MangaReader Catalog", proxyReservations);
         _catalogHttpTransport = new ProxyHttpTransport(_catalogProxyPool);
         var catalogBrowser = new CatalogBrowserClient(
             Path.Combine(catalogRoot, "browser-staging"),

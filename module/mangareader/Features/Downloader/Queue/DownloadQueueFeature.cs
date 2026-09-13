@@ -28,7 +28,8 @@ public sealed record QueueAddResult(
 /// </summary>
 public sealed class DownloadQueueFeature : IDisposable
 {
-    internal const int JobConcurrency = QueueScheduler.AutomaticLimit;
+    internal const int JobConcurrency = 4;
+    internal const int ManifestConcurrency = 12;
 
     private readonly LibraryRootContext _root;
     private readonly MangaSourceRegistry _sources;
@@ -38,7 +39,9 @@ public sealed class DownloadQueueFeature : IDisposable
     private readonly DownloadSourceIndex _index;
     private readonly object _gate = new();
     private List<DownloadJobRecord> _jobs = [];
-    private readonly QueueScheduler _scheduler;
+    private readonly QueueScheduler _manifestScheduler;
+    private readonly QueueScheduler _downloadScheduler;
+    private readonly HashSet<string> _manualDownloadsAfterManifest = new(StringComparer.Ordinal);
     private readonly QueueSharedSessionAdapter _shared;
     private readonly HashSet<string> _removing = new(StringComparer.Ordinal);
     private int _disposed;
@@ -67,7 +70,32 @@ public sealed class DownloadQueueFeature : IDisposable
         _store = store ?? throw new ArgumentNullException(nameof(store));
         _index = index ?? throw new ArgumentNullException(nameof(index));
         _httpTransport = httpTransport;
-        _scheduler = new QueueScheduler(_gate, Snapshot, RunClaimedJobAsync);
+        _manifestScheduler = new QueueScheduler(
+            _gate,
+            Snapshot,
+            job => job.State is DownloadJobState.Queued
+                or DownloadJobState.RefreshingManifest
+                or DownloadJobState.ResolvingAlternates,
+            ManifestConcurrency,
+            RunManifestClaimedAsync);
+        _downloadScheduler = new QueueScheduler(
+            _gate,
+            Snapshot,
+            job => job.State == DownloadJobState.ManifestReady,
+            JobConcurrency,
+            RunDownloadClaimedAsync);
+        _manifestScheduler.Settled += (_, job) =>
+        {
+            var startManualDownload = false;
+            lock (_gate) startManualDownload = _manualDownloadsAfterManifest.Remove(job.JobId);
+            if (startManualDownload && Snapshot().Any(item => item.JobId == job.JobId
+                    && item.State == DownloadJobState.ManifestReady))
+            {
+                _downloadScheduler.MarkManual(job.JobId);
+            }
+            _downloadScheduler.Wake();
+        };
+        _downloadScheduler.Settled += (_, _) => _manifestScheduler.Wake();
         _shared = new QueueSharedSessionAdapter(browser, reason => StopAll(reason));
         LoadPersisted();
     }
@@ -92,13 +120,21 @@ public sealed class DownloadQueueFeature : IDisposable
     {
         lock (_gate)
         {
+            var resolving = _jobs.Count(job => job.State is DownloadJobState.Resolving
+                or DownloadJobState.RefreshingManifest
+                or DownloadJobState.ResolvingAlternates);
+            var ready = _jobs.Count(job => job.State == DownloadJobState.ManifestReady);
+            var downloading = _jobs.Count(job => job.State is DownloadJobState.Downloading
+                or DownloadJobState.Recovering or DownloadJobState.Decoding
+                or DownloadJobState.Validating or DownloadJobState.Publishing);
             return new QueueSummary(
                 _jobs.Count,
-                _jobs.Count(job => job.State is not (DownloadJobState.Paused
-                    or DownloadJobState.Failed
-                    or DownloadJobState.Completed)),
+                resolving + ready + downloading,
                 _jobs.Count(job => job.State is DownloadJobState.Paused or DownloadJobState.Pausing),
-                _jobs.Count(job => job.State == DownloadJobState.Failed));
+                _jobs.Count(job => job.State == DownloadJobState.Failed),
+                resolving,
+                ready,
+                downloading);
         }
     }
 
@@ -249,6 +285,27 @@ public sealed class DownloadQueueFeature : IDisposable
             .Select(job => job.Identity.Key)
             .ToHashSet(StringComparer.Ordinal);
 
+    private bool IsActive(string jobId) =>
+        _manifestScheduler.IsActive(jobId) || _downloadScheduler.IsActive(jobId);
+
+    private Task CancelActive(IEnumerable<string> jobIds) =>
+        Task.WhenAll(
+            _manifestScheduler.Cancel(jobIds),
+            _downloadScheduler.Cancel(jobIds));
+
+    private void MarkManual(string jobId, DownloadJobState state)
+    {
+        if (state == DownloadJobState.Queued)
+        {
+            _manualDownloadsAfterManifest.Add(jobId);
+            _manifestScheduler.MarkManual(jobId);
+        }
+        else if (state == DownloadJobState.ManifestReady)
+        {
+            _downloadScheduler.MarkManual(jobId);
+        }
+    }
+
     public void Pause(string jobId) => Stop(jobId);
 
     public void Stop(string jobId) => StopMany([jobId], null);
@@ -263,6 +320,7 @@ public sealed class DownloadQueueFeature : IDisposable
         var targets = ids.ToHashSet(StringComparer.Ordinal);
         lock (_gate)
         {
+            _manualDownloadsAfterManifest.ExceptWith(targets);
             Commit(jobs =>
             {
                 for (var i = 0; i < jobs.Count; i++)
@@ -271,13 +329,13 @@ public sealed class DownloadQueueFeature : IDisposable
                     if (!targets.Contains(job.JobId) || job.State == DownloadJobState.Completed) continue;
                     jobs[i] = job with
                     {
-                        State = _scheduler.IsActive(job.JobId) ? DownloadJobState.Pausing : DownloadJobState.Paused,
+                        State = IsActive(job.JobId) ? DownloadJobState.Pausing : DownloadJobState.Paused,
                         Warning = reason ?? job.Warning,
                         UpdatedUtc = DateTimeOffset.UtcNow,
                     };
                 }
             });
-            return _scheduler.Cancel(targets);
+            return CancelActive(targets);
         }
     }
 
@@ -285,12 +343,18 @@ public sealed class DownloadQueueFeature : IDisposable
     {
         lock (_gate)
         {
-            if (_removing.Contains(jobId) || _scheduler.IsActive(jobId)) return;
+            if (_removing.Contains(jobId) || IsActive(jobId)) return;
             Transition(jobId, job => job.State is DownloadJobState.Paused or DownloadJobState.Failed or DownloadJobState.Queued
-                ? job with { State = DownloadJobState.Queued, Warning = null, UpdatedUtc = DateTimeOffset.UtcNow }
+                ? job with
+                {
+                    State = HasValidManifest(job) ? DownloadJobState.ManifestReady : DownloadJobState.Queued,
+                    Warning = null,
+                    UpdatedUtc = DateTimeOffset.UtcNow,
+                }
                 : job);
-            if (_jobs.Any(job => job.JobId == jobId && job.State == DownloadJobState.Queued))
-                _scheduler.MarkManual(jobId);
+            var state = _jobs.FirstOrDefault(job => job.JobId == jobId)?.State;
+            if (state is DownloadJobState.Queued or DownloadJobState.ManifestReady)
+                MarkManual(jobId, state.Value);
         }
         EnsureStarted();
     }
@@ -314,9 +378,14 @@ public sealed class DownloadQueueFeature : IDisposable
             for (var i = 0; i < jobs.Count; i++)
             {
                 var job = jobs[i];
-                if (!matches(job) || _removing.Contains(job.JobId) || _scheduler.IsActive(job.JobId)
+                if (!matches(job) || _removing.Contains(job.JobId) || IsActive(job.JobId)
                     || job.State is not (DownloadJobState.Paused or DownloadJobState.Failed)) continue;
-                jobs[i] = job with { State = DownloadJobState.Queued, Warning = null, UpdatedUtc = DateTimeOffset.UtcNow };
+                jobs[i] = job with
+                {
+                    State = HasValidManifest(job) ? DownloadJobState.ManifestReady : DownloadJobState.Queued,
+                    Warning = null,
+                    UpdatedUtc = DateTimeOffset.UtcNow,
+                };
             }
         });
         EnsureStarted();
@@ -340,11 +409,11 @@ public sealed class DownloadQueueFeature : IDisposable
             {
                 var job = jobs[index];
                 if (job.State is not (DownloadJobState.Paused or DownloadJobState.Failed)
-                    || _removing.Contains(job.JobId) || _scheduler.IsActive(job.JobId)) continue;
+                    || _removing.Contains(job.JobId) || IsActive(job.JobId)) continue;
 
                 jobs[index] = job with
                 {
-                    State = DownloadJobState.Queued,
+                    State = HasValidManifest(job) ? DownloadJobState.ManifestReady : DownloadJobState.Queued,
                     Warning = null,
                     UpdatedUtc = DateTimeOffset.UtcNow,
                 };
@@ -429,7 +498,7 @@ public sealed class DownloadQueueFeature : IDisposable
             // Preserve the file; restart already parks any in-flight records.
             System.Diagnostics.Trace.TraceError("Queue shutdown persistence: {0}", ex.Message);
         }
-        finally { _scheduler.ShutdownAsync().GetAwaiter().GetResult(); }
+        finally { Task.WhenAll(_manifestScheduler.ShutdownAsync(), _downloadScheduler.ShutdownAsync()).GetAwaiter().GetResult(); }
     }
 
     /// <summary>
@@ -486,6 +555,20 @@ public sealed class DownloadQueueFeature : IDisposable
         // Nothing resumes automatically after a restart, which includes a job
         // that was only queued. States that already require an explicit user
         // action are left as they are.
+        if (job.State == DownloadJobState.ManifestReady)
+        {
+            return HasValidManifest(job)
+                ? job
+                : job with
+                {
+                    State = DownloadJobState.Paused,
+                    ManifestHash = null,
+                    PageCount = 0,
+                    Warning = "Manifest cache tidak tersedia; Resume untuk menyelesaikan ulang.",
+                    UpdatedUtc = DateTimeOffset.UtcNow,
+                };
+        }
+
         if (job.State is DownloadJobState.Completed
             or DownloadJobState.Failed
             or DownloadJobState.Paused
@@ -521,17 +604,56 @@ public sealed class DownloadQueueFeature : IDisposable
     private static string UnsafeTargetMessage(string? problem) =>
         "Target download tidak aman dan tidak dipakai: " + problem;
 
-    private void EnsureStarted()
+    private RemoteChapterIdentity ChapterIdentity(DownloadJobRecord job) =>
+        new(
+            job.Identity.SourceId,
+            new RemoteTitleIdentity(job.Identity.SourceId, job.Identity.TitleId, job.Identity.TitleHid, string.Empty),
+            job.Identity.ChapterId,
+            job.ChapterNumber,
+            new RemoteGroupIdentity(job.Identity.SourceId, job.Identity.GroupId));
+
+    private QueueManifestStore ManifestStore(string jobId) =>
+        new(_browser.ResolveContained(Path.Combine("jobs", jobId, "manifest.json")));
+
+    private bool HasValidManifest(DownloadJobRecord job)
     {
-        if (Volatile.Read(ref _disposed) == 0) _scheduler.Start();
+        if (string.IsNullOrWhiteSpace(job.ManifestHash)) return false;
+        var manifest = ManifestStore(job.JobId).Read(ChapterIdentity(job));
+        return manifest is not null && string.Equals(manifest.ManifestHash, job.ManifestHash, StringComparison.Ordinal);
     }
 
-    private async Task RunClaimedJobAsync(DownloadJobRecord job, CancellationToken token)
+    private void InvalidateManifest(string jobId)
+    {
+        try
+        {
+            var path = _browser.ResolveContained(Path.Combine("jobs", jobId, "manifest.json"));
+            if (File.Exists(path)) File.Delete(path);
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        {
+            // A later resolver ignores an identity/hash mismatch. Failure state
+            // remains visible even when the stale cache cannot be deleted now.
+        }
+    }
+
+    private void EnsureStarted()
+    {
+        if (Volatile.Read(ref _disposed) != 0) return;
+        _manifestScheduler.Start();
+        _downloadScheduler.Start();
+    }
+
+    private async Task RunManifestClaimedAsync(DownloadJobRecord job, CancellationToken token)
     {
         try
         {
             token.ThrowIfCancellationRequested();
-            await RunJobAsync(job, token).ConfigureAwait(false);
+            if (job.State == DownloadJobState.ResolvingAlternates)
+                await ResolveAlternatesAsync(job, token).ConfigureAwait(false);
+            else if (job.State == DownloadJobState.RefreshingManifest)
+                await RefreshManifestAsync(job, token).ConfigureAwait(false);
+            else
+                await ResolveManifestAsync(job, token).ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (token.IsCancellationRequested) { }
         catch (QueueSessionUnavailableException exception) { StopAll(exception.Message); }
@@ -542,7 +664,23 @@ public sealed class DownloadQueueFeature : IDisposable
         finally { ParkIfPausing(job.JobId); }
     }
 
-    private async Task RunJobAsync(DownloadJobRecord job, CancellationToken lifetime)
+    private async Task RunDownloadClaimedAsync(DownloadJobRecord job, CancellationToken token)
+    {
+        try
+        {
+            token.ThrowIfCancellationRequested();
+            await DownloadManifestAsync(job, token).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (token.IsCancellationRequested) { }
+        catch (QueueSessionUnavailableException exception) { StopAll(exception.Message); }
+        catch (Exception exception)
+        {
+            Fail(job.JobId, "Job gagal: " + exception.GetBaseException().Message);
+        }
+        finally { ParkIfPausing(job.JobId); }
+    }
+
+    private async Task ResolveManifestAsync(DownloadJobRecord job, CancellationToken lifetime)
     {
         // The one point where a job's target is about to be used for a write. A
         // target that cannot be contained inside its own root is refused here, so
@@ -570,9 +708,6 @@ public sealed class DownloadQueueFeature : IDisposable
         }
 
         var independentMode = _httpTransport?.IsProxyMode == true;
-        using var independent = independentMode
-            ? new QueueIndependentSession(job.JobId, sourceId, _httpTransport!.Pool, _shared,
-                status => UpdateRoute(job.JobId, status)) : null;
         var manifestSession = independentMode && sourceId == "comix"
             ? new QueueManifestSession(_browser.StagingRoot,
                 Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(
@@ -594,25 +729,14 @@ public sealed class DownloadQueueFeature : IDisposable
             }
         }
 
-        var identity = new RemoteTitleIdentity(
-            job.Identity.SourceId,
-            job.Identity.TitleId,
-            job.Identity.TitleHid,
-            string.Empty);
-        var chapterIdentity = new RemoteChapterIdentity(
-            job.Identity.SourceId,
-            identity,
-            job.Identity.ChapterId,
-            job.ChapterNumber,
-            new RemoteGroupIdentity(job.Identity.SourceId, job.Identity.GroupId));
+        var chapterIdentity = ChapterIdentity(job);
 
         SetState(job.JobId, DownloadJobState.Resolving, "Menyelesaikan manifest");
 
         RemoteChapterManifest manifest;
         try
         {
-            var snapshot = new QueueManifestStore(_browser.ResolveContained(
-                Path.Combine("jobs", job.JobId, "manifest.json")));
+            var snapshot = ManifestStore(job.JobId);
             manifest = snapshot.Read(chapterIdentity)
                 ?? await (manifestSession is null
                     ? source.GetManifestAsync(chapterIdentity, lifetime)
@@ -641,17 +765,66 @@ public sealed class DownloadQueueFeature : IDisposable
             {
                 ManifestHash = manifest.ManifestHash,
                 PageCount = manifest.PageCount,
-                State = DownloadJobState.Downloading,
+                State = DownloadJobState.ManifestReady,
                 UpdatedUtc = DateTimeOffset.UtcNow,
             };
         });
 
+        // Scheduler handoff happens only after this resolver settles and its
+        // proxy lease is released. The download scheduler is woken by the
+        // manifest scheduler's Settled event, so one job cannot occupy both
+        // lanes simultaneously.
+    }
+
+    private async Task DownloadManifestAsync(DownloadJobRecord job, CancellationToken lifetime)
+    {
+        if (!DownloaderPathContainment.TryResolve(
+                job.Target.Root,
+                job.Target.FolderName,
+                job.Target.FileName,
+                out _,
+                out var containment))
+        {
+            Fail(job.JobId, UnsafeTargetMessage(containment));
+            return;
+        }
+
+        var sourceId = job.Identity.SourceId;
+        var source = _sources.FindSource(sourceId);
+        if (source is null)
+        {
+            Fail(job.JobId, $"Source '{sourceId}' tidak terdaftar.");
+            return;
+        }
+
+        var chapterIdentity = ChapterIdentity(job);
+        var snapshot = ManifestStore(job.JobId);
+        var manifest = snapshot.Read(chapterIdentity);
+        if (manifest is null)
+        {
+            Transition(job.JobId, current => current.State == DownloadJobState.ManifestReady
+                ? current with
+                {
+                    State = DownloadJobState.Queued,
+                    ManifestHash = null,
+                    PageCount = 0,
+                    Warning = "Manifest cache tidak tersedia; akan diselesaikan ulang.",
+                    UpdatedUtc = DateTimeOffset.UtcNow,
+                }
+                : current);
+            return;
+        }
+
+        var independentMode = _httpTransport?.IsProxyMode == true;
+        using var independent = independentMode
+            ? new QueueIndependentSession(job.JobId, sourceId, _httpTransport!.Pool, _shared,
+                status => UpdateRoute(job.JobId, status)) : null;
+
         lifetime.ThrowIfCancellationRequested();
         using var transport = new PageTransport(_browser, _browser.StagingRoot, _httpTransport, independent);
-        var pipeline = new ChapterDownloadPipeline(transport, source, _browser.StagingRoot)
-        {
-            ManifestResolver = manifestSession is null ? null : manifestSession.GetAsync,
-        };
+        // Page work never resolves a manifest. A retry re-enters the manifest
+        // lane, keeping browser/proxy bootstrap separate from page transfer.
+        var pipeline = new ChapterDownloadPipeline(transport, source, _browser.StagingRoot);
         var progress = new InlineProgress(update => UpdateProgress(job.JobId, update));
 
         PipelineResult result;
@@ -678,7 +851,28 @@ public sealed class DownloadQueueFeature : IDisposable
 
         if (result.ManifestConflict)
         {
-            Fail(job.JobId, result.Detail ?? "Manifest berubah.");
+            InvalidateManifest(job.JobId);
+            TryDeleteStaging(job.JobId);
+            Commit(jobs =>
+            {
+                var index = FindIndex(jobs, job.JobId);
+                if (index < 0) return;
+                jobs[index] = jobs[index] with
+                {
+                    State = DownloadJobState.Failed,
+                    ManifestHash = null,
+                    PageCount = 0,
+                    Warning = result.Detail ?? "Manifest berubah; Retry akan menyelesaikan ulang.",
+                    UpdatedUtc = DateTimeOffset.UtcNow,
+                };
+            });
+            return;
+        }
+
+        if (result.ManifestRefreshRequested)
+        {
+            SetState(job.JobId, DownloadJobState.RefreshingManifest,
+                "Menyegarkan manifest untuk page yang gagal");
             return;
         }
 
@@ -692,7 +886,7 @@ public sealed class DownloadQueueFeature : IDisposable
         }
         if (!result.Complete && !publishIncomplete)
         {
-            await EnterFallbackOrFailAsync(job, source, chapterIdentity, result, lifetime, manifestSession)
+            await EnterFallbackOrFailAsync(job, result)
                 .ConfigureAwait(false);
             return;
         }
@@ -767,41 +961,178 @@ public sealed class DownloadQueueFeature : IDisposable
     }
 
     /// <summary>
-    /// A chapter whose pages could not all be recovered asks the source for
-    /// other groups publishing the same chapter number. With candidates the job
-    /// waits for explicit user confirmation; without any, it fails with its
-    /// staging retained for Retry or Remove.
+    /// Refreshes only the source manifest after page retries have settled. It
+    /// runs in the manifest lane, so it preserves the proxy/session boundary
+    /// and never lets a page worker issue a provider request.
     /// </summary>
-    private async Task EnterFallbackOrFailAsync(
-        DownloadJobRecord job,
-        IMangaSource source,
-        RemoteChapterIdentity chapterIdentity,
-        PipelineResult result,
-        CancellationToken cancellationToken,
-        QueueManifestSession? manifestSession = null)
+    private async Task RefreshManifestAsync(DownloadJobRecord job, CancellationToken lifetime)
+    {
+        var source = _sources.FindSource(job.Identity.SourceId);
+        if (source is null)
+        {
+            Fail(job.JobId, $"Source '{job.Identity.SourceId}' tidak terdaftar.");
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(job.ManifestHash))
+        {
+            Fail(job.JobId, "Manifest cache tidak memiliki hash; Retry akan menyelesaikan ulang.");
+            return;
+        }
+
+        var independentMode = _httpTransport?.IsProxyMode == true;
+        var manifestSession = independentMode && job.Identity.SourceId == "comix"
+            ? new QueueManifestSession(_browser.StagingRoot,
+                Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(
+                    System.Text.Encoding.UTF8.GetBytes(job.JobId + "/refresh"))).ToLowerInvariant()[..32],
+                _httpTransport!.Pool, source, _shared,
+                status => UpdateRoute(job.JobId, status))
+            : null;
+        if (manifestSession is null && source is IQueueSourceReadiness readiness)
+        {
+            var providerState = readiness.GetQueueReadiness();
+            if (!providerState.IsReady)
+            {
+                ParkQueuedSource(job.Identity.SourceId, providerState.BlockedReason
+                    ?? $"Source '{source.DisplayName}' belum siap untuk Queue.");
+                return;
+            }
+        }
+
+        RemoteChapterManifest refreshed;
+        try
+        {
+            var chapter = ChapterIdentity(job);
+            refreshed = await (manifestSession is null
+                ? source.GetManifestAsync(chapter, lifetime)
+                : manifestSession.GetAsync(chapter, lifetime)).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) { throw; }
+        catch (QueueSessionUnavailableException) { throw; }
+        catch (Exception exception)
+        {
+            // Preserve the existing whole-chapter fallback behavior, but only
+            // after the refresh owner has released its browser/proxy lease.
+            Commit(jobs =>
+            {
+                var index = FindIndex(jobs, job.JobId);
+                if (index < 0) return;
+                jobs[index] = jobs[index] with
+                {
+                    State = DownloadJobState.ResolvingAlternates,
+                    Warning = "Refresh manifest gagal: " + exception.GetBaseException().Message,
+                    UpdatedUtc = DateTimeOffset.UtcNow,
+                };
+            });
+            return;
+        }
+
+        if (!string.Equals(refreshed.ManifestHash, job.ManifestHash, StringComparison.Ordinal))
+        {
+            InvalidateManifest(job.JobId);
+            TryDeleteStaging(job.JobId);
+            Commit(jobs =>
+            {
+                var index = FindIndex(jobs, job.JobId);
+                if (index < 0) return;
+                jobs[index] = jobs[index] with
+                {
+                    State = DownloadJobState.Failed,
+                    ManifestHash = null,
+                    PageCount = 0,
+                    Warning = "Manifest berubah saat recovery; Retry akan menyelesaikan ulang.",
+                    UpdatedUtc = DateTimeOffset.UtcNow,
+                };
+            });
+            return;
+        }
+
+        ManifestStore(job.JobId).Write(refreshed);
+        Commit(jobs =>
+        {
+            var index = FindIndex(jobs, job.JobId);
+            if (index < 0 || lifetime.IsCancellationRequested || jobs[index].State == DownloadJobState.Pausing) return;
+            jobs[index] = jobs[index] with
+            {
+                State = DownloadJobState.ManifestReady,
+                Warning = null,
+                UpdatedUtc = DateTimeOffset.UtcNow,
+            };
+        });
+    }
+
+    /// <summary>
+    /// Alternate-group lookup is manifest-side work. The page worker records
+    /// the request and releases page resources before this runs.
+    /// </summary>
+    private Task EnterFallbackOrFailAsync(DownloadJobRecord job, PipelineResult result)
     {
         var detail = result.Detail ?? $"{result.FailedPages.Count} page gagal setelah recovery.";
+        Commit(jobs =>
+        {
+            var index = FindIndex(jobs, job.JobId);
+            if (index < 0) return;
+            jobs[index] = jobs[index] with
+            {
+                State = DownloadJobState.ResolvingAlternates,
+                Warning = detail,
+                FallbackCandidates = [],
+                UpdatedUtc = DateTimeOffset.UtcNow,
+            };
+        });
+        return Task.CompletedTask;
+    }
+
+    private async Task ResolveAlternatesAsync(DownloadJobRecord job, CancellationToken lifetime)
+    {
+        var source = _sources.FindSource(job.Identity.SourceId);
+        if (source is null)
+        {
+            Fail(job.JobId, $"Source '{job.Identity.SourceId}' tidak terdaftar.");
+            return;
+        }
+
+        var independentMode = _httpTransport?.IsProxyMode == true;
+        var manifestSession = independentMode && job.Identity.SourceId == "comix"
+            ? new QueueManifestSession(_browser.StagingRoot,
+                Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(
+                    System.Text.Encoding.UTF8.GetBytes(job.JobId + "/alternate"))).ToLowerInvariant()[..32],
+                _httpTransport!.Pool, source, _shared,
+                status => UpdateRoute(job.JobId, status))
+            : null;
+        if (manifestSession is null && source is IQueueSourceReadiness readiness)
+        {
+            var providerState = readiness.GetQueueReadiness();
+            if (!providerState.IsReady)
+            {
+                ParkQueuedSource(job.Identity.SourceId, providerState.BlockedReason
+                    ?? $"Source '{source.DisplayName}' belum siap untuk Queue.");
+                return;
+            }
+        }
+
         IReadOnlyList<RemoteAlternateChapter> candidates = [];
         try
         {
             candidates = await (manifestSession is null
-                ? source.FindAlternateGroupsAsync(chapterIdentity, cancellationToken)
-                : manifestSession.FindAlternatesAsync(chapterIdentity, cancellationToken)).ConfigureAwait(false);
+                ? source.FindAlternateGroupsAsync(ChapterIdentity(job), lifetime)
+                : manifestSession.FindAlternatesAsync(ChapterIdentity(job), lifetime)).ConfigureAwait(false);
         }
         catch (OperationCanceledException)
         {
             throw;
         }
         catch (QueueSessionUnavailableException) { throw; }
-        catch (Exception)
+        catch (Exception exception)
         {
-            // An unreachable provider leaves the job failed with staging intact;
-            // it must not be reported as "no alternate group exists".
+            Fail(job.JobId, (job.Warning ?? "Page download gagal.")
+                + " Lookup group alternatif gagal: " + exception.GetBaseException().Message);
+            return;
         }
 
         if (candidates.Count == 0)
         {
-            Fail(job.JobId, detail + " Tidak ada group alternatif yang ditemukan.");
+            Fail(job.JobId, (job.Warning ?? "Page download gagal.") + " Tidak ada group alternatif yang ditemukan.");
             return;
         }
 
@@ -812,7 +1143,7 @@ public sealed class DownloadQueueFeature : IDisposable
             jobs[index] = jobs[index] with
             {
                 State = DownloadJobState.AwaitingSourceFallback,
-                Warning = detail,
+                Warning = job.Warning,
                 FallbackCandidates =
                 [
                     .. candidates.Select(candidate => new SourceFallbackCandidate(
@@ -905,7 +1236,9 @@ public sealed class DownloadQueueFeature : IDisposable
             for (var index = 0; index < jobs.Count; index++)
             {
                 var current = jobs[index];
-                if (current.State != DownloadJobState.Queued
+                if (current.State is not (DownloadJobState.Queued
+                    or DownloadJobState.RefreshingManifest
+                    or DownloadJobState.ResolvingAlternates)
                     || !string.Equals(current.Identity.SourceId, sourceId, StringComparison.Ordinal))
                 {
                     continue;
@@ -1010,7 +1343,7 @@ public sealed class DownloadQueueFeature : IDisposable
 
         lock (_gate)
         {
-            _ = _scheduler.Cancel([jobId]);
+            _ = CancelActive([jobId]);
         }
     }
 

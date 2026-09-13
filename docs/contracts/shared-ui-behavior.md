@@ -122,8 +122,11 @@ No per-screen scrollbar templates. Behavior consistent across app.
 
 ## Table sizing and alignment
 
-- Columns without a feature-owned width start with `ColumnWidth="Auto"`, sizing
-  to their header and visible content. A feature may use the same property with
+- Interactive columns own their semantic width. Every data table must declare
+  at least one primary data column with `Width="*"` so it fills the restored
+  screen viewport; metadata and action columns remain `Auto` or fixed.
+- Legacy `SetColumns` tables retain compact `Auto` metadata columns, while the
+  final column automatically uses `*`. A feature may instead choose
   `SizeToCells`, `SizeToHeader`, a fixed pixel width, or star sizing.
 - `CanUserResizeColumns` defaults to `true`. The shared header template owns one
   transparent right-edge resize target per column, matching spreadsheet
@@ -206,6 +209,21 @@ only vertical section spacing; screen-local outer margins and primary-column
 `MaxWidth` caps are not part of the contract. Fixed sizes remain valid for
 semantic visuals such as covers, icons, toggles, progress tracks, and the
 standalone MangaReader surface.
+
+## Layout restoration contract
+
+- Shell owns and restores only window bounds and maximize state. On restoration
+  all routed content must stretch from `Host` through `SettingViewport` into
+  its feature-owned root.
+- A screen with a result table, collection, queue, or overlay uses
+  `SettingViewport.Mode="Contained"` and a root `Grid`: toolbars/status rows
+  are `Auto`; the primary data surface is the sole `*` row.
+- `Document` is reserved for a vertically scrolling form or narrative screen.
+  It is not the root mode for a table/list that must occupy the available area.
+- UI preferences persist only user-adjustable presentation state: Shell bounds,
+  table width/order/sort, splitter ratios, and explicit display selections.
+  Cards, borders, and stack panels remain responsive; they never restore stale
+  pixel bounds.
 
 ## Review gate
 

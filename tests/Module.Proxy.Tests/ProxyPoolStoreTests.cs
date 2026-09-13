@@ -61,6 +61,26 @@ public sealed class ProxyPoolStoreTests : IDisposable
         Assert.Empty(store.LoadBanned().Endpoints);
     }
 
+    [Fact]
+    public void Commit_StoresOnlyActiveWebshareOriginMetadata()
+    {
+        var store = new ProxyPoolStore(_root);
+        var webshare = Parse("http://user:pass@p.webshare.io:10000");
+        var generic = Parse("http://generic.test:8080");
+
+        store.Commit(
+            [webshare, generic],
+            origins: [(webshare, new ProxyPoolOrigin("webshare", "ws-account-a"))]);
+
+        var origins = store.LoadOrigins();
+        var entry = Assert.Single(origins.Entries);
+        Assert.Equal("ws-account-a", entry.Value.AccountId);
+        Assert.DoesNotContain("user:pass", File.ReadAllText(store.OriginsPath), StringComparison.Ordinal);
+
+        store.RemoveFromActive([webshare]);
+        Assert.Empty(store.LoadOrigins().Entries);
+    }
+
     public void Dispose()
     {
         if (Directory.Exists(_root)) Directory.Delete(_root, recursive: true);

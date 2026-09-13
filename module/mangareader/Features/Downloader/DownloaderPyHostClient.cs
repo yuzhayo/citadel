@@ -436,6 +436,7 @@ public sealed class DownloaderPyHostClient : IDisposable
                 // explicit action bootstraps a fresh one.
                 _session = null;
                 _sessionProvider = null;
+                Interlocked.Exchange(ref _sessionReservation, null)?.Dispose();
                 throw;
             }
         }
@@ -455,10 +456,14 @@ public sealed class DownloaderPyHostClient : IDisposable
         for (var attempt = 1; ; attempt++)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            var lease = _fixedLease ?? _proxyPool?.Acquire(ProxyTarget.Browser);
-            if (lease is not null && _fixedLease is null)
-                _sessionReservation = await _proxyPool!.Reservations.ReserveAsync(
-                    "downloader-browser", [lease.Endpoint], cancellationToken).ConfigureAwait(false);
+            var lease = _fixedLease;
+            if (lease is null && _proxyPool?.IsProxyMode == true)
+            {
+                _sessionReservation = await _proxyPool.ReserveAsync(
+                    "downloader-browser", _proxyPool.AvailableCandidates(ProxyTarget.Browser), cancellationToken)
+                    .ConfigureAwait(false);
+                lease = _sessionReservation.Lease;
+            }
             var parameters = new JsonObject
             {
                 ["provider"] = provider,

@@ -3,6 +3,8 @@ using System.Windows.Controls;
 
 namespace Module.Proxy.Features.Webshare;
 
+internal sealed record SavedWebshareKeyRow(int Number, string Value);
+
 public partial class WebshareView : UserControl, IDisposable
 {
     private readonly WebshareCoordinator _coordinator;
@@ -12,7 +14,6 @@ public partial class WebshareView : UserControl, IDisposable
     {
         _coordinator = coordinator ?? throw new ArgumentNullException(nameof(coordinator));
         InitializeComponent();
-        SavedKeysTable.SetColumns(["#", "API key"]);
         _coordinator.StateChanged += Coordinator_StateChanged;
         RenderKeySummary();
         Coordinator_StateChanged(_coordinator, _coordinator.CurrentState);
@@ -76,8 +77,8 @@ public partial class WebshareView : UserControl, IDisposable
     {
         var keys = _coordinator.SavedKeys;
         KeySummaryText.Text = $"{keys.Count} API key(s) saved in the local Credenz vault.";
-        SavedKeysTable.SetRows(keys.Select((key, index) =>
-            (IReadOnlyList<string>)[$"{index + 1}", key]));
+        SavedKeysTable.ItemsSource = keys.Select((key, index) =>
+            new SavedWebshareKeyRow(index + 1, key)).ToArray();
     }
 
     public void Dispose()

@@ -12,6 +12,9 @@ public enum DownloadJobState
 {
     Queued,
     Resolving,
+    RefreshingManifest,
+    ResolvingAlternates,
+    ManifestReady,
     Downloading,
     Recovering,
     AwaitingSourceFallback,
@@ -105,6 +108,7 @@ public sealed record DownloadJobRecord
     public bool IsTerminal => State is DownloadJobState.Completed or DownloadJobState.Failed;
 
     public bool IsInFlight => State is not (DownloadJobState.Queued
+        or DownloadJobState.ManifestReady
         or DownloadJobState.Paused
         or DownloadJobState.Completed
         or DownloadJobState.Failed
@@ -112,6 +116,9 @@ public sealed record DownloadJobRecord
 
     public string StateText => State switch
     {
+        DownloadJobState.ManifestReady => "Manifest ready",
+        DownloadJobState.RefreshingManifest => "Refreshing manifest",
+        DownloadJobState.ResolvingAlternates => "Finding alternate",
         DownloadJobState.AwaitingSourceFallback => "Awaiting source",
         DownloadJobState.Pausing => "Stopping",
         DownloadJobState.Paused => "Stopped",
@@ -127,7 +134,7 @@ public sealed record DownloadJobRecord
     /// settling — disabled rather than hidden — so the row visibly parks instead
     /// of losing its action mid-transition.
     /// </summary>
-    public bool CanPause => State is DownloadJobState.Queued || IsInFlight;
+    public bool CanPause => State is DownloadJobState.Queued or DownloadJobState.ManifestReady || IsInFlight;
 
     /// <summary>Whether the resume action is valid for this state.</summary>
     public bool CanResume => State is DownloadJobState.Paused or DownloadJobState.Failed;
@@ -166,7 +173,14 @@ public sealed record StagedPageRecord(
     bool Validated);
 
 /// <summary>Counts behind the Catalog badge. Never includes a hard-coded total.</summary>
-public sealed record QueueSummary(int Total, int Active, int Paused, int Failed)
+public sealed record QueueSummary(
+    int Total,
+    int Active,
+    int Paused,
+    int Failed,
+    int ManifestActive = 0,
+    int ManifestReady = 0,
+    int DownloadActive = 0)
 {
     public static QueueSummary Empty { get; } = new(0, 0, 0, 0);
 

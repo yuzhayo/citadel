@@ -1,6 +1,8 @@
 using System.Diagnostics;
 using System.Net;
 using System.Net.Http;
+using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using CitadelBridge;
@@ -102,6 +104,13 @@ internal sealed record WebshareImportProgress(
     int Failed = 0,
     TimeSpan? Elapsed = null);
 
+internal sealed record WebshareImportResult(
+    IReadOnlyList<ProxyEndpoint> Reachable,
+    IReadOnlyList<ProxyHealthRecord> Health,
+    IReadOnlyList<(ProxyEndpoint Endpoint, ProxyPoolOrigin Origin)> Origins,
+    int Candidates,
+    int Skipped);
+
 internal sealed class WebshareImportService(
     IWebshareApiClient api,
     IProxyReachabilityProbe probe)
@@ -109,7 +118,7 @@ internal sealed class WebshareImportService(
     private readonly IWebshareApiClient _api = api ?? throw new ArgumentNullException(nameof(api));
     private readonly IProxyReachabilityProbe _probe = probe ?? throw new ArgumentNullException(nameof(probe));
 
-    public async Task<(IReadOnlyList<ProxyEndpoint> Reachable, IReadOnlyList<ProxyHealthRecord> Health, int Candidates, int Skipped)> RunAsync(
+    public async Task<WebshareImportResult> RunAsync(
         IReadOnlyList<string> keys,
         ProxySettings settings,
         IReadOnlySet<string> banned,
@@ -126,22 +135,26 @@ internal sealed class WebshareImportService(
             var completed = Interlocked.Increment(ref fetched);
             progress?.Report(new WebshareImportProgress(true, $"Fetched key {completed}/{keys.Count}.", completed, keys.Count,
                 Elapsed: stopwatch.Elapsed));
-            return result;
+            return (Result: result, AccountId: AccountId(key));
         }).ToArray();
         var results = await Task.WhenAll(fetchTasks).ConfigureAwait(false);
-        var skipped = results.Sum(result => result.Skipped);
-        var candidates = new SortedDictionary<string, ProxyEndpoint>(StringComparer.Ordinal);
-        foreach (var proxy in results.SelectMany(result => result.Proxies))
+        var skipped = results.Sum(result => result.Result.Skipped);
+        var candidates = new SortedDictionary<string, (ProxyEndpoint Endpoint, ProxyPoolOrigin Origin)>(StringComparer.Ordinal);
+        foreach (var fetchedResult in results)
         {
-            if (!TryMap(proxy, settings.WebshareConnectionMode, out var endpoint))
+            foreach (var proxy in fetchedResult.Result.Proxies)
             {
-                skipped++;
-                continue;
+                if (!TryMap(proxy, settings.WebshareConnectionMode, out var endpoint))
+                {
+                    skipped++;
+                    continue;
+                }
+                if (!banned.Contains(endpoint.Canonical))
+                    candidates.TryAdd(endpoint.Canonical, (endpoint, new ProxyPoolOrigin("webshare", fetchedResult.AccountId)));
             }
-            if (!banned.Contains(endpoint.Canonical)) candidates.TryAdd(endpoint.Canonical, endpoint);
         }
 
-        var endpoints = candidates.Values.ToArray();
+        var endpoints = candidates.Values.Select(item => item.Endpoint).ToArray();
         var health = new ProxyHealthRecord[endpoints.Length];
         var reachable = new List<ProxyEndpoint>();
         var gate = new object();
@@ -178,8 +191,18 @@ internal sealed class WebshareImportService(
         await Task.WhenAll(workers).ConfigureAwait(false);
         cancellationToken.ThrowIfCancellationRequested();
         stopwatch.Stop();
-        return (reachable.OrderBy(endpoint => endpoint.Canonical, StringComparer.Ordinal).ToArray(),
-            health.OrderBy(record => record.EndpointKey, StringComparer.Ordinal).ToArray(), endpoints.Length, skipped);
+        var reachableSet = reachable.Select(endpoint => endpoint.Canonical).ToHashSet(StringComparer.Ordinal);
+        var origins = candidates.Values
+            .Where(item => reachableSet.Contains(item.Endpoint.Canonical))
+            .OrderBy(item => item.Endpoint.Canonical, StringComparer.Ordinal)
+            .Select(item => (item.Endpoint, item.Origin))
+            .ToArray();
+        return new WebshareImportResult(
+            reachable.OrderBy(endpoint => endpoint.Canonical, StringComparer.Ordinal).ToArray(),
+            health.OrderBy(record => record.EndpointKey, StringComparer.Ordinal).ToArray(),
+            origins,
+            endpoints.Length,
+            skipped);
     }
 
     internal static bool TryMap(WebshareProxy proxy, string mode, out ProxyEndpoint endpoint)
@@ -195,4 +218,7 @@ internal sealed class WebshareImportService(
             : Uri.EscapeDataString(proxy.Username) + ":" + Uri.EscapeDataString(proxy.Password ?? string.Empty) + "@";
         return ProxyPoolContract.TryParse($"http://{auth}{host}:{proxy.Port}", null, out endpoint);
     }
+
+    private static string AccountId(string apiKey) =>
+        "ws-" + Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(apiKey)));
 }

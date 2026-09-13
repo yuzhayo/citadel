@@ -37,7 +37,7 @@ internal sealed class QueueManifestSession(
                     && usage.EndpointKey == ProxyLeaseRegistry.Key(item))).ToArray();
             if (eligible.Length == 0) break;
             status("Independent manifest: waiting for proxy");
-            using var reservation = await pool.Reservations.ReserveAsync(
+            using var reservation = await pool.ReserveAsync(
                 executionId + "/manifest", eligible, token).ConfigureAwait(false);
             var key = ProxyLeaseRegistry.Key(reservation.Lease.Endpoint);
             attempted.Add(key);

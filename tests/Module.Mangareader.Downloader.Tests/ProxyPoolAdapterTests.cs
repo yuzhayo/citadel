@@ -77,6 +77,67 @@ public sealed class ProxyPoolAdapterTests : IDisposable
         Assert.Equal("slow.test", adapter.Acquire(ProxyTarget.Http)!.Endpoint.Host);
     }
 
+    [Fact]
+    public async Task WebshareOriginsBalanceReservationsAcrossAccounts()
+    {
+        WritePool(
+            "http://a-one.test:80", "http://a-two.test:81",
+            "http://b-one.test:82", "http://b-two.test:83");
+        var endpoints = ProxyPoolContract.ReadSnapshot(PoolPath).Endpoints;
+        File.WriteAllText(
+            ProxyPoolOriginContract.OriginsPathFor(PoolPath),
+            ProxyPoolOriginContract.Serialize(
+                endpoints.Select(endpoint =>
+                    (endpoint, new ProxyPoolOrigin("webshare", endpoint.Host.StartsWith("a-", StringComparison.Ordinal)
+                        ? "ws-a"
+                        : "ws-b"))),
+                endpoints));
+        var adapter = new ProxyPoolAdapter("Downloader", PoolPath) { Enabled = true };
+
+        using var first = await adapter.ReserveAsync("one", adapter.AvailableCandidates(ProxyTarget.Http), CancellationToken.None);
+        using var second = await adapter.ReserveAsync("two", adapter.AvailableCandidates(ProxyTarget.Http), CancellationToken.None);
+        using var third = await adapter.ReserveAsync("three", adapter.AvailableCandidates(ProxyTarget.Http), CancellationToken.None);
+        using var fourth = await adapter.ReserveAsync("four", adapter.AvailableCandidates(ProxyTarget.Http), CancellationToken.None);
+
+        Assert.Equal(2, new[] { first, second, third, fourth }.Count(item => item.AccountId == "ws-a"));
+        Assert.Equal(2, new[] { first, second, third, fourth }.Count(item => item.AccountId == "ws-b"));
+    }
+
+    [Fact]
+    public async Task SharedRegistryBalancesAccountsAcrossDownloaderAndCatalog()
+    {
+        WritePool(
+            "http://a-one.test:80", "http://a-two.test:81",
+            "http://b-one.test:82", "http://b-two.test:83");
+        var endpoints = ProxyPoolContract.ReadSnapshot(PoolPath).Endpoints;
+        File.WriteAllText(
+            ProxyPoolOriginContract.OriginsPathFor(PoolPath),
+            ProxyPoolOriginContract.Serialize(
+                endpoints.Select(endpoint =>
+                    (endpoint, new ProxyPoolOrigin("webshare", endpoint.Host.StartsWith("a-", StringComparison.Ordinal)
+                        ? "ws-a"
+                        : "ws-b"))),
+                endpoints));
+
+        var reservations = new ProxyLeaseRegistry();
+        var downloader = new ProxyPoolAdapter("Downloader", reservations, PoolPath) { Enabled = true };
+        var catalog = new ProxyPoolAdapter("Catalog", reservations, PoolPath) { Enabled = true };
+
+        using var first = await downloader.ReserveAsync(
+            "download-page", downloader.AvailableCandidates(ProxyTarget.Http), CancellationToken.None);
+        using var second = await catalog.ReserveAsync(
+            "catalog-cover", catalog.AvailableCandidates(ProxyTarget.Http), CancellationToken.None);
+        using var third = await downloader.ReserveAsync(
+            "download-manifest", downloader.AvailableCandidates(ProxyTarget.Http), CancellationToken.None);
+        using var fourth = await catalog.ReserveAsync(
+            "catalog-browser", catalog.AvailableCandidates(ProxyTarget.Http), CancellationToken.None);
+
+        var leases = new[] { first, second, third, fourth };
+        Assert.Equal(4, leases.Select(item => item.Lease.Endpoint.Canonical).Distinct(StringComparer.Ordinal).Count());
+        Assert.Equal(2, leases.Count(item => item.AccountId == "ws-a"));
+        Assert.Equal(2, leases.Count(item => item.AccountId == "ws-b"));
+    }
+
     public void Dispose()
     {
         if (Directory.Exists(_root)) Directory.Delete(_root, recursive: true);

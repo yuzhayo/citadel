@@ -2,15 +2,23 @@ namespace Module.Mangareader.Features.Downloader.Queue;
 
 /// <summary>Admission and settled execution handles; durable state stays in Queue.</summary>
 internal sealed class QueueScheduler(
-    object gate, Func<IReadOnlyList<DownloadJobRecord>> snapshot,
+    object gate,
+    Func<IReadOnlyList<DownloadJobRecord>> snapshot,
+    Func<DownloadJobRecord, bool> canClaim,
+    int automaticLimit,
     Func<DownloadJobRecord, CancellationToken, Task> execute)
 {
-    internal const int AutomaticLimit = 4;
+    private readonly Func<DownloadJobRecord, bool> _canClaim = canClaim ?? throw new ArgumentNullException(nameof(canClaim));
+    private readonly int _automaticLimit = automaticLimit > 0
+        ? automaticLimit
+        : throw new ArgumentOutOfRangeException(nameof(automaticLimit));
     private readonly Dictionary<string, Execution> _active = new(StringComparer.Ordinal);
     private readonly HashSet<string> _manual = new(StringComparer.Ordinal);
     private readonly SemaphoreSlim _wake = new(0, 1);
     private readonly CancellationTokenSource _lifetime = new();
     private Task? _loop;
+
+    public event EventHandler<DownloadJobRecord>? Settled;
 
     public void Start()
     {
@@ -58,11 +66,11 @@ internal sealed class QueueScheduler(
                 lock (gate)
                 {
                     var automatic = _active.Values.Count(item => !item.Manual);
-                    foreach (var job in snapshot().Where(item => item.State == DownloadJobState.Queued))
+                    foreach (var job in snapshot().Where(_canClaim))
                     {
                         if (_active.ContainsKey(job.JobId)) continue;
                         var manual = _manual.Contains(job.JobId);
-                        if (!manual && automatic >= AutomaticLimit) continue;
+                        if (!manual && automatic >= _automaticLimit) continue;
                         if (_active.Values.Any(item => string.Equals(item.Target, job.Target.FilePath,
                                 StringComparison.OrdinalIgnoreCase))) continue;
                         var entry = new Execution(manual, job.Target.FilePath,
@@ -89,6 +97,7 @@ internal sealed class QueueScheduler(
                 entry.Cancel.Dispose();
                 entry.Settled.TrySetResult();
             }
+            Settled?.Invoke(this, job);
             Wake();
         }
     }

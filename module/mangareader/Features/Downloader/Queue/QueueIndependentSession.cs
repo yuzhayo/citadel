@@ -47,7 +47,7 @@ internal sealed class QueueIndependentSession : IDisposable
                 && !_failed.ContainsKey(ProxyLeaseRegistry.Key(item)) && !sharedEndpointKeys.Contains(ProxyLeaseRegistry.Key(item))).ToArray();
             if (eligible.Length == 0) break;
             _status($"Independent page {page.Ordinal + 1}: waiting for proxy");
-            using var reservation = await _pool.Reservations.ReserveAsync(
+            using var reservation = await _pool.ReserveAsync(
                 _owner + "/page-" + page.Ordinal, eligible, token).ConfigureAwait(false);
             var key = ProxyLeaseRegistry.Key(reservation.Lease.Endpoint);
             // Another page may have marked it failed while this request waited.

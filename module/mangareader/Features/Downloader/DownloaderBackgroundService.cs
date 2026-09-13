@@ -23,12 +23,15 @@ internal sealed class DownloaderBackgroundService : IDisposable
     private readonly DownloaderOnlineProcess _onlineProcess;
     private int _disposed;
 
-    public DownloaderBackgroundService(LibraryRootContext libraryRoot)
+    public DownloaderBackgroundService(
+        LibraryRootContext libraryRoot,
+        ProxyLeaseRegistry proxyReservations)
     {
         ArgumentNullException.ThrowIfNull(libraryRoot);
+        ArgumentNullException.ThrowIfNull(proxyReservations);
 
         var stagingRoot = DownloaderJson.DefaultRoot();
-        var proxyPool = new ProxyPoolAdapter("MangaReader Downloader");
+        var proxyPool = new ProxyPoolAdapter("MangaReader Downloader", proxyReservations);
         _httpTransport = new ProxyHttpTransport(proxyPool);
         _browser = new DownloaderPyHostClient(stagingRoot, proxyPool);
         var sources = MangaSourceRegistry.CreateDefault(_browser, _httpTransport);

@@ -248,7 +248,7 @@ public sealed class DownloadQueuePersistenceTests : IDisposable
     }
 
     [Fact]
-    public async Task SchedulerRunsFourAutomaticChaptersAndManualStartBypassesTheLimit()
+    public async Task ManifestSchedulerPrefetchesTwelveAndManualStartBypassesTheLimit()
     {
         var source = new ParallelBlockingSource();
         using var feature = CreateFeature(
@@ -263,20 +263,18 @@ public sealed class DownloadQueuePersistenceTests : IDisposable
         var result = feature.QueueChapters(
             Title(),
             OfficialGroup(),
-            [Chapter("1"), Chapter("2"), Chapter("3"), Chapter("4"), Chapter("5")],
+            Enumerable.Range(1, 13).Select(value => Chapter(value.ToString())).ToArray(),
             "Some Folder");
 
-        Assert.Equal(5, result.Queued);
+        Assert.Equal(13, result.Queued);
         await source.FirstEntered.Task.WaitAsync(TimeSpan.FromSeconds(2));
-        await Task.Delay(100);
-
-        await source.FourEntered.Task.WaitAsync(TimeSpan.FromSeconds(2));
-        Assert.Equal(4, source.ManifestCalls);
+        await source.TwelveEntered.Task.WaitAsync(TimeSpan.FromSeconds(2));
+        Assert.Equal(12, source.ManifestCalls);
         var pending = Assert.Single(feature.Snapshot(), job => job.State == DownloadJobState.Queued);
         feature.Start(pending.JobId);
         feature.Start(pending.JobId);
-        await source.FiveEntered.Task.WaitAsync(TimeSpan.FromSeconds(2));
-        Assert.Equal(5, source.ManifestCalls);
+        await source.ThirteenEntered.Task.WaitAsync(TimeSpan.FromSeconds(2));
+        Assert.Equal(13, source.ManifestCalls);
         feature.StopAll();
     }
 
@@ -373,8 +371,8 @@ public sealed class DownloadQueuePersistenceTests : IDisposable
             new(TaskCreationOptions.RunContinuationsAsynchronously);
 
         public int ManifestCalls => Volatile.Read(ref _manifestCalls);
-        public TaskCompletionSource FourEntered { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
-        public TaskCompletionSource FiveEntered { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public TaskCompletionSource TwelveEntered { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public TaskCompletionSource ThirteenEntered { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
         public string Id => "comix";
 
@@ -388,8 +386,8 @@ public sealed class DownloadQueuePersistenceTests : IDisposable
         {
             var count = Interlocked.Increment(ref _manifestCalls);
             if (count == 1) FirstEntered.TrySetResult();
-            if (count == 4) FourEntered.TrySetResult();
-            if (count == 5) FiveEntered.TrySetResult();
+            if (count == 12) TwelveEntered.TrySetResult();
+            if (count == 13) ThirteenEntered.TrySetResult();
 
             var completion = new TaskCompletionSource<RemoteChapterManifest>(
                 TaskCreationOptions.RunContinuationsAsynchronously);
@@ -486,6 +484,37 @@ public sealed class DownloadQueuePersistenceTests : IDisposable
         Assert.Equal(DownloadJobState.Paused, StateOf(snapshot, "paused"));
         Assert.Equal(DownloadJobState.Completed, StateOf(snapshot, "done"));
         Assert.Equal(DownloadJobState.Failed, StateOf(snapshot, "broken"));
+    }
+
+    [Fact]
+    public void RestartKeepsAValidManifestReadyJobWithoutResolvingAgain()
+    {
+        var job = Job("manifest-ready", DownloadJobState.ManifestReady) with
+        {
+            ManifestHash = "sha256:ready",
+            PageCount = 1,
+        };
+        var chapter = new RemoteChapterIdentity(
+            job.Identity.SourceId,
+            new RemoteTitleIdentity(
+                job.Identity.SourceId,
+                job.Identity.TitleId,
+                job.Identity.TitleHid,
+                string.Empty),
+            job.Identity.ChapterId,
+            job.ChapterNumber,
+            new RemoteGroupIdentity(job.Identity.SourceId, job.Identity.GroupId));
+        new QueueManifestStore(Path.Combine(_root, "downloads", "jobs", job.JobId, "manifest.json"))
+            .Write(new RemoteChapterManifest(
+                chapter,
+                [new RemotePage(0, "page-1", "https://example.invalid/page-1.png", null, null)],
+                job.ManifestHash,
+                new Dictionary<string, string>()));
+        new DownloadQueueStore(_root).Save([job]);
+
+        using var feature = CreateFeature(new MangaSourceRegistry([]));
+
+        Assert.Equal(DownloadJobState.ManifestReady, StateOf(feature.Snapshot(), job.JobId));
     }
 
     [Fact]

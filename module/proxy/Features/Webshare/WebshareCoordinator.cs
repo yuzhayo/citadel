@@ -58,7 +58,7 @@ internal sealed class WebshareCoordinator(
             }
             else
             {
-                _poolStore.Commit(result.Reachable, result.Health);
+                _poolStore.Commit(result.Reachable, result.Health, result.Origins);
                 PoolCommitted?.Invoke(this, EventArgs.Empty);
                 terminal = new WebshareImportProgress(false,
                     $"Webshare complete: {result.Reachable.Count} reachable from {result.Candidates} checked · {result.Skipped} skipped.",

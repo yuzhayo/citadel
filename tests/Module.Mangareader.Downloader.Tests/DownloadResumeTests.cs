@@ -60,6 +60,7 @@ public sealed class DownloadResumeTests : IDisposable
         // than publishing bytes that no longer match their record.
         Assert.False(result.Complete);
         Assert.Equal([0], result.FailedPages);
+        Assert.True(result.ManifestRefreshRequested);
     }
 
     [Fact]

@@ -4,6 +4,7 @@ using Citadel.Core.Rpl;
 using Module.Mangareader.Features.Downloader;
 using Module.Mangareader.History;
 using Module.Mangareader.Library;
+using Module.Mangareader.ShareLogic;
 
 namespace Module.Mangareader;
 
@@ -11,6 +12,9 @@ public sealed class MangaReaderModule : IModule, IResidentModule
 {
     private readonly ReadingHistory _history = new();
     private readonly LibraryRootContext _libraryRoot = new();
+    // The module lifetime is the ownership boundary for concurrent proxy
+    // reservations. Features retain their own adapters and local quarantine.
+    private readonly ProxyLeaseRegistry _proxyReservations = new();
     private DownloaderBackgroundService? _downloader;
 
     public string Route => "manga-reader";
@@ -20,7 +24,7 @@ public sealed class MangaReaderModule : IModule, IResidentModule
         ArgumentNullException.ThrowIfNull(applicationLifetime);
         if (_downloader is not null) return;
 
-        var downloader = new DownloaderBackgroundService(_libraryRoot);
+        var downloader = new DownloaderBackgroundService(_libraryRoot, _proxyReservations);
         _downloader = downloader;
         applicationLifetime.Add(() =>
         {
@@ -39,6 +43,7 @@ public sealed class MangaReaderModule : IModule, IResidentModule
             lifetime,
             _history,
             _libraryRoot,
-            downloader.Context);
+            downloader.Context,
+            _proxyReservations);
     }
 }

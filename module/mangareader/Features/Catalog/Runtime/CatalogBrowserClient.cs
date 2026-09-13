@@ -40,6 +40,7 @@ public sealed class CatalogBrowserClient : IDisposable
 
     private readonly SemaphoreSlim _gate = new(1, 1);
     private readonly ProxyPoolAdapter? _proxyPool;
+    private ProxyReservation? _sessionReservation;
     private readonly Func<JsonObject, CancellationToken, Task<JsonObject>>? _openSessionOverride;
     private PyHost? _host;
     private string? _session;
@@ -238,6 +239,7 @@ public sealed class CatalogBrowserClient : IDisposable
         Interlocked.Exchange(ref _sessionProvider, null);
         _sessionHeadless = null;
         _sessionProxyMode = false;
+        Interlocked.Exchange(ref _sessionReservation, null)?.Dispose();
         host?.Abort();
     }
 
@@ -265,6 +267,7 @@ public sealed class CatalogBrowserClient : IDisposable
 
         PyHost? host;
         string? session;
+        ProxyReservation? reservation;
         _gate.Wait();
         try
         {
@@ -275,6 +278,7 @@ public sealed class CatalogBrowserClient : IDisposable
             _sessionProvider = null;
             _sessionHeadless = null;
             _sessionProxyMode = false;
+            reservation = Interlocked.Exchange(ref _sessionReservation, null);
         }
         finally
         {
@@ -283,6 +287,7 @@ public sealed class CatalogBrowserClient : IDisposable
 
         if (host is null)
         {
+            reservation?.Dispose();
             return;
         }
 
@@ -309,6 +314,7 @@ public sealed class CatalogBrowserClient : IDisposable
             }
 
             host.Dispose();
+            reservation?.Dispose();
         });
 
         _gate.Dispose();
@@ -352,6 +358,7 @@ public sealed class CatalogBrowserClient : IDisposable
                 // explicit action bootstraps a fresh one.
                 _session = null;
                 _sessionProvider = null;
+                Interlocked.Exchange(ref _sessionReservation, null)?.Dispose();
                 throw;
             }
         }
@@ -371,7 +378,15 @@ public sealed class CatalogBrowserClient : IDisposable
         for (var attempt = 1; ; attempt++)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            var lease = _proxyPool?.Acquire(ProxyTarget.Browser);
+            ProxyReservation? reservation = null;
+            var lease = default(ProxyLease);
+            if (_proxyPool?.IsProxyMode == true)
+            {
+                reservation = await _proxyPool.ReserveAsync(
+                    "catalog-browser", _proxyPool.AvailableCandidates(ProxyTarget.Browser), cancellationToken)
+                    .ConfigureAwait(false);
+                lease = reservation.Lease;
+            }
             var parameters = new JsonObject
             {
                 ["provider"] = provider,
@@ -385,20 +400,32 @@ public sealed class CatalogBrowserClient : IDisposable
             {
                 if (_openSessionOverride is not null)
                 {
-                    return await _openSessionOverride(parameters, cancellationToken).ConfigureAwait(false);
+                    var response = await _openSessionOverride(parameters, cancellationToken).ConfigureAwait(false);
+                    _sessionReservation = reservation;
+                    reservation = null;
+                    return response;
                 }
 
                 var host = await EnsureHostCoreAsync().ConfigureAwait(false);
-                return await host
+                var opened = await host
                     .SendAsync("catalog.open", parameters, BootstrapTimeout, cancellationToken)
                     .ConfigureAwait(false);
+                _sessionReservation = reservation;
+                reservation = null;
+                return opened;
             }
             catch (Exception ex) when (
                 lease is not null
                 && IsRetryableProxyOpenFailure(ex, cancellationToken))
             {
                 _proxyPool?.ReportFailure(lease);
+                reservation?.Dispose();
                 if (attempt >= attempts) throw;
+            }
+            catch
+            {
+                reservation?.Dispose();
+                throw;
             }
         }
     }
@@ -423,6 +450,7 @@ public sealed class CatalogBrowserClient : IDisposable
         _sessionProxyMode = false;
         if (host is null || session is null)
         {
+            Interlocked.Exchange(ref _sessionReservation, null)?.Dispose();
             return;
         }
 
@@ -437,6 +465,10 @@ public sealed class CatalogBrowserClient : IDisposable
         catch (PyHostException)
         {
             // A vanished browser is already the desired end state.
+        }
+        finally
+        {
+            Interlocked.Exchange(ref _sessionReservation, null)?.Dispose();
         }
     }
 

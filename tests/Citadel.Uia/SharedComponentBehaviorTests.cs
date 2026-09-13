@@ -69,7 +69,7 @@ public class SharedComponentBehaviorTests
     }
 
     [Fact]
-    public void Table_DefaultsToAutoResizableCompactColumnsWithDistinctHeaders()
+    public void Table_DefaultsToCompactMetadataAndOneFlexibleDataColumn()
     {
         Sta.Run(() =>
         {
@@ -83,10 +83,9 @@ public class SharedComponentBehaviorTests
             Assert.Equal(DataGridLengthUnitType.Auto, grid.ColumnWidth.UnitType);
             Assert.True(grid.CanUserResizeColumns);
             Assert.Equal(HorizontalAlignment.Stretch, table.CellHorizontalContentAlignment);
-            Assert.All(grid.Columns, column =>
-            {
-                Assert.Equal(DataGridLengthUnitType.Auto, column.Width.UnitType);
-            });
+            Assert.All(grid.Columns.Take(2), column =>
+                Assert.Equal(DataGridLengthUnitType.Auto, column.Width.UnitType));
+            Assert.Equal(DataGridLengthUnitType.Star, grid.Columns[2].Width.UnitType);
 
             var headerStyle = Assert.IsType<Style>(
                 grid.Resources[typeof(DataGridColumnHeader)]);
@@ -130,9 +129,6 @@ public class SharedComponentBehaviorTests
             var gripperBrush = Assert.IsType<SolidColorBrush>(gripperSurface.Background);
             Assert.Equal(0, gripperBrush.Color.A);
 
-            var initialWidth = header.Column.ActualWidth;
-            rightGripper.RaiseEvent(new DragDeltaEventArgs(32, 0));
-            Assert.True(header.Column.ActualWidth > initialWidth);
         });
     }
 

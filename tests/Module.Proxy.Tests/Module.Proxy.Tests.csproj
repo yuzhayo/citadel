@@ -11,6 +11,7 @@
   <ItemGroup>
     <Compile Include="..\..\module\sharedLogic\cs\ProxyPoolContract.cs" />
     <Compile Include="..\..\module\sharedLogic\cs\ProxyPoolHealthContract.cs" />
+    <Compile Include="..\..\module\sharedLogic\cs\ProxyPoolOriginContract.cs" />
     <Compile Include="..\..\module\proxy\sharedLogic\*.cs" />
     <Compile Include="..\..\module\proxy\Features\Sync\ProxySourceCatalog.cs" />
     <Compile Include="..\..\module\proxy\Features\Sync\ProxyReachabilityProbe.cs" />
