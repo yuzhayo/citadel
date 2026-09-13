@@ -1,0 +1,8 @@
+{
+  "title": "Yuzvid",
+  "icon": "\uE714",
+  "route": "yuzvid",
+  "order": 50,
+  "entry": "Module.Yuzvid.dll",
+  "type": "Module.Yuzvid.YuzvidModule"
+}

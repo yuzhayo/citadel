@@ -1,0 +1,6 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- A citizen is built directly and discovered from its module folder. -->
+  <Import Project="..\..\core\Citizen.targets" />
+
+</Project>

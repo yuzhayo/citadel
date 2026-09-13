@@ -1,0 +1,69 @@
+<UserControl x:Class="Module.Yuzvid.Features.Queue.QueuePlaceholderView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:setting="clr-namespace:Citadel.Setting.Components;assembly=Citadel.Setting"
+             Background="{DynamicResource Bg}"
+             Foreground="{DynamicResource Fg}"
+             UseLayoutRounding="True"
+             SnapsToDevicePixels="True">
+    <setting:SettingViewport Mode="Contained">
+        <Grid>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="*" />
+            </Grid.RowDefinitions>
+
+            <setting:SettingActionCard Grid.Row="0">
+                <setting:SettingActionCard.Content>
+                    <WrapPanel>
+                        <setting:SettingButton MinWidth="140"
+                                               Content="Clear completed"
+                                               IsEnabled="False" />
+                        <setting:SettingButton MinWidth="120"
+                                               Margin="10,0,0,0"
+                                               Content="Start / Resume"
+                                               IsEnabled="False" />
+                        <setting:SettingButton Margin="10,0,0,0"
+                                               Content="Stop All"
+                                               IsEnabled="False" />
+                        <setting:SettingButton Margin="10,0,0,0"
+                                               Content="Remove selected (0)"
+                                               IsEnabled="False" />
+                    </WrapPanel>
+                </setting:SettingActionCard.Content>
+                <setting:SettingActionCard.ActionContent>
+                    <TextBlock VerticalAlignment="Center"
+                               Foreground="{DynamicResource Body}"
+                               Text="0 active · 0 paused · 0 failed · 0 total" />
+                </setting:SettingActionCard.ActionContent>
+            </setting:SettingActionCard>
+
+            <Border Grid.Row="1"
+                    Margin="0,10,0,0"
+                    Style="{DynamicResource SettingCardStyle}">
+                <setting:SettingTable x:Name="QueueTable"
+                                      setting:UiPreference.Key="yuzvid.queue.table"
+                                      AutomationProperties.Name="Yuzvid placeholder queue"
+                                      CanUserSortColumns="True">
+                    <setting:SettingTable.InteractiveColumns>
+                        <DataGridTextColumn Header="Title"
+                                            Width="*"
+                                            Binding="{Binding Title}" />
+                        <DataGridTextColumn Header="Item"
+                                            Width="180"
+                                            Binding="{Binding Item}" />
+                        <DataGridTextColumn Header="Status"
+                                            Width="140"
+                                            Binding="{Binding Status}" />
+                        <DataGridTextColumn Header="Progress"
+                                            Width="120"
+                                            Binding="{Binding Progress}" />
+                        <DataGridTextColumn Header="Detail"
+                                            Width="260"
+                                            Binding="{Binding Detail}" />
+                    </setting:SettingTable.InteractiveColumns>
+                </setting:SettingTable>
+            </Border>
+        </Grid>
+    </setting:SettingViewport>
+</UserControl>
