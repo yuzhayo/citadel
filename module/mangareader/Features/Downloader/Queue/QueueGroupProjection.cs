@@ -135,9 +135,11 @@ internal sealed class QueueDisplayRow(string id, bool isGroup, Action<QueueDispl
         DownloadJobState.Completed => "Download complete",
         _ => Job.StateText,
     };
-    public bool CanPause => IsGroup ? _children.Any(job => job.CanPause) : Job.CanPause;
-    public bool CanResume => IsGroup ? _children.Any(job => job.CanResume) : Job.CanResume || Job.State == DownloadJobState.Queued;
-    public string ResumeActionLabel => IsGroup ? "Resume" : Job.State == DownloadJobState.Failed ? "Retry" : "Start";
+    public bool CanPause => IsGroup ? _children.Any(job => job.IsInFlight) : Job.CanPause;
+    public bool CanResume => IsGroup
+        ? !_children.Any(job => job.IsInFlight) && _children.Any(job => job.CanResume)
+        : Job.CanResume;
+    public string ResumeActionLabel => IsGroup ? GroupResumeActionLabel() : Job.ResumeActionLabel;
     public bool CanActNow => IsGroup || Job.CanActNow;
     public bool CanChooseFallback => !IsGroup && Job.CanChooseFallback;
     public bool CanOpenFolder => !IsGroup && Job.CanOpenFolder;
@@ -171,4 +173,13 @@ internal sealed class QueueDisplayRow(string id, bool isGroup, Action<QueueDispl
     private string FailureDetail(string fallback) => string.IsNullOrWhiteSpace(Job.Warning)
         ? fallback
         : Job.Warning!;
+
+    private string GroupResumeActionLabel()
+    {
+        var restartable = _children.Where(job => job.CanResume).ToArray();
+        if (restartable.All(job => job.State is DownloadJobState.Queued or DownloadJobState.ManifestReady))
+            return "Start";
+        if (restartable.All(job => job.State == DownloadJobState.Failed)) return "Retry";
+        return "Resume";
+    }
 }

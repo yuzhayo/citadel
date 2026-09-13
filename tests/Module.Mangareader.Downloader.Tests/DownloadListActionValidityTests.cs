@@ -15,11 +15,11 @@ public sealed class DownloadListActionValidityTests
     {
         (DownloadJobState State, bool Pause, bool Resume, bool Choose, bool Open, bool ActNow)[] expected =
         [
-            (DownloadJobState.Queued, true, false, false, false, true),
+            (DownloadJobState.Queued, false, true, false, false, true),
             (DownloadJobState.Resolving, true, false, false, false, true),
             (DownloadJobState.RefreshingManifest, true, false, false, false, true),
             (DownloadJobState.ResolvingAlternates, true, false, false, false, true),
-            (DownloadJobState.ManifestReady, true, false, false, false, true),
+            (DownloadJobState.ManifestReady, false, true, false, false, true),
             (DownloadJobState.Downloading, true, false, false, false, true),
             (DownloadJobState.Recovering, true, false, false, false, true),
             (DownloadJobState.AwaitingSourceFallback, false, false, true, false, true),
@@ -58,6 +58,8 @@ public sealed class DownloadListActionValidityTests
     [Fact]
     public void TheResumeActionIsLabelledByWhatItDoesToThatState()
     {
+        Assert.Equal("Start", Job(DownloadJobState.Queued).ResumeActionLabel);
+        Assert.Equal("Start", Job(DownloadJobState.ManifestReady).ResumeActionLabel);
         Assert.Equal("Resume", Job(DownloadJobState.Paused).ResumeActionLabel);
         Assert.Equal("Retry", Job(DownloadJobState.Failed).ResumeActionLabel);
     }

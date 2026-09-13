@@ -121,8 +121,7 @@ public partial class DownloadListScreen : UserControl, IDisposable
             : $"Manifest {summary.ManifestActive}/{DownloadQueueFeature.ManifestConcurrency} · "
               + $"ready {summary.ManifestReady} · download {summary.DownloadActive}/{DownloadQueueFeature.JobConcurrency} · "
               + $"{summary.Paused} paused · {summary.Failed} failed · {summary.Total} total";
-        ResumeButton.IsEnabled = jobs.Any(job =>
-            job.State is DownloadJobState.Paused or DownloadJobState.Failed);
+        ResumeButton.IsEnabled = jobs.Any(job => job.CanResume);
     }
 
     private void BackButton_Click(object sender, RoutedEventArgs e) =>

@@ -1,4 +1,6 @@
 using System.IO;
+using System.Net;
+using System.Net.Sockets;
 using Module.Mangareader.Features.Downloader;
 using Module.Mangareader.Features.Downloader.Queue;
 using Module.Mangareader.Sources;
@@ -248,7 +250,26 @@ public sealed class DownloadQueuePersistenceTests : IDisposable
     }
 
     [Fact]
-    public async Task ManifestSchedulerPrefetchesTwelveAndManualStartBypassesTheLimit()
+    public async Task QueuingChaptersDoesNotStartManifestWork()
+    {
+        var source = new BlockingSource();
+        using var feature = CreateFeature(new MangaSourceRegistry(
+        [
+            new MangaSourceRegistration(
+                source,
+                () => throw new NotSupportedException("the queue never builds a filter panel")),
+        ]), commitRoot: true);
+
+        var result = feature.QueueChapters(Title(), OfficialGroup(), [Chapter("1")], "Some Folder");
+        await Task.Delay(100);
+
+        Assert.Equal(1, result.Queued);
+        Assert.Equal(DownloadJobState.Queued, Assert.Single(feature.Snapshot()).State);
+        Assert.False(source.Entered.Task.IsCompleted);
+    }
+
+    [Fact]
+    public async Task ManifestSchedulerPrefetchesEightAndManualStartBypassesTheLimit()
     {
         var source = new ParallelBlockingSource();
         using var feature = CreateFeature(
@@ -263,19 +284,77 @@ public sealed class DownloadQueuePersistenceTests : IDisposable
         var result = feature.QueueChapters(
             Title(),
             OfficialGroup(),
-            Enumerable.Range(1, 13).Select(value => Chapter(value.ToString())).ToArray(),
+            Enumerable.Range(1, 9).Select(value => Chapter(value.ToString())).ToArray(),
             "Some Folder");
 
-        Assert.Equal(13, result.Queued);
+        Assert.Equal(9, result.Queued);
+        feature.ResumeAll();
         await source.FirstEntered.Task.WaitAsync(TimeSpan.FromSeconds(2));
-        await source.TwelveEntered.Task.WaitAsync(TimeSpan.FromSeconds(2));
-        Assert.Equal(12, source.ManifestCalls);
+        await source.EightEntered.Task.WaitAsync(TimeSpan.FromSeconds(2));
+        Assert.Equal(8, source.ManifestCalls);
         var pending = Assert.Single(feature.Snapshot(), job => job.State == DownloadJobState.Queued);
         feature.Start(pending.JobId);
         feature.Start(pending.JobId);
-        await source.ThirteenEntered.Task.WaitAsync(TimeSpan.FromSeconds(2));
-        Assert.Equal(13, source.ManifestCalls);
+        await source.NineEntered.Task.WaitAsync(TimeSpan.FromSeconds(2));
+        Assert.Equal(9, source.ManifestCalls);
         feature.StopAll();
+    }
+
+    [Fact]
+    public async Task DownloadClaimMarksTheJobDownloadingBeforeItsFirstPageSettles()
+    {
+        using var listener = new TcpListener(IPAddress.Loopback, 0);
+        listener.Start();
+        using var stopServer = new CancellationTokenSource();
+        var pageAccepted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var server = Task.Run(async () =>
+        {
+            try
+            {
+                using var connection = await listener.AcceptTcpClientAsync(stopServer.Token);
+                pageAccepted.TrySetResult();
+                await Task.Delay(Timeout.InfiniteTimeSpan, stopServer.Token);
+            }
+            catch (OperationCanceledException) { }
+        });
+        var pageUrl = $"http://127.0.0.1:{((IPEndPoint)listener.LocalEndpoint).Port}/page.png";
+        var source = new BlockingSource
+        {
+            Manifest = new RemoteChapterManifest(
+                new RemoteChapterIdentity(
+                    "comix",
+                    new RemoteTitleIdentity("comix", "12947", "dy88", string.Empty),
+                    "chapter-1",
+                    "1",
+                    new RemoteGroupIdentity("comix", "9897")),
+                [new RemotePage(0, "page-1", pageUrl, null, null)],
+                "sha256:downloading-state",
+                new Dictionary<string, string>()),
+        };
+
+        using var feature = CreateFeature(new MangaSourceRegistry(
+        [
+            new MangaSourceRegistration(
+                source,
+                () => throw new NotSupportedException("the queue never builds a filter panel")),
+        ]), commitRoot: true);
+
+        var result = feature.QueueChapters(Title(), OfficialGroup(), [Chapter("1")], "Some Folder");
+        Assert.Equal(1, result.Queued);
+        feature.Start(Assert.Single(feature.Snapshot()).JobId);
+        await source.ManifestReturned.Task.WaitAsync(TimeSpan.FromSeconds(2));
+        await Task.WhenAny(pageAccepted.Task, Task.Delay(TimeSpan.FromSeconds(2)));
+        Assert.True(pageAccepted.Task.IsCompleted,
+            string.Join("; ", feature.Snapshot().Select(job => $"{job.State}: {job.Warning}")));
+
+        var job = Assert.Single(feature.Snapshot());
+        Assert.Equal(DownloadJobState.Downloading, job.State);
+        Assert.Equal(0, job.CompletedPages);
+        Assert.Equal(1, feature.Summary().DownloadActive);
+
+        feature.StopAll();
+        stopServer.Cancel();
+        await server;
     }
 
     /// <summary>
@@ -314,6 +393,9 @@ public sealed class DownloadQueuePersistenceTests : IDisposable
     private sealed class BlockingSource : IMangaSource
     {
         public bool HoldCancellation { get; init; }
+        public RemoteChapterManifest? Manifest { get; init; }
+        public TaskCompletionSource ManifestReturned { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
         public TaskCompletionSource<RemoteChapterManifest> Completion { get; } =
             new(TaskCreationOptions.RunContinuationsAsynchronously);
         public TaskCompletionSource Entered { get; } =
@@ -331,6 +413,11 @@ public sealed class DownloadQueuePersistenceTests : IDisposable
             RemoteChapterIdentity chapter,
             CancellationToken cancellationToken)
         {
+            if (Manifest is not null)
+            {
+                ManifestReturned.TrySetResult();
+                return Task.FromResult(Manifest);
+            }
             ProviderToken = cancellationToken;
             var completion = Completion;
 
@@ -371,8 +458,8 @@ public sealed class DownloadQueuePersistenceTests : IDisposable
             new(TaskCreationOptions.RunContinuationsAsynchronously);
 
         public int ManifestCalls => Volatile.Read(ref _manifestCalls);
-        public TaskCompletionSource TwelveEntered { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
-        public TaskCompletionSource ThirteenEntered { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public TaskCompletionSource EightEntered { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public TaskCompletionSource NineEntered { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
         public string Id => "comix";
 
@@ -386,8 +473,8 @@ public sealed class DownloadQueuePersistenceTests : IDisposable
         {
             var count = Interlocked.Increment(ref _manifestCalls);
             if (count == 1) FirstEntered.TrySetResult();
-            if (count == 12) TwelveEntered.TrySetResult();
-            if (count == 13) ThirteenEntered.TrySetResult();
+            if (count == 8) EightEntered.TrySetResult();
+            if (count == 9) NineEntered.TrySetResult();
 
             var completion = new TaskCompletionSource<RemoteChapterManifest>(
                 TaskCreationOptions.RunContinuationsAsynchronously);

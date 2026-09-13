@@ -134,13 +134,21 @@ public sealed record DownloadJobRecord
     /// settling — disabled rather than hidden — so the row visibly parks instead
     /// of losing its action mid-transition.
     /// </summary>
-    public bool CanPause => State is DownloadJobState.Queued or DownloadJobState.ManifestReady || IsInFlight;
+    public bool CanPause => IsInFlight;
 
     /// <summary>Whether the resume action is valid for this state.</summary>
-    public bool CanResume => State is DownloadJobState.Paused or DownloadJobState.Failed;
+    public bool CanResume => State is DownloadJobState.Queued
+        or DownloadJobState.ManifestReady
+        or DownloadJobState.Paused
+        or DownloadJobState.Failed;
 
     /// <summary>One action, labelled by what it actually does to this state.</summary>
-    public string ResumeActionLabel => State == DownloadJobState.Failed ? "Retry" : "Resume";
+    public string ResumeActionLabel => State switch
+    {
+        DownloadJobState.Queued or DownloadJobState.ManifestReady => "Start",
+        DownloadJobState.Failed => "Retry",
+        _ => "Resume",
+    };
 
     /// <summary>
     /// Whether this row's own operation has settled. A pause must wait for the

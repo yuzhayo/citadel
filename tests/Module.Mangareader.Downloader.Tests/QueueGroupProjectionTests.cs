@@ -71,6 +71,23 @@ public sealed class QueueGroupProjectionTests
         Assert.Equal("Manifest ready · 95 pages", row.DetailText);
     }
 
+    [Fact]
+    public void QueuedTitleGroupOffersStartInsteadOfStop()
+    {
+        var view = new QueueGroupProjection();
+
+        view.Update([Job("queued")]);
+
+        var group = Assert.Single(view.Visible, item => item.IsGroup);
+        var row = Assert.Single(view.Visible, item => !item.IsGroup);
+        Assert.False(group.CanPause);
+        Assert.True(group.CanResume);
+        Assert.Equal("Start", group.ResumeActionLabel);
+        Assert.False(row.CanPause);
+        Assert.True(row.CanResume);
+        Assert.Equal("Start", row.ResumeActionLabel);
+    }
+
     private static DownloadJobRecord Job(string id) => new()
     {
         JobId = id, TitleDisplayName = "Same title", Identity = new("comix", "title", "hid", id, "group"),

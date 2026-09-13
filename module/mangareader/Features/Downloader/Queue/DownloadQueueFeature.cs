@@ -29,7 +29,10 @@ public sealed record QueueAddResult(
 public sealed class DownloadQueueFeature : IDisposable
 {
     internal const int JobConcurrency = 4;
-    internal const int ManifestConcurrency = 12;
+    // Each independent Comix manifest starts its own browser/proxy bootstrap.
+    // Keep that lane below the page lane's combined load so it does not create
+    // a startup CPU spike while downloads are already progressing.
+    internal const int ManifestConcurrency = 8;
 
     private readonly LibraryRootContext _root;
     private readonly MangaSourceRegistry _sources;
@@ -271,7 +274,9 @@ public sealed class DownloadQueueFeature : IDisposable
             jobs.AddRange(appended);
         });
 
-        if (appended.Count > 0) EnsureStarted();
+        // Admission only records the user's selection. A queue is deliberately
+        // manual: browser/proxy work begins only from Start / Resume or a row
+        // Start command, never merely because chapters were added.
         return new QueueAddResult(appended.Count, skippedPublished, skippedQueued, null);
     }
 
@@ -379,7 +384,10 @@ public sealed class DownloadQueueFeature : IDisposable
             {
                 var job = jobs[i];
                 if (!matches(job) || _removing.Contains(job.JobId) || IsActive(job.JobId)
-                    || job.State is not (DownloadJobState.Paused or DownloadJobState.Failed)) continue;
+                    || job.State is not (DownloadJobState.Queued
+                        or DownloadJobState.ManifestReady
+                        or DownloadJobState.Paused
+                        or DownloadJobState.Failed)) continue;
                 jobs[i] = job with
                 {
                     State = HasValidManifest(job) ? DownloadJobState.ManifestReady : DownloadJobState.Queued,
@@ -408,7 +416,10 @@ public sealed class DownloadQueueFeature : IDisposable
             for (var index = 0; index < jobs.Count; index++)
             {
                 var job = jobs[index];
-                if (job.State is not (DownloadJobState.Paused or DownloadJobState.Failed)
+                if (job.State is not (DownloadJobState.Queued
+                    or DownloadJobState.ManifestReady
+                    or DownloadJobState.Paused
+                    or DownloadJobState.Failed)
                     || _removing.Contains(job.JobId) || IsActive(job.JobId)) continue;
 
                 jobs[index] = job with
@@ -814,6 +825,12 @@ public sealed class DownloadQueueFeature : IDisposable
                 : current);
             return;
         }
+
+        // A scheduler claim is not yet a visible state transition. Mark it
+        // before the first page worker runs so page progress is accepted and
+        // the table does not leave an actively downloading job at
+        // "Manifest ready" until it suddenly publishes.
+        SetState(job.JobId, DownloadJobState.Downloading, null);
 
         var independentMode = _httpTransport?.IsProxyMode == true;
         using var independent = independentMode

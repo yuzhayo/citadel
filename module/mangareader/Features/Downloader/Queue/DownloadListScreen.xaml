@@ -32,11 +32,11 @@
                                                Click="ClearCompletedButton_Click"
                                                AutomationProperties.Name="Clear completed jobs" />
                         <setting:SettingButton x:Name="ResumeButton"
-                                               MinWidth="100"
+                                               MinWidth="120"
                                                Margin="10,0,0,0"
-                                               Content="Resume"
+                                               Content="Start / Resume"
                                                Click="ResumeButton_Click"
-                                               AutomationProperties.Name="Resume paused and failed jobs" />
+                                               AutomationProperties.Name="Start queued and resume stopped or failed jobs" />
                         <setting:SettingButton Content="Stop All" Margin="10,0,0,0"
                                                Click="StopAll_Click" AutomationProperties.Name="Stop all queue jobs" />
                         <setting:SettingButton x:Name="RemoveSelectedButton" Content="Remove selected (0)"
