@@ -58,6 +58,7 @@ public partial class LibraryView : UserControl, IDisposable
         Grouping.InstallAddTitleAction(
             ChapterSelector.DetailActions,
             () => ChapterSelector.ActiveTitleFolderName);
+        ChapterSelector.CoverBuilderRequested += ChapterSelector_CoverBuilderRequested;
         _grouping.Changed += Grouping_Changed;
 
         ViewModeSelector.Mode = _viewMode.Mode;
@@ -83,7 +84,7 @@ public partial class LibraryView : UserControl, IDisposable
 
     /// <summary>
     /// Attaches the Update Checker entry point. The feature owns its action and
-    /// its popup; this screen only offers the reserved cover slot and a pull of
+    /// its popup; this screen only offers the reserved header slot and a pull of
     /// the active local title, so no matching or checking rule lands here.
     /// </summary>
     public void UseUpdateChecker(UpdateCheckerFeature feature)
@@ -93,11 +94,13 @@ public partial class LibraryView : UserControl, IDisposable
 
         _updateChecker = new UpdateCheckerEntry(feature);
         _updateChecker.Install(
-            ChapterSelector.CoverActions,
+            ChapterSelector.HeaderActions,
             () => ChapterSelector.ActiveTitleFolderName);
     }
 
     public event EventHandler<OpenChapterRequestedEventArgs>? OpenChapterRequested;
+
+    public event EventHandler<CoverBuilderRequestedEventArgs>? CoverBuilderRequested;
 
     public event EventHandler<LibraryChangedEventArgs>? TitlesChanged;
 
@@ -318,6 +321,13 @@ public partial class LibraryView : UserControl, IDisposable
         OpenChapterRequested?.Invoke(this, e);
     }
 
+    private void ChapterSelector_CoverBuilderRequested(
+        object? sender,
+        CoverBuilderRequestedEventArgs e)
+    {
+        if (!_disposed) CoverBuilderRequested?.Invoke(this, e);
+    }
+
     private void NotifyTitlesChanged(IReadOnlyList<MangaTitle> titles) =>
         TitlesChanged?.Invoke(this, new LibraryChangedEventArgs(titles));
 
@@ -454,6 +464,7 @@ public partial class LibraryView : UserControl, IDisposable
         if (_disposed) return;
         _disposed = true;
         Loaded -= LibraryView_Loaded;
+        ChapterSelector.CoverBuilderRequested -= ChapterSelector_CoverBuilderRequested;
         _grouping.Changed -= Grouping_Changed;
         _viewMode.Changed -= ViewMode_Changed;
         ViewModeSelector.ModeRequested -= ViewModeSelector_ModeRequested;

@@ -1,4 +1,5 @@
 using System.Windows;
+using Module.Mangareader.Features.Downloader.FilterSearch;
 using Module.Mangareader.Sources;
 using Module.Mangareader.ShareLogic;
 
@@ -121,6 +122,12 @@ public sealed class MangaSourceRegistry : IMangaSourceDirectory
         var drakeScans = transport is null
             ? new DrakeScans.DrakeScansSource()
             : new DrakeScans.DrakeScansSource(transport);
+        var asuraScans = transport is null
+            ? new AsuraScans.AsuraScansSource()
+            : new AsuraScans.AsuraScansSource(transport);
+        var thunderScans = transport is null
+            ? new ThunderScans.ThunderScansSource()
+            : new ThunderScans.ThunderScansSource(transport);
         var dynamicManual = transport is null
             ? new global::Module.Mangareader.Features.Downloader.ManualUrl.DynamicManualSource()
             : new global::Module.Mangareader.Features.Downloader.ManualUrl.DynamicManualSource(transport);
@@ -136,6 +143,8 @@ public sealed class MangaSourceRegistry : IMangaSourceDirectory
             new MangaSourceRegistration(
                 drakeScans,
                 () => new global::Module.Mangareader.Features.Downloader.FilterSearch.DrakeScans.DrakeScansFilterContribution()),
+            new MangaSourceRegistration(asuraScans, () => new NoFilterContribution()),
+            new MangaSourceRegistration(thunderScans, () => new NoFilterContribution()),
         ],
         [dynamicManual]);
     }

@@ -212,7 +212,9 @@ public sealed class DrakeScansSourceTests
         using var browser = new DownloaderPyHostClient(root);
         var registry = MangaSourceRegistry.CreateDefault(browser);
 
-        Assert.Equal(["comix", "cucumber-manga", "drake-scans"], registry.Sources.Select(source => source.Id));
+        Assert.Equal(
+            ["comix", "cucumber-manga", "drake-scans", "asura-scans", "thunder-scans"],
+            registry.Sources.Select(source => source.Id));
         var drake = registry.Require("drake-scans");
         var state = RunSta(() =>
         {

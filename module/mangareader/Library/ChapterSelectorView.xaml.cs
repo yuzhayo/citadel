@@ -29,11 +29,21 @@ public partial class ChapterSelectorView : UserControl
         InitializeComponent();
         Detail.CoverActions = _coverActions;
         Detail.DetailActions = _detailActions;
+        var coverBuilder = new Citadel.Setting.Components.SettingButton
+        {
+            Content = "Cover Builder",
+            MinWidth = 124,
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+        };
+        coverBuilder.Click += CoverBuilderButton_Click;
+        _coverActions.Children.Add(coverBuilder);
     }
 
     public event EventHandler<OpenChapterRequestedEventArgs>? ChapterSelected;
 
     public event EventHandler? Dismissed;
+
+    public event EventHandler<CoverBuilderRequestedEventArgs>? CoverBuilderRequested;
 
     /// <summary>
     /// Reserved region below the cover for Library's title-level cover actions.
@@ -41,6 +51,10 @@ public partial class ChapterSelectorView : UserControl
     /// speculatively.
     /// </summary>
     internal Panel CoverActions => _coverActions;
+
+    /// <summary>Reserved header slot for title actions such as Update Checker.</summary>
+    internal Panel HeaderActions => Detail.HeaderLeadingContent as Panel
+        ?? throw new InvalidOperationException("The title-detail header action panel is not available.");
 
     /// <summary>Reserved region in the detail area, above Grouping.</summary>
     internal Panel DetailActions => _detailActions;
@@ -94,6 +108,12 @@ public partial class ChapterSelectorView : UserControl
 
     private void BackButton_Click(object sender, RoutedEventArgs e) =>
         CloseSelector();
+
+    private void CoverBuilderButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (_title is null) return;
+        CoverBuilderRequested?.Invoke(this, new CoverBuilderRequestedEventArgs(_title.Manga));
+    }
 
     private void View_PreviewKeyDown(object sender, KeyEventArgs e)
     {

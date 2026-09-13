@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.IO;
 using System.Windows;
 using System.Windows.Controls;
@@ -59,6 +60,24 @@ public partial class CoverBuilderView : UserControl, IDisposable
         LoadSelectedCover();
     }
 
+    /// <summary>
+    /// Selects the title requested by Library without changing this feature's
+    /// private picker dataset. The picker continues to own its cover preview
+    /// and source state.
+    /// </summary>
+    public void SelectTitle(MangaTitle title)
+    {
+        ArgumentNullException.ThrowIfNull(title);
+        if (_disposed) return;
+
+        var selected = (TitlePicker.ItemsSource as IEnumerable<MangaTitleCardModel>)?
+            .FirstOrDefault(card => string.Equals(
+                card.Manga.Title,
+                title.Title,
+                StringComparison.OrdinalIgnoreCase));
+        if (selected is not null) TitlePicker.SelectedItem = selected;
+    }
+
     private void BrowseSourceButton_Click(object sender, RoutedEventArgs e)
     {
         var dialog = new OpenFileDialog
@@ -71,6 +90,25 @@ public partial class CoverBuilderView : UserControl, IDisposable
         var owner = Window.GetWindow(this);
         var accepted = owner is null ? dialog.ShowDialog() : dialog.ShowDialog(owner);
         if (accepted == true) SourceField.Text = dialog.FileName;
+    }
+
+    private void SearchImagesButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (_disposed || TitlePicker.SelectedItem is not MangaTitleCardModel selected) return;
+
+        // This is a human-controlled lookup only. Citadel opens the normal
+        // visible browser and does not scrape, download, or retain search results.
+        var query = Uri.EscapeDataString($"{selected.Manga.Title} manga cover");
+        var searchUri = $"https://www.google.com/search?tbm=isch&q={query}";
+        try
+        {
+            Process.Start(new ProcessStartInfo(searchUri) { UseShellExecute = true });
+        }
+        catch (Exception exception)
+        {
+            _resultStatus = $"Could not open image search: {exception.GetBaseException().Message}";
+            UpdateAvailability();
+        }
     }
 
     private void SourceField_TextChanged(string text)
@@ -252,6 +290,7 @@ public partial class CoverBuilderView : UserControl, IDisposable
         TitlePicker.IsEnabled = !_busy;
         SourceField.IsEnabled = !_busy;
         BrowseSourceButton.IsEnabled = !_busy;
+        SearchImagesButton.IsEnabled = !_busy && hasTitle;
         FetchButton.IsEnabled = !_busy && isRemote;
         BakeButton.IsEnabled = !_busy && hasTitle && sourceReady;
         StatusText.Text = _resultStatus ?? (hasTitle

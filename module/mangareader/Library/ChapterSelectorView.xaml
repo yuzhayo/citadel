@@ -35,17 +35,19 @@
                                         Synopsis="{Binding SynopsisText}"
                                         Title="{Binding Title}">
                 <components:MangaDetailView.HeaderLeadingContent>
-                    <setting:SettingButton Width="38"
-                                           Height="38"
-                                           HorizontalAlignment="Left"
-                                           AutomationProperties.Name="Back to Library"
-                                           Click="BackButton_Click"
-                                           Padding="0"
-                                           ToolTip="Back to Library">
-                        <TextBlock FontFamily="Segoe MDL2 Assets"
-                                   FontSize="14"
-                                   Text="&#xE72B;" />
-                    </setting:SettingButton>
+                    <StackPanel Orientation="Horizontal">
+                        <setting:SettingButton Width="38"
+                                               Height="38"
+                                               HorizontalAlignment="Left"
+                                               AutomationProperties.Name="Back to Library"
+                                               Click="BackButton_Click"
+                                               Padding="0"
+                                               ToolTip="Back to Library">
+                            <TextBlock FontFamily="Segoe MDL2 Assets"
+                                       FontSize="14"
+                                       Text="&#xE72B;" />
+                        </setting:SettingButton>
+                    </StackPanel>
                 </components:MangaDetailView.HeaderLeadingContent>
             </components:MangaDetailView>
 

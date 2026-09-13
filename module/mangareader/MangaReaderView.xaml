@@ -3,7 +3,6 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:local="clr-namespace:Module.Mangareader"
              xmlns:downloader="clr-namespace:Module.Mangareader.Features.Downloader"
-             xmlns:catalog="clr-namespace:Module.Mangareader.Features.Catalog"
              xmlns:queue="clr-namespace:Module.Mangareader.Features.Downloader.Queue"
              xmlns:setting="clr-namespace:Citadel.Setting.Components;assembly=Citadel.Setting"
              Background="{DynamicResource Bg}"
@@ -16,21 +15,21 @@
             <TabItem Header="Library" Padding="12,9">
                 <local:LibraryView x:Name="LibraryTab"
                                    TitlesChanged="LibraryTab_TitlesChanged"
+                                   CoverBuilderRequested="LibraryTab_CoverBuilderRequested"
                                    OpenChapterRequested="OpenChapterRequested" />
             </TabItem>
             <TabItem Header="History" Padding="12,9">
                 <local:HistoryView x:Name="HistoryTab"
                                    OpenChapterRequested="OpenChapterRequested" />
             </TabItem>
-            <TabItem Header="Cover Builder" Padding="12,9">
+            <!-- The Library detail opens this screen for its active title.  It
+                 remains hosted here for its lifecycle, but is not a workspace tab. -->
+            <TabItem x:Name="CoverBuilderTabItem" Visibility="Collapsed">
                 <local:CoverBuilderView x:Name="CoverBuilderTab"
                                         CoverBaked="CoverBuilderTab_CoverBaked" />
             </TabItem>
             <TabItem x:Name="DownloaderTabItem" Header="Downloader" Padding="12,9">
                 <downloader:DownloaderView x:Name="DownloaderTab" />
-            </TabItem>
-            <TabItem x:Name="CatalogTabItem" Header="Catalog" Padding="12,9">
-                <catalog:CatalogView x:Name="CatalogTab" />
             </TabItem>
             <TabItem x:Name="QueueTabItem"
                      Header="Queue"

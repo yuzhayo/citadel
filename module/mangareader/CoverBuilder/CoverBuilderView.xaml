@@ -87,6 +87,31 @@
                 </Grid>
             </Border>
 
+            <Border Style="{DynamicResource SettingCardStyle}">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <StackPanel>
+                        <TextBlock Text="Find a cover image"
+                                   FontWeight="SemiBold" />
+                        <TextBlock Margin="0,5,16,0"
+                                   Text="Open an image search in your regular browser for the selected title. Choose an image there, then paste its URL above or use Browse for a downloaded file."
+                                   TextWrapping="Wrap"
+                                   Foreground="{DynamicResource Body}" />
+                    </StackPanel>
+                    <setting:SettingButton x:Name="SearchImagesButton"
+                                           Grid.Column="1"
+                                           MinWidth="132"
+                                           Height="40"
+                                           VerticalAlignment="Center"
+                                           Content="Search images"
+                                           IsEnabled="False"
+                                           Click="SearchImagesButton_Click" />
+                </Grid>
+            </Border>
+
             <Border
                     Style="{DynamicResource SettingCardStyle}">
                 <Grid>

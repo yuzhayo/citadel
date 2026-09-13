@@ -176,7 +176,11 @@ public partial class CatalogScreen : UserControl, IDisposable
     private void HostFilterPanel()
     {
         if (_disposed || _catalog is null) return;
-        FilterHost.Content = _catalog.Filters?.CreatePanel();
+        var supportsFilters = _catalog.AvailableSources
+            .FirstOrDefault(source => string.Equals(source.Id, _catalog.State.SelectedSourceId, StringComparison.Ordinal))
+            ?.Source.Capabilities.SupportsAdvancedFilters == true;
+        FilterCard.Visibility = supportsFilters ? Visibility.Visible : Visibility.Collapsed;
+        FilterHost.Content = supportsFilters ? _catalog.Filters?.CreatePanel() : null;
     }
 
     private void SearchField_KeyDown(object sender, KeyEventArgs e)
@@ -527,8 +531,10 @@ public partial class CatalogScreen : UserControl, IDisposable
             RenderDetail(state);
         }
 
+        // Browse pagination belongs only to the catalog result surface. It must
+        // not leak below a title's chapter table after the detail replaces it.
         SetStatus(
-            state.ErrorMessage ?? state.StatusMessage,
+            state.ErrorMessage ?? (state.IsDetailOpen ? null : state.StatusMessage),
             isError: state.ErrorMessage is not null);
     }
 

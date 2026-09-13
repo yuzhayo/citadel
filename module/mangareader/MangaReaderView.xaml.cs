@@ -1,17 +1,13 @@
 using System.Net.Http;
-using System.IO;
 using System.Windows.Automation;
 using System.Windows;
 using System.Windows.Controls;
 using Citadel.Core.Modules;
 using Citadel.Core.Rpl;
 using Citadel.Setting.Components;
-using Module.Mangareader.Features.Catalog;
-using Module.Mangareader.Features.Catalog.Runtime;
 using Module.Mangareader.Features.Downloader;
 using Module.Mangareader.Features.Downloader.AutoCover;
 using Module.Mangareader.Features.Downloader.Lister;
-using Module.Mangareader.Features.CatalogMirror;
 using Module.Mangareader.Features.Downloader.Queue;
 using Module.Mangareader.Sources;
 using Module.Mangareader.Features.Downloader.Sources;
@@ -26,11 +22,7 @@ public partial class MangaReaderView : UserControl, IContentHeaderActionProvider
 {
     private readonly ReadingHistory _history;
     private readonly LibraryRootContext _libraryRoot;
-    private readonly HttpClient _coverClient = new() { Timeout = TimeSpan.FromSeconds(20) };
-    private readonly ProxyPoolAdapter _catalogProxyPool;
-    private readonly ProxyHttpTransport _catalogHttpTransport;
     private readonly DownloadQueueFeature _queue;
-    private readonly CatalogContext _catalogContext;
     private ReaderWindow? _readerWindow;
     private bool _disposed;
 
@@ -78,51 +70,6 @@ public partial class MangaReaderView : UserControl, IContentHeaderActionProvider
 
         DownloaderTab.UseContext(downloader);
 
-        // Catalog Mirror composes the same source directory read-only through
-        // its neutral projection, plus its own snapshot store. When no source
-        // offers snapshots, the tab reports it instead of failing the module.
-        var catalogRoot = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-            "Citadel",
-            "MangaReader",
-            "catalog");
-        var catalogPaths = new CatalogMirrorPaths(catalogRoot);
-        var catalogStore = new CatalogSnapshotStore(catalogPaths);
-        _catalogProxyPool = new ProxyPoolAdapter("MangaReader Catalog", proxyReservations);
-        _catalogHttpTransport = new ProxyHttpTransport(_catalogProxyPool);
-        var catalogBrowser = new CatalogBrowserClient(
-            Path.Combine(catalogRoot, "browser-staging"),
-            _catalogProxyPool);
-        var catalogSources = new CatalogSourceDirectory(catalogBrowser);
-        var snapshotSource = catalogSources.AvailableSources
-            .OfType<ICatalogSnapshotSource>()
-            .FirstOrDefault();
-        CatalogMirrorSyncFeature? catalogSync = snapshotSource is null
-            ? null
-            : new CatalogMirrorSyncFeature(snapshotSource, catalogStore);
-        var catalogGenreSync = new CatalogGenreSyncFeature(
-            catalogSources,
-            new CatalogGenreStore(catalogStore.Database));
-
-        var catalogDetail = new CatalogMirrorDetailFeature(
-            catalogSources,
-            new CatalogEnrichmentStore(catalogPaths),
-            new CatalogMirrorCoverCache(catalogPaths, _coverClient, _catalogHttpTransport),
-            (request, token) => MangaReaderHandoffs.CheckCatalogAvailability(lister, request, token));
-        var catalogLoad = new CatalogMirrorLoadFeature(catalogStore);
-        var catalogFeature = new CatalogMirrorFeature(
-            catalogLoad, catalogSync, catalogGenreSync, catalogDetail);
-        _catalogContext = new CatalogContext(
-            catalogFeature,
-            catalogBrowser,
-            catalogSources,
-            _catalogProxyPool,
-            _catalogHttpTransport);
-        CatalogTab.UseContext(_catalogContext);
-        CatalogTab.UseQueueTarget(request => MangaReaderHandoffs.ConfirmQueueTarget(
-            _libraryRoot, index, () => Window.GetWindow(CatalogTab), request));
-        CatalogTab.QueueHandoffRequested += CatalogTab_QueueHandoffRequested;
-
         // The queue screen is a top-level tab with the narrow dependency only:
         // it sees the queue owner, never the whole Downloader context.
         DownloadQueueTab.UseQueue(_queue);
@@ -135,6 +82,16 @@ public partial class MangaReaderView : UserControl, IContentHeaderActionProvider
     {
         HistoryTab.SetLibrary(e.Titles);
         CoverBuilderTab.SetLibrary(e.Titles);
+    }
+
+    private void LibraryTab_CoverBuilderRequested(
+        object? sender,
+        CoverBuilderRequestedEventArgs e)
+    {
+        if (_disposed) return;
+
+        CoverBuilderTab.SelectTitle(e.Title);
+        CoverBuilderTabItem.IsSelected = true;
     }
 
     private void OpenChapterRequested(object? sender, OpenChapterRequestedEventArgs e) =>
@@ -153,31 +110,6 @@ public partial class MangaReaderView : UserControl, IContentHeaderActionProvider
     private void DownloadQueueTab_BackRequested(object? sender, EventArgs e)
     {
         if (!_disposed) DownloaderTabItem.IsSelected = true;
-    }
-
-    /// <summary>
-    /// Translates one immutable Catalog handoff into the existing queue call
-    /// and shows the same queue. The queue's own answer is returned as-is:
-    /// dedupe, persistence and collision rules are never reinterpreted here.
-    /// A queue that cannot be written down reports its own message instead of
-    /// pretending the chapters were queued.
-    /// </summary>
-    private void CatalogTab_QueueHandoffRequested(object? sender, CatalogQueueHandoffRequest handoff)
-    {
-        if (_disposed || handoff is null) return;
-
-        var error = MangaReaderHandoffs.QueueHandoff(handoff, _queue);
-        if (error is null)
-        {
-            QueueTabItem.IsSelected = true;
-            return;
-        }
-
-        SettingDialog.Confirm(
-            Window.GetWindow(CatalogTab),
-            "Queue",
-            "Queue tidak dapat disimpan: " + error,
-            "OK");
     }
 
     public FrameworkElement CreateContentHeaderAction()
@@ -262,10 +194,7 @@ public partial class MangaReaderView : UserControl, IContentHeaderActionProvider
         // service and must survive navigation and close-to-tray.
         DownloadQueueTab.BackRequested -= DownloadQueueTab_BackRequested;
         DownloaderTab.OpenDownloadQueue -= DownloaderTab_OpenDownloadQueue;
-        CatalogTab.QueueHandoffRequested -= CatalogTab_QueueHandoffRequested;
         DownloadQueueTab.Dispose();
-        CatalogTab.Dispose();
-        _catalogContext.Dispose();
         LibraryTab.Dispose();
         HistoryTab.Dispose();
         CoverBuilderTab.Dispose();
@@ -273,7 +202,5 @@ public partial class MangaReaderView : UserControl, IContentHeaderActionProvider
         _readerWindow?.Close();
         _readerWindow = null;
 
-        _catalogHttpTransport.Dispose();
-        _coverClient.Dispose();
     }
 }

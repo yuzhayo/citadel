@@ -29,3 +29,11 @@ public sealed class CoverBakedEventArgs : EventArgs
 
     public CoverBakeResult Result { get; }
 }
+
+public sealed class CoverBuilderRequestedEventArgs : EventArgs
+{
+    public CoverBuilderRequestedEventArgs(MangaTitle title) =>
+        Title = title ?? throw new ArgumentNullException(nameof(title));
+
+    public MangaTitle Title { get; }
+}

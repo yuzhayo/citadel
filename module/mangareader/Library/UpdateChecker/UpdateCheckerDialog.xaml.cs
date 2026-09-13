@@ -262,8 +262,8 @@ public sealed class UpdateCheckerEntry
         {
             Content = "Check Updates",
             MinWidth = 124,
-            Margin = new Thickness(0, 8, 0, 0),
-            HorizontalAlignment = HorizontalAlignment.Stretch,
+            Margin = new Thickness(8, 0, 0, 0),
+            HorizontalAlignment = HorizontalAlignment.Left,
         };
         AutomationProperties.SetName(button, "Check this title for missing chapters");
         button.Click += (_, _) => Open(activeTitleFolderName(), Window.GetWindow(slot));

@@ -105,7 +105,8 @@
                     </StackPanel>
                 </setting:SettingActionCard>
 
-                <setting:SettingActionCard Grid.Row="1"
+                <setting:SettingActionCard x:Name="FilterCard"
+                                           Grid.Row="1"
                                            Grid.ColumnSpan="2"
                                            Padding="10,5">
                     <ContentControl x:Name="FilterHost" VerticalAlignment="Center" />
