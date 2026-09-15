@@ -2,6 +2,7 @@
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:setting="clr-namespace:Citadel.Setting.Components;assembly=Citadel.Setting"
+             xmlns:browser="clr-namespace:Module.Yuzvid.Features.Browser"
              xmlns:queue="clr-namespace:Module.Yuzvid.Features.Queue"
              Background="{DynamicResource Bg}"
              Foreground="{DynamicResource Fg}"
@@ -9,152 +10,274 @@
              SnapsToDevicePixels="True">
     <setting:SettingTabs x:Name="WorkspaceTabs"
                          setting:UiPreference.Key="yuzvid.workspace.tab"
-                         SelectedIndex="0">
-        <TabItem Header="Library" Padding="12,9">
-            <setting:SettingViewport Mode="Contained">
-                <Grid>
-                    <Grid x:Name="MainWorkspace">
-                        <Grid.RowDefinitions>
-                            <RowDefinition Height="Auto" />
-                            <RowDefinition Height="*" />
-                        </Grid.RowDefinitions>
+                         SelectedIndex="0"
+                         SelectionChanged="WorkspaceTabs_SelectionChanged">
 
-                        <setting:SettingActionCard Grid.Row="0">
-                            <setting:SettingActionCard.Content>
-                                <setting:SettingField x:Name="LibraryPath"
-                                                      Height="40"
-                                                      IsEnabled="False"
-                                                      Placeholder="Media library path" />
-                            </setting:SettingActionCard.Content>
-                            <setting:SettingActionCard.ActionContent>
-                                <StackPanel Orientation="Horizontal">
-                                    <setting:SettingButton x:Name="BrowseButton"
-                                                           MinWidth="94"
-                                                           Height="40"
+        <!-- ═══ BROWSER TAB ═══════════════════════════════════════════ -->
+        <TabItem Header="Browser" Padding="12,9">
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="*" />
+                </Grid.RowDefinitions>
+
+                <!-- Toolbar: URL field + navigation buttons -->
+                <setting:SettingActionCard Grid.Row="0">
+                    <setting:SettingActionCard.Content>
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+
+                            <!-- Shared editable field plus URL-history dropdown. -->
+                            <setting:SettingEditableCombo x:Name="UrlField"
+                                                           Grid.Column="0"
+                                                           Height="36"
                                                            Margin="0,0,8,0"
-                                                           IsEnabled="False"
-                                                           Content="Browse" />
-                                    <setting:SettingButton x:Name="ScanButton"
-                                                           MinWidth="82"
-                                                           Height="40"
-                                                           IsEnabled="False"
-                                                           Content="Scan" />
-                                </StackPanel>
-                            </setting:SettingActionCard.ActionContent>
-                        </setting:SettingActionCard>
+                                                           Placeholder="Enter URL"
+                                                           PreviewKeyDown="UrlField_PreviewKeyDown"
+                                                           SelectionChanged="UrlField_SelectionChanged"
+                                                           Text="" />
+                        </Grid>
+                    </setting:SettingActionCard.Content>
+                    <setting:SettingActionCard.ActionContent>
+                        <StackPanel Orientation="Horizontal">
+                            <setting:SettingButton x:Name="GoButton"
+                                                   MinWidth="54"
+                                                   Height="36"
+                                                   Margin="0,0,8,0"
+                                                   Content="Go"
+                                                   ToolTip="Open URL"
+                                                   AutomationProperties.Name="Open URL"
+                                                   Click="GoButton_Click"
+                                                   IsEnabled="False" />
+                            <setting:SettingButton x:Name="BackButton"
+                                                   Width="36"
+                                                   Height="36"
+                                                   Margin="0,0,4,0"
+                                                   FontFamily="Segoe MDL2 Assets"
+                                                   Content="&#xE72B;"
+                                                   ToolTip="Back"
+                                                   Click="BackButton_Click"
+                                                   IsEnabled="False" />
+                            <setting:SettingButton x:Name="ForwardButton"
+                                                   Width="36"
+                                                   Height="36"
+                                                   Margin="0,0,4,0"
+                                                   FontFamily="Segoe MDL2 Assets"
+                                                   Content="&#xE72A;"
+                                                   ToolTip="Forward"
+                                                   Click="ForwardButton_Click"
+                                                   IsEnabled="False" />
+                            <setting:SettingButton x:Name="RefreshButton"
+                                                   Width="36"
+                                                   Height="36"
+                                                   Margin="0,0,4,0"
+                                                   FontFamily="Segoe MDL2 Assets"
+                                                   Content="&#xE72C;"
+                                                   ToolTip="Refresh"
+                                                   Click="RefreshButton_Click" />
+                            <setting:SettingButton x:Name="ExtractButton"
+                                                   MinWidth="80"
+                                                   Height="36"
+                                                   Margin="8,0,0,0"
+                                                   Content="Extract"
+                                                   ToolTip="Extract links from current page"
+                                                   Click="ExtractButton_Click"
+                                                   IsEnabled="False" />
+                            <setting:SettingButton x:Name="BookmarkButton"
+                                                   Width="36"
+                                                   Height="36"
+                                                   Margin="4,0,0,0"
+                                                   FontFamily="Segoe MDL2 Assets"
+                                                   Content="&#xE734;"
+                                                   ToolTip="Bookmark this page"
+                                                   Click="BookmarkButton_Click" />
+                            <setting:SettingToggle x:Name="ProxyToggle"
+                                                   Height="36"
+                                                   Margin="12,0,0,0"
+                                                   ToolTip="Toggle proxy on/off"
+                                                   Checked="ProxyToggle_Changed"
+                                                   Unchecked="ProxyToggle_Changed" />
+                            <ComboBox x:Name="DnsModePicker"
+                                      Width="145"
+                                      Height="36"
+                                      Margin="8,0,0,0"
+                                      Style="{DynamicResource SettingComboBoxStyle}"
+                                      setting:UiPreference.Key="yuzvid.browser.dns-mode"
+                                      ToolTip="DNS for direct browser connections"
+                                      AutomationProperties.Name="Browser DNS"
+                                      SelectionChanged="DnsModePicker_SelectionChanged">
+                                <ComboBoxItem Content="DNS: System" Tag="System" />
+                                <ComboBoxItem Content="DNS: Cloudflare" Tag="Cloudflare" />
+                                <ComboBoxItem Content="DNS: Google" Tag="Google" />
+                            </ComboBox>
+                        </StackPanel>
+                    </setting:SettingActionCard.ActionContent>
+                </setting:SettingActionCard>
 
-                        <ScrollViewer Grid.Row="1"
-                                      VerticalScrollBarVisibility="Auto"
-                                      HorizontalScrollBarVisibility="Disabled"
-                                      PanningMode="VerticalOnly"
-                                      Style="{DynamicResource SettingScrollViewerStyle}">
-                            <WrapPanel Margin="0,12,0,0">
-                                <setting:SettingButton x:Name="PlaceholderCardOne"
-                                                       Width="164"
-                                                       Height="236"
-                                                       Margin="0,0,12,12"
-                                                       Padding="0"
-                                                       Background="{DynamicResource Card}"
-                                                       HorizontalContentAlignment="Stretch"
-                                                       VerticalContentAlignment="Stretch"
-                                                       Tag="Media placeholder 01"
-                                                       Click="MediaCard_Click">
-                                    <Grid>
-                                        <TextBlock FontFamily="Segoe MDL2 Assets"
-                                                   FontSize="36"
-                                                   Foreground="{DynamicResource Dim}"
-                                                   HorizontalAlignment="Center"
-                                                   VerticalAlignment="Center"
-                                                   Text="&#xE714;" />
-                                        <Border VerticalAlignment="Bottom"
-                                                Background="{DynamicResource Hover}"
-                                                Padding="10,8">
-                                            <TextBlock FontWeight="SemiBold"
-                                                       Text="Media placeholder 01"
-                                                       TextTrimming="CharacterEllipsis" />
-                                        </Border>
-                                    </Grid>
-                                </setting:SettingButton>
+                <TextBlock x:Name="NavigationStatus"
+                           Grid.Row="1"
+                           Margin="4,6,4,0"
+                           Foreground="{DynamicResource Dim}"
+                           TextWrapping="Wrap"
+                           Visibility="Collapsed" />
 
-                                <setting:SettingButton x:Name="PlaceholderCardTwo"
-                                                       Width="164"
-                                                       Height="236"
-                                                       Margin="0,0,12,12"
-                                                       Padding="0"
-                                                       Background="{DynamicResource Card}"
-                                                       HorizontalContentAlignment="Stretch"
-                                                       VerticalContentAlignment="Stretch"
-                                                       Tag="Media placeholder 02"
-                                                       Click="MediaCard_Click">
-                                    <Grid>
-                                        <TextBlock FontFamily="Segoe MDL2 Assets"
-                                                   FontSize="36"
-                                                   Foreground="{DynamicResource Dim}"
-                                                   HorizontalAlignment="Center"
-                                                   VerticalAlignment="Center"
-                                                   Text="&#xE714;" />
-                                        <Border VerticalAlignment="Bottom"
-                                                Background="{DynamicResource Hover}"
-                                                Padding="10,8">
-                                            <TextBlock FontWeight="SemiBold"
-                                                       Text="Media placeholder 02"
-                                                       TextTrimming="CharacterEllipsis" />
-                                        </Border>
-                                    </Grid>
-                                </setting:SettingButton>
-                            </WrapPanel>
-                        </ScrollViewer>
-                    </Grid>
+                <!-- Browser content area -->
+                <Border Grid.Row="2"
+                        Margin="0,10,0,0"
+                        Style="{DynamicResource SettingCardStyle}">
+                    <browser:YuzvidBrowserView x:Name="BrowserView" />
+                </Border>
 
-                    <Grid x:Name="DetailScreen"
-                          Panel.ZIndex="10"
-                          Background="{DynamicResource Bg}"
-                          Visibility="Collapsed">
-                        <Grid.RowDefinitions>
-                            <RowDefinition Height="Auto" />
-                            <RowDefinition Height="*" />
-                        </Grid.RowDefinitions>
-                        <setting:SettingActionCard Grid.Row="0">
-                            <setting:SettingActionCard.Content>
-                                <TextBlock x:Name="DetailTitle"
-                                           FontSize="18"
-                                           FontWeight="SemiBold"
-                                           Text="Media placeholder" />
-                            </setting:SettingActionCard.Content>
-                            <setting:SettingActionCard.ActionContent>
-                                <setting:SettingButton MinWidth="94"
-                                                       Height="40"
-                                                       Content="Back"
-                                                       Click="BackToLibrary_Click" />
-                            </setting:SettingActionCard.ActionContent>
-                        </setting:SettingActionCard>
+                <!-- Bookmarks popup overlay -->
+                <Popup x:Name="BookmarkPopup"
+                       IsOpen="False"
+                       PlacementTarget="{Binding ElementName=BookmarkButton}"
+                       Placement="Bottom"
+                       StaysOpen="False"
+                       AllowsTransparency="True"
+                       PopupAnimation="Slide">
+                    <Border Background="{DynamicResource Bg}"
+                            BorderBrush="{DynamicResource Dim}"
+                            BorderThickness="1"
+                            CornerRadius="6"
+                            MinWidth="380"
+                            MaxWidth="500"
+                            MaxHeight="400"
+                            Margin="0,4,0,0">
+                        <Grid>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="*" />
+                                <RowDefinition Height="Auto" />
+                            </Grid.RowDefinitions>
 
-                        <setting:SettingTable x:Name="PlaceholderTable"
-                                              Grid.Row="1"
-                                              Margin="0,12,0,0"
-                                              AutomationProperties.Name="Yuzvid placeholder media table"
-                                              CanUserSortColumns="True">
-                            <setting:SettingTable.InteractiveColumns>
-                                <DataGridTextColumn Header="Item"
-                                                    Width="*"
-                                                    Binding="{Binding Item}" />
-                                <DataGridTextColumn Header="Type"
-                                                    Width="180"
-                                                    Binding="{Binding Type}" />
-                                <DataGridTextColumn Header="Status"
-                                                    Width="180"
-                                                    Binding="{Binding Status}" />
-                            </setting:SettingTable.InteractiveColumns>
-                        </setting:SettingTable>
-                    </Grid>
-                </Grid>
-            </setting:SettingViewport>
+                            <!-- Header -->
+                            <Border Grid.Row="0"
+                                    Background="{DynamicResource Bg}"
+                                    BorderBrush="{DynamicResource Dim}"
+                                    BorderThickness="0,0,0,1"
+                                    Padding="12,8">
+                                <Grid>
+                                    <TextBlock Text="Bookmarks"
+                                               Foreground="{DynamicResource Fg}"
+                                               FontSize="13"
+                                               FontWeight="SemiBold"
+                                               VerticalAlignment="Center" />
+                                    <Button HorizontalAlignment="Right"
+                                            Content="&#xE710; Save current"
+                                            FontFamily="Segoe MDL2 Assets"
+                                            FontSize="11"
+                                            Height="28"
+                                            Padding="8,0"
+                                            Background="Transparent"
+                                            Foreground="{DynamicResource Accent}"
+                                            BorderThickness="1"
+                                            BorderBrush="{DynamicResource Accent}"
+                                            Cursor="Hand"
+                                            Click="BookmarkAddCurrent_Click" />
+                                </Grid>
+                            </Border>
+
+                            <!-- Bookmark list -->
+                            <ScrollViewer Grid.Row="1"
+                                          VerticalScrollBarVisibility="Auto"
+                                          Padding="4,4">
+                                <ItemsControl x:Name="BookmarkList">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <Border Background="Transparent"
+                                                    Padding="8,6"
+                                                    Margin="4,2"
+                                                    CornerRadius="4"
+                                                    MouseLeftButtonDown="BookmarkItem_Click">
+                                                <Grid>
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="*" />
+                                                        <ColumnDefinition Width="Auto" />
+                                                        <ColumnDefinition Width="Auto" />
+                                                    </Grid.ColumnDefinitions>
+                                                    <StackPanel Grid.Column="0"
+                                                                VerticalAlignment="Center">
+                                                        <TextBlock Text="{Binding Title}"
+                                                                   Foreground="{DynamicResource Fg}"
+                                                                   FontSize="12"
+                                                                   TextTrimming="CharacterEllipsis"
+                                                                   TextWrapping="NoWrap" />
+                                                        <TextBlock Text="{Binding DisplayUrl}"
+                                                                   Foreground="{DynamicResource Dim}"
+                                                                   FontSize="11"
+                                                                   TextTrimming="CharacterEllipsis"
+                                                                   TextWrapping="NoWrap"
+                                                                   Margin="0,2,0,0" />
+                                                    </StackPanel>
+                                                    <Button Grid.Column="1"
+                                                            Content="&#xE72B;"
+                                                            FontFamily="Segoe MDL2 Assets"
+                                                            FontSize="12"
+                                                            Width="28"
+                                                            Height="28"
+                                                            Margin="4,0"
+                                                            Background="Transparent"
+                                                            Foreground="{DynamicResource Dim}"
+                                                            BorderThickness="0"
+                                                            Click="BookmarkNavigate_Click"
+                                                            Tag="{Binding Url}"
+                                                            ToolTip="Open" />
+                                                    <Button Grid.Column="2"
+                                                            Content="&#xE74D;"
+                                                            FontFamily="Segoe MDL2 Assets"
+                                                            FontSize="12"
+                                                            Width="28"
+                                                            Height="28"
+                                                            Background="Transparent"
+                                                            Foreground="{DynamicResource Dim}"
+                                                            BorderThickness="0"
+                                                            Click="BookmarkDelete_Click"
+                                                            Tag="{Binding Url}"
+                                                            ToolTip="Delete" />
+                                                </Grid>
+                                            </Border>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </ScrollViewer>
+
+                            <!-- Empty state -->
+                            <TextBlock Grid.Row="1"
+                                       x:Name="BookmarkEmpty"
+                                       Text="No bookmarks yet"
+                                       Foreground="{DynamicResource Dim}"
+                                       FontSize="12"
+                                       HorizontalAlignment="Center"
+                                       VerticalAlignment="Center"
+                                       Visibility="Visible" />
+
+                            <!-- Footer -->
+                            <Border Grid.Row="2"
+                                    BorderBrush="{DynamicResource Dim}"
+                                    BorderThickness="0,1,0,0"
+                                    Padding="12,6">
+                                <TextBlock x:Name="BookmarkCount"
+                                           Text="0 bookmarks"
+                                           Foreground="{DynamicResource Dim}"
+                                           FontSize="11" />
+                            </Border>
+                        </Grid>
+                    </Border>
+                </Popup>
+            </Grid>
         </TabItem>
 
+        <!-- ═══ QUEUE TAB ════════════════════════════════════════════ -->
         <TabItem Header="Queue" Padding="12,9">
             <queue:QueuePlaceholderView />
         </TabItem>
 
+        <!-- ═══ SETTINGS TAB ═════════════════════════════════════════ -->
         <TabItem Header="Settings" Padding="12,9">
             <setting:SettingViewport Mode="Contained">
                 <Grid x:Name="SettingsWorkspace" />

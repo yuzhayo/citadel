@@ -6,6 +6,7 @@ using Citadel.Core.Modules;
 using Citadel.Core.Rpl;
 using Citadel.Core.Tokens;
 using Citadel.Ui.Animations;
+using System.Windows.Media;
 
 namespace Citadel.Shell;
 
@@ -50,6 +51,9 @@ public sealed class Router : IDisposable
     private readonly Tokens _tokens;
     private readonly AnimationManager _animations;
     private readonly Dictionary<string, BuiltInRoute> _builtIn;
+    // A retained screen owns its view and its lifetime, never a transition
+    // layer. Layers are one-navigation containers and are disposable.
+    private readonly Dictionary<string, RetainedView> _retainedCache = new(StringComparer.Ordinal);
     private Lifetime? _viewLifetime;
     private Lifetime? _transitionLifetime;
     private ContentPresenter? _currentLayer;
@@ -148,6 +152,38 @@ public sealed class Router : IDisposable
             return;
         }
 
+        // Check retained view cache — if the module was cached from a prior
+        // navigation, re-use its view and lifetime instead of recreating.
+        if (_retainedCache.TryGetValue(route, out var cached))
+        {
+            _retainedCache.Remove(route);
+            if (ReferenceEquals(cached.Module, descriptor.Instance) && cached.Lifetime.Alive)
+            {
+                try
+                {
+                    // Attach creates a fresh transition layer. The cached view
+                    // remains the same WebView2-owning instance.
+                    var cachedLayer = Attach(cached.View);
+                    if (cached.View is IRetainedViewModule retained)
+                        retained.OnViewAttached();
+
+                    Show(route, cached.View, cachedLayer, cached.Lifetime, oldLayer);
+                    return;
+                }
+                catch (Exception exception)
+                {
+                    cached.Lifetime.Destroy();
+                    _gate.RejectForFailedView(descriptor.Route, exception.Message);
+                    NavigateToFallback(oldLayer);
+                    return;
+                }
+            }
+
+            // The module was reloaded under the same route, or the prior view
+            // has already died. Its retained state must not cross that boundary.
+            cached.Lifetime.Destroy();
+        }
+
         if (!TryCreateAndAttachCitizen(
             descriptor, out var citizenView, out var citizenLayer, out var citizenLifetime))
         {
@@ -169,6 +205,8 @@ public sealed class Router : IDisposable
         // on the fallback, so acting here too would build Settings twice for one
         // failure.
         if (_navigating) return;
+        EvictStaleRetainedCache();
+
         if (CurrentRoute is null || _builtIn.ContainsKey(CurrentRoute)) return;
 
         var stillThere = _gate.Snapshot()
@@ -176,7 +214,32 @@ public sealed class Router : IDisposable
         if (stillThere) return;
 
         Log.Main($"[Router] displayed route '{CurrentRoute}' was unregistered; leaving");
+
         Navigate(FallbackRoute);
+    }
+
+    /// <summary>
+    /// Destroys cached retained views for routes that are no longer registered
+    /// as citizens. Called when the registry changes to prevent orphaned views.
+    /// </summary>
+    private void EvictStaleRetainedCache()
+    {
+        var registered = _gate.Snapshot()
+            .Select(d => d.Route)
+            .ToHashSet(StringComparer.Ordinal);
+
+        foreach (var (route, cached) in _retainedCache)
+        {
+            if (!registered.Contains(route))
+            {
+                cached.Lifetime.Destroy();
+            }
+        }
+
+        _retainedCache.Keys
+            .Where(route => !registered.Contains(route))
+            .ToList()
+            .ForEach(route => _retainedCache.Remove(route));
     }
 
     private bool TryCreateAndAttachCitizen(
@@ -304,7 +367,35 @@ public sealed class Router : IDisposable
     {
         CancelTransition();
         var oldLayer = _currentLayer;
-        _viewLifetime?.Destroy();
+
+        // If the current view implements IRetainedViewModule, cache it
+        // instead of destroying — the view and lifetime survive off-screen.
+        if (_currentView is IRetainedViewModule retained
+            && CurrentRoute is not null
+            && _viewLifetime is not null
+            && _currentLayer is not null)
+        {
+            retained.OnViewDetached();
+
+            // The layer cannot be retained: StartCrossfade/RemoveLayer owns it
+            // and clears Content. Detach the view, discard this one-shot layer,
+            // and build a new layer on reattach.
+            if (_retainedCache.Remove(CurrentRoute, out var previous))
+                previous.Lifetime.Destroy();
+            RemoveLayer(_currentLayer);
+            _retainedCache[CurrentRoute] = new RetainedView(
+                _currentView,
+                _viewLifetime,
+                FindModule(CurrentRoute));
+
+            // No old layer reaches crossfade; it has already been disposed.
+            oldLayer = null;
+        }
+        else
+        {
+            _viewLifetime?.Destroy();
+        }
+
         _viewLifetime = null;
         _currentView = null;
         _currentLayer = null;
@@ -426,8 +517,23 @@ public sealed class Router : IDisposable
         _currentView = null;
         _currentLayer = null;
         CurrentRoute = null;
+
+        // Destroy all cached retained views on shutdown.
+        foreach (var cached in _retainedCache.Values)
+            cached.Lifetime.Destroy();
+        _retainedCache.Clear();
+
         ClearSurface();
     }
+
+    private IModule? FindModule(string route) => _gate.Snapshot()
+        .FirstOrDefault(descriptor => string.Equals(descriptor.Route, route, StringComparison.Ordinal))
+        ?.Instance;
+
+    private sealed record RetainedView(
+        FrameworkElement View,
+        Lifetime Lifetime,
+        IModule? Module);
 
     private static DependencyObject? VisualTreeHelperParent(FrameworkElement element) =>
         element.Parent ?? System.Windows.Media.VisualTreeHelper.GetParent(element);

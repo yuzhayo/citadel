@@ -1,0 +1,105 @@
+<ComboBox
+    x:Class="Citadel.Setting.Components.SettingEditableCombo"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:local="clr-namespace:Citadel.Setting.Components"
+    Background="{DynamicResource Bg}"
+    BorderBrush="{DynamicResource Border}"
+    BorderThickness="1"
+    FontSize="{DynamicResource SettingBodyFontSize}"
+    Foreground="{DynamicResource Fg}"
+    IsEditable="True"
+    Padding="{DynamicResource SettingControlPadding}">
+    <ComboBox.Template>
+        <ControlTemplate TargetType="{x:Type local:SettingEditableCombo}">
+            <Grid>
+                <Border
+                    x:Name="Surface"
+                    Background="{TemplateBinding Background}"
+                    BorderBrush="{TemplateBinding BorderBrush}"
+                    BorderThickness="{TemplateBinding BorderThickness}"
+                    CornerRadius="{DynamicResource SidebarItemCornerRadius}">
+                    <Grid>
+                        <TextBlock
+                            x:Name="PlaceholderText"
+                            Margin="{TemplateBinding Padding}"
+                            Foreground="{DynamicResource Dim}"
+                            IsHitTestVisible="False"
+                            Text="{TemplateBinding Placeholder}"
+                            VerticalAlignment="Center"
+                            Visibility="Collapsed" />
+                        <TextBox
+                            x:Name="PART_EditableTextBox"
+                            Margin="{TemplateBinding Padding}"
+                            Background="{DynamicResource TransparentBrush}"
+                            BorderThickness="0"
+                            CaretBrush="{DynamicResource Fg}"
+                            Foreground="{TemplateBinding Foreground}"
+                            IsReadOnly="{TemplateBinding IsReadOnly}"
+                            Text="{Binding Text, RelativeSource={RelativeSource TemplatedParent}, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                            VerticalContentAlignment="Center" />
+                        <ToggleButton
+                            Width="32"
+                            HorizontalAlignment="Right"
+                            Background="{DynamicResource TransparentBrush}"
+                            BorderThickness="0"
+                            ClickMode="Press"
+                            Focusable="False"
+                            IsChecked="{Binding IsDropDownOpen, RelativeSource={RelativeSource TemplatedParent}, Mode=TwoWay}">
+                            <ToggleButton.Template>
+                                <ControlTemplate TargetType="{x:Type ToggleButton}">
+                                    <Border Background="{TemplateBinding Background}">
+                                        <Path
+                                            HorizontalAlignment="Center"
+                                            VerticalAlignment="Center"
+                                            Data="M 0 0 L 4 4 L 8 0"
+                                            Stroke="{DynamicResource Dim}"
+                                            StrokeThickness="1.5" />
+                                    </Border>
+                                </ControlTemplate>
+                            </ToggleButton.Template>
+                        </ToggleButton>
+                    </Grid>
+                </Border>
+                <Popup
+                    x:Name="PART_Popup"
+                    AllowsTransparency="True"
+                    Focusable="False"
+                    IsOpen="{TemplateBinding IsDropDownOpen}"
+                    Placement="Bottom"
+                    PopupAnimation="Fade">
+                    <Border
+                        MinWidth="{Binding ActualWidth, RelativeSource={RelativeSource TemplatedParent}}"
+                        Margin="0,4,0,0"
+                        Background="{DynamicResource Bg}"
+                        BorderBrush="{DynamicResource Border}"
+                        BorderThickness="1"
+                        CornerRadius="{DynamicResource SidebarItemCornerRadius}">
+                        <ScrollViewer
+                            MaxHeight="280"
+                            CanContentScroll="True"
+                            HorizontalScrollBarVisibility="Disabled"
+                            Style="{StaticResource SettingScrollViewerStyle}"
+                            VerticalScrollBarVisibility="Auto">
+                            <ItemsPresenter />
+                        </ScrollViewer>
+                    </Border>
+                </Popup>
+            </Grid>
+            <ControlTemplate.Triggers>
+                <DataTrigger Binding="{Binding Text, RelativeSource={RelativeSource Self}}" Value="">
+                    <Setter TargetName="PlaceholderText" Property="Visibility" Value="Visible" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding Text, RelativeSource={RelativeSource Self}}" Value="{x:Null}">
+                    <Setter TargetName="PlaceholderText" Property="Visibility" Value="Visible" />
+                </DataTrigger>
+                <Trigger Property="IsKeyboardFocusWithin" Value="True">
+                    <Setter TargetName="Surface" Property="BorderBrush" Value="{DynamicResource Accent}" />
+                </Trigger>
+                <Trigger Property="IsEnabled" Value="False">
+                    <Setter Property="Opacity" Value="{DynamicResource DisabledOpacity}" />
+                </Trigger>
+            </ControlTemplate.Triggers>
+        </ControlTemplate>
+    </ComboBox.Template>
+</ComboBox>

@@ -3,4 +3,37 @@
   <!-- A citizen is built directly and discovered from its module folder. -->
   <Import Project="..\..\core\Citizen.targets" />
 
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.4191.47" />
+  </ItemGroup>
+
+  <!-- Shared C# source (proxy contracts, runtime setup, cred paths) compiled into this citizen. -->
+  <ItemGroup>
+    <Compile Include="..\sharedLogic\cs\**\*.cs" />
+  </ItemGroup>
+
+  <!--
+    Citadel Shell runs x64. Select the matching native loader for both the
+    citizen output and the Shell root; an x86 loader causes 0x8007000B during
+    CoreWebView2Environment.CreateAsync.
+  -->
+  <PropertyGroup>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <AppendRuntimeIdentifierToOutputPath>false</AppendRuntimeIdentifierToOutputPath>
+  </PropertyGroup>
+
+  <Target Name="DeployWebView2Native" AfterTargets="DeployCitizen">
+    <ItemGroup>
+      <WebView2NativeDll Include="$(TargetDir)runtimes\win-x64\native\WebView2Loader.dll"
+                        Condition="Exists('$(TargetDir)runtimes\win-x64\native\WebView2Loader.dll')" />
+    </ItemGroup>
+    <Copy SourceFiles="@(WebView2NativeDll)"
+          DestinationFolder="$([System.IO.Path]::GetFullPath('$(CitizenRuntimeRoot)..'))"
+          SkipUnchangedFiles="true"
+          Condition="'@(WebView2NativeDll)' != ''" />
+    <Message Importance="high"
+             Condition="'@(WebView2NativeDll)' != ''"
+             Text="x64 WebView2Loader.dll deployed to Shell root" />
+  </Target>
+
 </Project>

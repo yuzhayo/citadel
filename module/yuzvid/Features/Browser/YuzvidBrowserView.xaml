@@ -1,0 +1,76 @@
+<UserControl x:Class="Module.Yuzvid.Features.Browser.YuzvidBrowserView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:wv2="clr-namespace:Microsoft.Web.WebView2.Wpf;assembly=Microsoft.Web.WebView2.Wpf"
+             Background="{DynamicResource Bg}"
+             Foreground="{DynamicResource Fg}"
+             UseLayoutRounding="True"
+             SnapsToDevicePixels="True"
+             Loaded="OnLoaded">
+    <Grid>
+        <!-- Browser surface -->
+        <wv2:WebView2 x:Name="Browser" />
+
+        <!-- Loading overlay -->
+        <Border x:Name="LoadingOverlay"
+                Background="{DynamicResource Bg}"
+                Visibility="Visible">
+            <StackPanel VerticalAlignment="Center"
+                        HorizontalAlignment="Center">
+                <ProgressBar Width="200"
+                             Height="4"
+                             IsIndeterminate="True"
+                             Foreground="{DynamicResource Accent}"
+                             Background="{DynamicResource Card}"
+                             Margin="0,0,0,12" />
+                <TextBlock x:Name="LoadingText"
+                           Text="Initializing browser engine..."
+                           Foreground="{DynamicResource Fg}"
+                           FontSize="13"
+                           Opacity="0.7" />
+            </StackPanel>
+        </Border>
+
+        <!-- Error overlay -->
+        <Border x:Name="ErrorOverlay"
+                Background="{DynamicResource Bg}"
+                Visibility="Collapsed">
+            <StackPanel VerticalAlignment="Center"
+                        HorizontalAlignment="Center"
+                        MaxWidth="400">
+                <!-- Error icon -->
+                <TextBlock Text="&#xE783;"
+                           FontFamily="Segoe MDL2 Assets"
+                           FontSize="48"
+                           HorizontalAlignment="Center"
+                           Foreground="{DynamicResource Fg}"
+                           Opacity="0.5"
+                           Margin="0,0,0,16" />
+                <!-- Error title -->
+                <TextBlock x:Name="ErrorTitle"
+                           Text="Browser engine failed to initialize"
+                           Foreground="{DynamicResource Fg}"
+                           FontSize="15"
+                           FontWeight="SemiBold"
+                           HorizontalAlignment="Center"
+                           Margin="0,0,0,8" />
+                <!-- Error detail -->
+                <TextBlock x:Name="ErrorDetail"
+                           Text=""
+                           Foreground="{DynamicResource Fg}"
+                           FontSize="12"
+                           Opacity="0.6"
+                           TextWrapping="Wrap"
+                           HorizontalAlignment="Center"
+                           Margin="0,0,0,20" />
+                <!-- Retry button -->
+                <Button Content="Retry initialization"
+                        HorizontalAlignment="Center"
+                        Padding="16,8"
+                        Click="RetryButton_Click"
+                        Background="{DynamicResource Card}"
+                        Foreground="{DynamicResource Fg}" />
+            </StackPanel>
+        </Border>
+    </Grid>
+</UserControl>

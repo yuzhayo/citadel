@@ -13,6 +13,7 @@ interaction behavior.
 |---|---|
 | `SettingButton` | centered label, content-fit action/table placement, hover/press/focus/disabled states |
 | `SettingField` | left-aligned text and placeholder, vertical centering, focus border, disabled state |
+| `SettingEditableCombo` | editable shared field with a shared dropdown/history list, focus border, disabled state |
 | `SettingPasswordField` | the same input alignment/focus/disabled behavior without exposing the password as a dependency property |
 | `SettingToggle` | centered track/label, mouse/focus/disabled states, two-state keyboard behavior |
 | `SettingSlider` | shared track/thumb, keyboard focus indication, disabled state, step snapping |

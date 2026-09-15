@@ -12,6 +12,6 @@ public sealed class YuzvidModule : IModule
     public FrameworkElement CreateView(Lifetime lifetime)
     {
         ArgumentNullException.ThrowIfNull(lifetime);
-        return new YuzvidView();
+        return new YuzvidView(lifetime);
     }
 }
