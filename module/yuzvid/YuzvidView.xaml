@@ -2,7 +2,6 @@
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:setting="clr-namespace:Citadel.Setting.Components;assembly=Citadel.Setting"
-             xmlns:browser="clr-namespace:Module.Yuzvid.Features.Browser"
              xmlns:queue="clr-namespace:Module.Yuzvid.Features.Queue"
              Background="{DynamicResource Bg}"
              Foreground="{DynamicResource Fg}"
@@ -125,11 +124,11 @@
                            TextWrapping="Wrap"
                            Visibility="Collapsed" />
 
-                <!-- Browser content area -->
+                <!-- Browser content area: hosted view comes from IYuzvidBrowserController (see YuzvidModule). -->
                 <Border Grid.Row="2"
                         Margin="0,10,0,0"
                         Style="{DynamicResource SettingCardStyle}">
-                    <browser:YuzvidBrowserView x:Name="BrowserView" />
+                    <ContentPresenter x:Name="BrowserHost" />
                 </Border>
 
                 <!-- Bookmarks popup overlay -->

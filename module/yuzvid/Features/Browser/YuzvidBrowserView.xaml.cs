@@ -7,13 +7,6 @@ using Microsoft.Web.WebView2.Core;
 
 namespace Module.Yuzvid.Features.Browser;
 
-public enum BrowserState
-{
-    Initializing,
-    Ready,
-    Failed
-}
-
 /// <summary>
 /// WebView2 host control. Explicit init, state tracking, error display.
 /// Browser always routes through a local proxy server (localhost:PORT).

@@ -9,27 +9,27 @@ namespace Module.Yuzvid.Features.Runtime;
 
 public partial class YuzvidRuntimeView : UserControl
 {
-    private Func<BrowserState>? _getBrowserState;
-    private Func<Task>? _retryBrowserInit;
-    private Func<(bool enabled, string masked, int available)>? _getProxyStatus;
+    private IYuzvidBrowserController? _browser;
     private bool _activated;
 
     public YuzvidRuntimeView()
     {
         InitializeComponent();
+        Loaded += OnLoaded;
     }
 
     /// <summary>
-    /// Wire browser state accessor and retry callback from parent view.
+    /// Wire the Browser contract. Called once by the composition root —
+    /// never by the parent shell. First refresh runs on <see cref="Loaded"/>.
     /// </summary>
-    internal void Wire(
-        Func<BrowserState> getBrowserState,
-        Func<Task> retryBrowserInit,
-        Func<(bool enabled, string masked, int available)>? getProxyStatus = null)
+    internal void Wire(IYuzvidBrowserController browser)
     {
-        _getBrowserState = getBrowserState;
-        _retryBrowserInit = retryBrowserInit;
-        _getProxyStatus = getProxyStatus;
+        _browser = browser ?? throw new ArgumentNullException(nameof(browser));
+    }
+
+    private async void OnLoaded(object sender, RoutedEventArgs e)
+    {
+        await ActivateAsync();
     }
 
     internal async Task ActivateAsync()
@@ -56,7 +56,7 @@ public partial class YuzvidRuntimeView : UserControl
             SetRow(SdkMark, SdkDetail, sdkOk, sdkDetail);
 
             // Check browser state
-            var browserState = _getBrowserState?.Invoke();
+            var browserState = _browser?.State;
             var stateOk = browserState == BrowserState.Ready;
             var stateDetail = browserState switch
             {
@@ -69,7 +69,10 @@ public partial class YuzvidRuntimeView : UserControl
             RetryButton.IsEnabled = browserState is BrowserState.Failed;
 
             // Check proxy status
-            var (proxyEnabled, masked, available) = _getProxyStatus?.Invoke() ?? (false, "none", 0);
+            var runtime = _browser?.Runtime;
+            var (proxyEnabled, masked, available) = runtime is null
+                ? (false, "none", 0)
+                : (runtime.ProxyEnabled, runtime.EndpointLabel, runtime.AvailableCount);
             var proxyOk = proxyEnabled;
             var proxyDetail = proxyEnabled
                 ? $"routing via {masked} ({available} in pool)"
@@ -139,11 +142,11 @@ public partial class YuzvidRuntimeView : UserControl
 
     private async void RetryButton_Click(object sender, RoutedEventArgs e)
     {
-        if (_retryBrowserInit is null) return;
+        if (_browser is null) return;
 
         RetryButton.IsEnabled = false;
         StatusText.Text = "Retrying browser initialization…";
-        await _retryBrowserInit();
+        await _browser.RetryInitAsync();
         await RefreshStatusAsync();
     }
 }

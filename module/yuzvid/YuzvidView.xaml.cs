@@ -6,10 +6,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using Citadel.Core.Modules;
-using Citadel.Core.Rpl;
-using CitadelBridge;
 using Module.Yuzvid.Features.Browser;
-using Module.Yuzvid.Features.Runtime;
 
 namespace Module.Yuzvid;
 
@@ -20,9 +17,9 @@ namespace Module.Yuzvid;
 public partial class YuzvidView : UserControl, IRetainedViewModule
 {
     private bool _navigating;
-    private YuzvidRuntimeView? _runtimeView;
-    private LocalProxyServer? _localProxy;
-    private readonly YuzvidProxyPoolAdapter _proxyAdapter = new();
+    private readonly IYuzvidBrowserController _browser;
+    private readonly FrameworkElement _settingsView;
+    private bool _settingsMounted;
     private readonly Dictionary<string, string> _urlLookup = new(); // display → full URL
     private const int MaxDisplayUrl = 80;
 
@@ -40,40 +37,29 @@ public partial class YuzvidView : UserControl, IRetainedViewModule
         public DateTime AddedAt { get; set; }
     }
 
-    public YuzvidView(Lifetime lifetime)
+    /// <summary>
+    /// Presentation shell. Owns tabs, bookmarks, and toolbar state only.
+    /// The Browser (view + proxy + pool) is owned by the injected
+    /// <see cref="IYuzvidBrowserController"/> — created and activated once
+    /// by <see cref="YuzvidModule"/>; this shell only forwards commands.
+    /// </summary>
+    public YuzvidView(IYuzvidBrowserController browser, FrameworkElement settingsView)
     {
-        ArgumentNullException.ThrowIfNull(lifetime);
+        _browser = browser ?? throw new ArgumentNullException(nameof(browser));
+        _settingsView = settingsView ?? throw new ArgumentNullException(nameof(settingsView));
         InitializeComponent();
         LoadBookmarks();
 
-        // Start local proxy — browser always routes through this
-        try
-        {
-            _localProxy = new LocalProxyServer();
-            _localProxy.Start();
-            BrowserView.SetLocalProxyPort(_localProxy.Port);
-        }
-        catch (Exception ex)
-        {
-            System.Diagnostics.Debug.WriteLine($"[Yuzvid] LocalProxy failed: {ex.Message}");
-            // Browser will run direct (no proxy) — still functional
-            BrowserView.SetLocalProxyPort(0);
-        }
-
-        // The local listener belongs to the retained view lifetime. Route
-        // changes keep it alive; module unload and application shutdown stop it.
-        lifetime.Add(() =>
-        {
-            _localProxy?.Dispose();
-            _localProxy = null;
-        });
+        // Mount the controller-owned Browser view. The controller was already
+        // activated by the composition root (port pinned before WebView2 load).
+        BrowserHost.Content = _browser.View;
 
         // Wire browser events to toolbar
-        BrowserView.Navigated += Browser_Navigated;
-        BrowserView.NavigationStateChanged += Browser_NavigationStateChanged;
-        BrowserView.NavigationFailed += Browser_NavigationFailed;
-        BrowserView.NavigationQueued += Browser_NavigationQueued;
-        BrowserView.StateChanged += Browser_StateChanged;
+        _browser.Navigated += Browser_Navigated;
+        _browser.NavigationStateChanged += Browser_NavigationStateChanged;
+        _browser.NavigationFailed += Browser_NavigationFailed;
+        _browser.NavigationQueued += Browser_NavigationQueued;
+        _browser.StateChanged += Browser_StateChanged;
 
         // Start with buttons disabled (browser initializing)
         UpdateToolbarButtons(false);
@@ -96,7 +82,7 @@ public partial class YuzvidView : UserControl, IRetainedViewModule
     private void NavigateFromAddress()
     {
         NavigationStatus.Visibility = Visibility.Collapsed;
-        BrowserView.Navigate(UrlField.Text);
+        _browser.Navigate(UrlField.Text);
     }
 
     private void UrlField_SelectionChanged(object sender, SelectionChangedEventArgs e)
@@ -110,14 +96,14 @@ public partial class YuzvidView : UserControl, IRetainedViewModule
         }
     }
 
-    private void BackButton_Click(object sender, RoutedEventArgs e) => BrowserView.GoBack();
-    private void ForwardButton_Click(object sender, RoutedEventArgs e) => BrowserView.GoForward();
-    private void RefreshButton_Click(object sender, RoutedEventArgs e) => BrowserView.Refresh();
+    private void BackButton_Click(object sender, RoutedEventArgs e) => _browser.GoBack();
+    private void ForwardButton_Click(object sender, RoutedEventArgs e) => _browser.GoForward();
+    private void RefreshButton_Click(object sender, RoutedEventArgs e) => _browser.Refresh();
 
     private void ExtractButton_Click(object sender, RoutedEventArgs e)
     {
         // Phase 3: will trigger url_extractor on current page
-        var currentUrl = BrowserView.CurrentUrl;
+        var currentUrl = _browser.CurrentUrl;
         if (string.IsNullOrEmpty(currentUrl)) return;
 
         System.Diagnostics.Debug.WriteLine($"[Yuzvid] Extract requested for: {currentUrl}");
@@ -127,45 +113,31 @@ public partial class YuzvidView : UserControl, IRetainedViewModule
     private void ProxyToggle_Changed(object sender, RoutedEventArgs e)
     {
         var enabled = ProxyToggle.IsChecked == true;
-        _proxyAdapter.Enabled = enabled;
+        _browser.SetProxyEnabled(enabled);
 
-        if (!enabled)
+        // Outcome (including pool-failure fallback) comes from the controller snapshot.
+        var runtime = _browser.Runtime;
+        var notice = runtime.Notice;
+        if (enabled && !runtime.ProxyEnabled)
         {
-            _localProxy?.Upstream = null;
-            NavigationStatus.Text = "Browser memakai koneksi langsung.";
-            NavigationStatus.Visibility = Visibility.Visible;
-            return;
-        }
-
-        try
-        {
-            var endpoint = _proxyAdapter.Acquire();
-            if (_localProxy is null)
-            {
-                throw new ProxyPoolException("LOCAL_PROXY_UNAVAILABLE", "Local browser proxy tidak aktif.");
-            }
-
-            _localProxy.Upstream = endpoint;
-            NavigationStatus.Text = "Proxy aktif: " + endpoint!.Masked;
-            NavigationStatus.Visibility = Visibility.Visible;
-        }
-        catch (ProxyPoolException exception)
-        {
-            _proxyAdapter.Enabled = false;
-            _localProxy?.Upstream = null;
+            // Pool failure — controller already fell back to direct; reflect in toggle.
+            // This re-fires the handler with enabled=false (idempotent); restore message after.
             ProxyToggle.IsChecked = false;
-            NavigationStatus.Text = exception.Message + " Browser memakai koneksi langsung.";
+        }
+        if (!string.IsNullOrEmpty(notice))
+        {
+            NavigationStatus.Text = notice;
             NavigationStatus.Visibility = Visibility.Visible;
         }
     }
 
     private void DnsModePicker_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
-        if (_localProxy is null || DnsModePicker.SelectedItem is not ComboBoxItem { Tag: string tag }) return;
-        if (!Enum.TryParse<BrowserDnsMode>(tag, out var mode)) return;
+        if (DnsModePicker.SelectedItem is not ComboBoxItem { Tag: string tag }) return;
+        if (!Enum.TryParse<YuzvidDnsMode>(tag, out var mode)) return;
 
-        _localProxy.DnsMode = mode;
-        NavigationStatus.Text = mode == BrowserDnsMode.System
+        _browser.SetDnsMode(mode);
+        NavigationStatus.Text = mode == YuzvidDnsMode.System
             ? "Browser memakai DNS sistem/network."
             : "Browser memakai " + mode + " Secure DNS untuk koneksi langsung.";
         NavigationStatus.Visibility = Visibility.Visible;
@@ -220,8 +192,8 @@ public partial class YuzvidView : UserControl, IRetainedViewModule
             }
 
             // Update navigation button states
-            BackButton.IsEnabled = BrowserView.CanGoBack;
-            ForwardButton.IsEnabled = BrowserView.CanGoForward;
+            BackButton.IsEnabled = _browser.CanGoBack;
+            ForwardButton.IsEnabled = _browser.CanGoForward;
             ExtractButton.IsEnabled = !string.IsNullOrEmpty(url);
         });
     }
@@ -257,25 +229,13 @@ public partial class YuzvidView : UserControl, IRetainedViewModule
 
     private void WorkspaceTabs_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
-        // Tab index 2 = Settings
-        if (WorkspaceTabs.SelectedIndex == 2)
+        // Tab index 2 = Settings. The view is pre-built by the composition root;
+        // mount it lazily — its first refresh runs on its own Loaded event.
+        if (WorkspaceTabs.SelectedIndex == 2 && !_settingsMounted)
         {
-            EnsureRuntimeView();
+            _settingsMounted = true;
+            SettingsWorkspace.Children.Add(_settingsView);
         }
-    }
-
-    private async void EnsureRuntimeView()
-    {
-        if (_runtimeView is not null) return;
-
-        _runtimeView = new YuzvidRuntimeView();
-        _runtimeView.Wire(
-            getBrowserState: () => BrowserView.State,
-            retryBrowserInit: () => BrowserView.RetryInitAsync(),
-            getProxyStatus: () => (_localProxy?.ProxyEnabled ?? false, _localProxy?.Upstream?.Masked ?? "none", _proxyAdapter.AvailableCount));
-        SettingsWorkspace.Children.Add(_runtimeView);
-
-        await _runtimeView.ActivateAsync();
     }
 
     // ─── Helpers ──────────────────────────────────────────────────────────
@@ -310,7 +270,7 @@ public partial class YuzvidView : UserControl, IRetainedViewModule
     {
         if (sender is FrameworkElement fe && fe.DataContext is BookmarkItem item)
         {
-            BrowserView.Navigate(item.Url);
+            _browser.Navigate(item.Url);
             BookmarkPopup.IsOpen = false;
         }
     }
@@ -319,7 +279,7 @@ public partial class YuzvidView : UserControl, IRetainedViewModule
     {
         if (sender is Button btn && btn.Tag is string url)
         {
-            BrowserView.Navigate(url);
+            _browser.Navigate(url);
             BookmarkPopup.IsOpen = false;
         }
     }
@@ -336,8 +296,8 @@ public partial class YuzvidView : UserControl, IRetainedViewModule
 
     private void AddCurrentToBookmarks()
     {
-        var url = BrowserView.CurrentUrl;
-        var title = BrowserView.CurrentTitle;
+        var url = _browser.CurrentUrl;
+        var title = _browser.CurrentTitle;
         if (string.IsNullOrEmpty(url) || url == "about:blank") return;
 
         // Dedup
