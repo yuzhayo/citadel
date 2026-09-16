@@ -7,7 +7,8 @@ namespace Module.Yuzvid.Features.Browser;
 /// <summary>
 /// R0 diagnosis trace: navigation + popup-request + session lifecycle.
 /// Writes to Debug output AND a rotating file log (best effort, never throws).
-/// Only hosts are logged — never full URIs (tokens stay out of the file).
+/// Hosts + paths are logged; query strings never leave the browser
+/// (tokens stay out of the file).
 /// </summary>
 internal static class PopupTrace
 {
@@ -25,6 +26,15 @@ internal static class PopupTrace
             && !string.IsNullOrEmpty(parsed.Host)
             ? parsed.Host
             : "?";
+    }
+
+    /// <summary>Path only (no query/fragment). Capped so logs stay readable.</summary>
+    public static string PathOf(string? uri)
+    {
+        if (!Uri.TryCreate(uri, UriKind.Absolute, out var parsed)) return "?";
+        var path = parsed.AbsolutePath;
+        if (string.IsNullOrEmpty(path)) return "/";
+        return path.Length > 100 ? path[..100] + "…" : path;
     }
 
     public static void Write(string kind, string detail)

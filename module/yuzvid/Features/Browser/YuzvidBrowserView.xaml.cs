@@ -40,6 +40,9 @@ public partial class YuzvidBrowserView : UserControl
     // must stay silent instead of showing "Navigasi gagal".
     private readonly HashSet<ulong> _cancelledNavIds = new();
 
+    // Same for symmetric duplicates (see Starting handler).
+    private readonly HashSet<ulong> _dupCancelledNavIds = new();
+
     // In-flight main-tab navigations (id → normalized URL). Lets the popup
     // gateway skip duplicate main-tab routes for the same click (Fase 1 dedup):
     // without this, one click produced TWO tab navigations racing each other
@@ -316,18 +319,18 @@ public partial class YuzvidBrowserView : UserControl
         var current = Browser.CoreWebView2?.Source;
         if (norm is not null && norm == NormalizeNavUrl(current))
         {
-            PopupTrace.Write("maintab-dedup-skip", "already-here host=" + PopupTrace.HostOf(url));
+            PopupTrace.Write("maintab-dedup-skip", "already-here host=" + PopupTrace.HostOf(url) + " path=" + PopupTrace.PathOf(url));
             return;
         }
         foreach (var pending in _inflightNavs.Values)
         {
             if (norm is not null && norm == pending)
             {
-                PopupTrace.Write("maintab-dedup-skip", "in-flight host=" + PopupTrace.HostOf(url));
+                PopupTrace.Write("maintab-dedup-skip", "in-flight host=" + PopupTrace.HostOf(url) + " path=" + PopupTrace.PathOf(url));
                 return;
             }
         }
-        PopupTrace.Write("maintab-nav", "host=" + PopupTrace.HostOf(url));
+        PopupTrace.Write("maintab-nav", "host=" + PopupTrace.HostOf(url) + " path=" + PopupTrace.PathOf(url));
         Navigate(url);
     }
 
@@ -342,16 +345,33 @@ public partial class YuzvidBrowserView : UserControl
 
     private void Browser_NavigationStarting(object? sender, CoreWebView2NavigationStartingEventArgs e)
     {
-        PopupTrace.Write("nav-start", $"id={e.NavigationId} user={e.IsUserInitiated} host={PopupTrace.HostOf(e.Uri)}");
+        PopupTrace.Write("nav-start", $"id={e.NavigationId} user={e.IsUserInitiated} host={PopupTrace.HostOf(e.Uri)} path={PopupTrace.PathOf(e.Uri)}");
         var norm = NormalizeNavUrl(e.Uri);
         if (norm is not null) _inflightNavs[e.NavigationId] = norm;
         if (ShouldCancelDocumentNav(e))
         {
             e.Cancel = true;
             _cancelledNavIds.Add(e.NavigationId);
-            PopupTrace.Write("nav-cancel", "host=" + PopupTrace.HostOf(e.Uri));
+            PopupTrace.Write("nav-cancel", "host=" + PopupTrace.HostOf(e.Uri) + " path=" + PopupTrace.PathOf(e.Uri));
             NavigationStateChanged?.Invoke(this, false);
             return;
+        }
+        // Symmetric duplicate: another in-flight NewDocument nav already targets
+        // the identical URL (same click firing default + popup, double-clicks).
+        // Cancel the newcomer — whoever started first landing is the same place.
+        if (e.NavigationKind == CoreWebView2NavigationKind.NewDocument && norm is not null)
+        {
+            foreach (var kv in _inflightNavs)
+            {
+                if (kv.Key != e.NavigationId && kv.Value == norm)
+                {
+                    e.Cancel = true;
+                    _dupCancelledNavIds.Add(e.NavigationId);
+                    PopupTrace.Write("dup-cancel", $"id={e.NavigationId} dup-of={kv.Key} host={PopupTrace.HostOf(e.Uri)} path={PopupTrace.PathOf(e.Uri)}");
+                    NavigationStateChanged?.Invoke(this, false);
+                    return;
+                }
+            }
         }
         NavigationStateChanged?.Invoke(this, true);
     }
@@ -391,6 +411,13 @@ public partial class YuzvidBrowserView : UserControl
     private void Browser_NavigationCompleted(object? sender, CoreWebView2NavigationCompletedEventArgs e)
     {
         _inflightNavs.Remove(e.NavigationId);
+        if (_dupCancelledNavIds.Remove(e.NavigationId))
+        {
+            // Symmetric duplicate we cancelled — stay silent.
+            PopupTrace.Write("nav-done", $"id={e.NavigationId} cancelled-dup");
+            NavigationStateChanged?.Invoke(this, false);
+            return;
+        }
         if (_cancelledNavIds.Remove(e.NavigationId))
         {
             // Our own cancel — stay silent, keep the tab untouched.
@@ -399,7 +426,7 @@ public partial class YuzvidBrowserView : UserControl
             return;
         }
         PopupTrace.Write("nav-done",
-            $"id={e.NavigationId} ok={e.IsSuccess} host={PopupTrace.HostOf(CurrentUrl)}"
+            $"id={e.NavigationId} ok={e.IsSuccess} host={PopupTrace.HostOf(CurrentUrl)} path={PopupTrace.PathOf(CurrentUrl)}"
             + (e.IsSuccess ? string.Empty : " err=" + e.WebErrorStatus));
         NavigationStateChanged?.Invoke(this, false);
         if (e.IsSuccess)

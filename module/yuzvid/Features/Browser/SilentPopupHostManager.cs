@@ -90,7 +90,7 @@ internal sealed class SilentPopupHostManager : IDisposable
         var requestId = Guid.NewGuid();
         var toMain = IsContentHost(e.Uri);
         PopupTrace.Write("popup-req",
-            $"req={requestId.ToString("N")[..8]} user={e.IsUserInitiated} host={PopupTrace.HostOf(e.Uri)} kind={(toMain ? "maintab" : "headless")}");
+            $"req={requestId.ToString("N")[..8]} user={e.IsUserInitiated} host={PopupTrace.HostOf(e.Uri)} path={PopupTrace.PathOf(e.Uri)} kind={(toMain ? "maintab" : "headless")}");
         if (toMain)
         {
             // No deferral dance: synchronous routing decision, main tab takes it.
