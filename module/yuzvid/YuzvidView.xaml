@@ -2,7 +2,7 @@
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:setting="clr-namespace:Citadel.Setting.Components;assembly=Citadel.Setting"
-             xmlns:queue="clr-namespace:Module.Yuzvid.Features.Queue"
+             xmlns:extraction="clr-namespace:Module.Yuzvid.Features.Extraction"
              Background="{DynamicResource Bg}"
              Foreground="{DynamicResource Fg}"
              UseLayoutRounding="True"
@@ -26,13 +26,25 @@
                     <setting:SettingActionCard.Content>
                         <Grid>
                             <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" />
                                 <ColumnDefinition Width="*" />
                                 <ColumnDefinition Width="Auto" />
                             </Grid.ColumnDefinitions>
 
+                            <!-- Bookmark star (kiri URL). -->
+                            <setting:SettingButton x:Name="BookmarkButton"
+                                                   Grid.Column="0"
+                                                   Width="36"
+                                                   Height="36"
+                                                   Margin="0,0,8,0"
+                                                   FontFamily="Segoe MDL2 Assets"
+                                                   Content="&#xE734;"
+                                                   ToolTip="Bookmark this page"
+                                                   Click="BookmarkButton_Click" />
+
                             <!-- Shared editable field plus URL-history dropdown. -->
                             <setting:SettingEditableCombo x:Name="UrlField"
-                                                           Grid.Column="0"
+                                                           Grid.Column="1"
                                                            Height="36"
                                                            Margin="0,0,8,0"
                                                            Placeholder="Enter URL"
@@ -86,33 +98,15 @@
                                                    ToolTip="Extract links from current page"
                                                    Click="ExtractButton_Click"
                                                    IsEnabled="False" />
-                            <setting:SettingButton x:Name="BookmarkButton"
+                            <setting:SettingButton x:Name="SettingsGearButton"
                                                    Width="36"
                                                    Height="36"
-                                                   Margin="4,0,0,0"
-                                                   FontFamily="Segoe MDL2 Assets"
-                                                   Content="&#xE734;"
-                                                   ToolTip="Bookmark this page"
-                                                   Click="BookmarkButton_Click" />
-                            <setting:SettingToggle x:Name="ProxyToggle"
-                                                   Height="36"
                                                    Margin="12,0,0,0"
-                                                   ToolTip="Toggle proxy on/off"
-                                                   Checked="ProxyToggle_Changed"
-                                                   Unchecked="ProxyToggle_Changed" />
-                            <ComboBox x:Name="DnsModePicker"
-                                      Width="145"
-                                      Height="36"
-                                      Margin="8,0,0,0"
-                                      Style="{DynamicResource SettingComboBoxStyle}"
-                                      setting:UiPreference.Key="yuzvid.browser.dns-mode"
-                                      ToolTip="DNS for direct browser connections"
-                                      AutomationProperties.Name="Browser DNS"
-                                      SelectionChanged="DnsModePicker_SelectionChanged">
-                                <ComboBoxItem Content="DNS: System" Tag="System" />
-                                <ComboBoxItem Content="DNS: Cloudflare" Tag="Cloudflare" />
-                                <ComboBoxItem Content="DNS: Google" Tag="Google" />
-                            </ComboBox>
+                                                   FontFamily="Segoe MDL2 Assets"
+                                                   Content="&#xE713;"
+                                                   ToolTip="Pengaturan browser"
+                                                   AutomationProperties.Name="Pengaturan browser"
+                                                   Click="SettingsGearButton_Click" />
                         </StackPanel>
                     </setting:SettingActionCard.ActionContent>
                 </setting:SettingActionCard>
@@ -166,18 +160,27 @@
                                                FontSize="13"
                                                FontWeight="SemiBold"
                                                VerticalAlignment="Center" />
-                                    <Button HorizontalAlignment="Right"
-                                            Content="&#xE710; Save current"
-                                            FontFamily="Segoe MDL2 Assets"
-                                            FontSize="11"
-                                            Height="28"
-                                            Padding="8,0"
-                                            Background="Transparent"
-                                            Foreground="{DynamicResource Accent}"
-                                            BorderThickness="1"
-                                            BorderBrush="{DynamicResource Accent}"
-                                            Cursor="Hand"
-                                            Click="BookmarkAddCurrent_Click" />
+                                            <Button HorizontalAlignment="Right"
+                                                    Height="28"
+                                                    Padding="8,0"
+                                                    Background="Transparent"
+                                                    Foreground="{DynamicResource Accent}"
+                                                    BorderThickness="1"
+                                                    BorderBrush="{DynamicResource Accent}"
+                                                    Cursor="Hand"
+                                                    Click="BookmarkAddCurrent_Click">
+                                                <Button.Content>
+                                                    <StackPanel Orientation="Horizontal">
+                                                        <TextBlock Text="&#xE710;"
+                                                                   FontFamily="Segoe MDL2 Assets"
+                                                                   FontSize="11"
+                                                                   VerticalAlignment="Center" />
+                                                        <TextBlock Text=" Save current"
+                                                                   FontSize="11"
+                                                                   VerticalAlignment="Center" />
+                                                    </StackPanel>
+                                                </Button.Content>
+                                            </Button>
                                 </Grid>
                             </Border>
 
@@ -268,12 +271,145 @@
                         </Grid>
                     </Border>
                 </Popup>
+
+                <!-- Link drawer popup (Extraction feature) -->
+                <Popup x:Name="LinkDrawerPopup"
+                       IsOpen="False"
+                       PlacementTarget="{Binding ElementName=ExtractButton}"
+                       Placement="Bottom"
+                       StaysOpen="False"
+                       AllowsTransparency="True"
+                       PopupAnimation="Slide">
+                    <Border Background="{DynamicResource Bg}"
+                            BorderBrush="{DynamicResource Dim}"
+                            BorderThickness="1"
+                            CornerRadius="6"
+                            MinWidth="420"
+                            MaxWidth="560"
+                            MaxHeight="420"
+                            Margin="0,4,0,0">
+                        <extraction:LinkDrawerView x:Name="LinkDrawer" />
+                    </Border>
+                </Popup>
+
+                <!-- Browser settings popup (gear): StaysOpen=True karena berisi
+                     ComboBox — dropdown-nya mati bila parent auto-close. -->
+                <Popup x:Name="BrowserSettingsPopup"
+                       IsOpen="False"
+                       PlacementTarget="{Binding ElementName=SettingsGearButton}"
+                       Placement="Bottom"
+                       StaysOpen="True"
+                       AllowsTransparency="True"
+                       PopupAnimation="Slide">
+                    <Border Background="{DynamicResource Bg}"
+                            BorderBrush="{DynamicResource Dim}"
+                            BorderThickness="1"
+                            CornerRadius="6"
+                            MinWidth="380"
+                            MaxWidth="440"
+                            Margin="0,4,0,0">
+                        <Grid>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                            </Grid.RowDefinitions>
+
+                            <!-- Header -->
+                            <Border Grid.Row="0"
+                                    BorderBrush="{DynamicResource Dim}"
+                                    BorderThickness="0,0,0,1"
+                                    Padding="12,8">
+                                <Grid>
+                                    <TextBlock Text="Pengaturan browser"
+                                               Foreground="{DynamicResource Fg}"
+                                               FontSize="13"
+                                               FontWeight="SemiBold"
+                                               VerticalAlignment="Center" />
+                                    <Button HorizontalAlignment="Right"
+                                            Content="&#xE711;"
+                                            FontFamily="Segoe MDL2 Assets"
+                                            FontSize="11"
+                                            Width="28"
+                                            Height="28"
+                                            Background="Transparent"
+                                            Foreground="{DynamicResource Dim}"
+                                            BorderThickness="0"
+                                            Cursor="Hand"
+                                            ToolTip="Tutup"
+                                            Click="BrowserSettingsClose_Click" />
+                                </Grid>
+                            </Border>
+
+                            <!-- Proxy row -->
+                            <Grid Grid.Row="1" Margin="12,8">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <StackPanel Grid.Column="0"
+                                            VerticalAlignment="Center"
+                                            Margin="0,0,12,0">
+                                    <TextBlock Text="Proxy"
+                                               Foreground="{DynamicResource Fg}"
+                                               FontSize="12"
+                                               FontWeight="SemiBold" />
+                                    <TextBlock Text="ON: lewat proxy pool · OFF: koneksi langsung"
+                                               Foreground="{DynamicResource Dim}"
+                                               FontSize="11"
+                                               TextWrapping="Wrap" />
+                                </StackPanel>
+                                <setting:SettingToggle x:Name="ProxyToggle"
+                                                       Grid.Column="1"
+                                                       Height="36"
+                                                       VerticalAlignment="Center"
+                                                       ToolTip="Toggle proxy on/off"
+                                                       Checked="ProxyToggle_Changed"
+                                                       Unchecked="ProxyToggle_Changed" />
+                            </Grid>
+
+                            <!-- DNS row -->
+                            <Grid Grid.Row="2" Margin="12,8">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <StackPanel Grid.Column="0"
+                                            VerticalAlignment="Center"
+                                            Margin="0,0,12,0">
+                                    <TextBlock Text="DNS"
+                                               Foreground="{DynamicResource Fg}"
+                                               FontSize="12"
+                                               FontWeight="SemiBold" />
+                                    <TextBlock Text="Resolver koneksi langsung · tidak dipakai saat proxy ON"
+                                               Foreground="{DynamicResource Dim}"
+                                               FontSize="11"
+                                               TextWrapping="Wrap" />
+                                </StackPanel>
+                                <ComboBox x:Name="DnsModePicker"
+                                          Grid.Column="1"
+                                          Width="145"
+                                          Height="36"
+                                          VerticalAlignment="Center"
+                                          Style="{DynamicResource SettingComboBoxStyle}"
+                                          setting:UiPreference.Key="yuzvid.browser.dns-mode"
+                                          ToolTip="DNS for direct browser connections"
+                                          AutomationProperties.Name="Browser DNS"
+                                          SelectionChanged="DnsModePicker_SelectionChanged">
+                                    <ComboBoxItem Content="DNS: System" Tag="System" />
+                                    <ComboBoxItem Content="DNS: Cloudflare" Tag="Cloudflare" />
+                                    <ComboBoxItem Content="DNS: Google" Tag="Google" />
+                                </ComboBox>
+                            </Grid>
+                        </Grid>
+                    </Border>
+                </Popup>
             </Grid>
         </TabItem>
 
         <!-- ═══ QUEUE TAB ════════════════════════════════════════════ -->
         <TabItem Header="Queue" Padding="12,9">
-            <queue:QueuePlaceholderView />
+            <ContentPresenter x:Name="QueueHost" />
         </TabItem>
 
         <!-- ═══ SETTINGS TAB ═════════════════════════════════════════ -->

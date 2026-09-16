@@ -2,6 +2,8 @@ using System.Windows;
 using Citadel.Core.Modules;
 using Citadel.Core.Rpl;
 using Module.Yuzvid.Features.Browser;
+using Module.Yuzvid.Features.Extraction;
+using Module.Yuzvid.Features.Queue;
 using Module.Yuzvid.Features.Runtime;
 
 namespace Module.Yuzvid;
@@ -25,6 +27,10 @@ public sealed class YuzvidModule : IModule
         lifetime.Add(browser.Dispose);
         var settings = new YuzvidRuntimeView();
         settings.Wire(browser);
-        return new YuzvidView(browser, settings);
+        var extraction = new ExtractionFeature(browser);
+        var queue = new QueueEngine(() => browser.DownloadProxy);
+        lifetime.Add(queue.Dispose);
+        var queueView = new QueueView(queue);
+        return new YuzvidView(browser, settings, extraction, queue, queueView);
     }
 }

@@ -1,0 +1,140 @@
+<UserControl x:Class="Module.Yuzvid.Features.Extraction.LinkDrawerView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             Background="{DynamicResource Bg}"
+             Foreground="{DynamicResource Fg}">
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <!-- Header -->
+        <Border Grid.Row="0"
+                BorderBrush="{DynamicResource Dim}"
+                BorderThickness="0,0,0,1"
+                Padding="12,8">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <TextBlock x:Name="HeaderText"
+                           Text="Extracted links"
+                           Foreground="{DynamicResource Fg}"
+                           FontSize="13"
+                           FontWeight="SemiBold"
+                           VerticalAlignment="Center" />
+                <TextBlock x:Name="StatusText"
+                           Grid.Column="1"
+                           Foreground="{DynamicResource Dim}"
+                           FontSize="11"
+                           VerticalAlignment="Center"
+                           Margin="8,0,0,0" />
+            </Grid>
+        </Border>
+
+        <!-- Link list -->
+        <ScrollViewer Grid.Row="1"
+                      VerticalScrollBarVisibility="Auto"
+                      Padding="4,4">
+            <ItemsControl x:Name="LinkList">
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate>
+                        <Border Background="Transparent"
+                                Padding="8,6"
+                                Margin="4,2"
+                                CornerRadius="4">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <Border Grid.Column="0"
+                                        Background="{DynamicResource Dim}"
+                                        CornerRadius="3"
+                                        Padding="6,2"
+                                        Margin="0,0,8,0"
+                                        VerticalAlignment="Center">
+                                    <TextBlock Text="{Binding ServerGroup}"
+                                               FontSize="11"
+                                               Foreground="{DynamicResource Bg}" />
+                                </Border>
+                                <StackPanel Grid.Column="1"
+                                            VerticalAlignment="Center">
+                                    <TextBlock FontSize="12"
+                                               Foreground="{DynamicResource Fg}"
+                                               TextTrimming="CharacterEllipsis"
+                                               TextWrapping="NoWrap">
+                                        <Run Text="{Binding Slug}" /><Run Text=" " /><Run Text="{Binding DirectBadge}" Foreground="{DynamicResource Accent}" />
+                                    </TextBlock>
+                                    <TextBlock Text="{Binding Full}"
+                                               Foreground="{DynamicResource Dim}"
+                                               FontSize="11"
+                                               TextTrimming="CharacterEllipsis"
+                                               TextWrapping="NoWrap"
+                                               Margin="0,2,0,0" />
+                                </StackPanel>
+                                <Button Grid.Column="2"
+                                        Content="Copy"
+                                        FontSize="11"
+                                        Padding="8,2"
+                                        Margin="4,0"
+                                        Background="Transparent"
+                                        Foreground="{DynamicResource Accent}"
+                                        BorderThickness="1"
+                                        BorderBrush="{DynamicResource Accent}"
+                                        Cursor="Hand"
+                                        Click="CopyButton_Click"
+                                        Tag="{Binding}" />
+                                <Button Grid.Column="3"
+                                        Content="Queue"
+                                        FontSize="11"
+                                        Padding="8,2"
+                                        Background="Transparent"
+                                        Foreground="{DynamicResource Accent}"
+                                        BorderThickness="1"
+                                        BorderBrush="{DynamicResource Accent}"
+                                        Cursor="Hand"
+                                        Click="QueueButton_Click"
+                                        Tag="{Binding}" />
+                            </Grid>
+                        </Border>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+        </ScrollViewer>
+
+        <!-- Empty state -->
+        <TextBlock Grid.Row="1"
+                   x:Name="EmptyText"
+                   Text="no links"
+                   Foreground="{DynamicResource Dim}"
+                   FontSize="12"
+                   HorizontalAlignment="Center"
+                   VerticalAlignment="Center"
+                   Visibility="Visible" />
+
+        <!-- Footer -->
+        <Border Grid.Row="2"
+                BorderBrush="{DynamicResource Dim}"
+                BorderThickness="0,1,0,0"
+                Padding="12,6">
+            <Button Content="&#xE72C; Re-scan"
+                    FontFamily="Segoe MDL2 Assets"
+                    FontSize="11"
+                    Height="28"
+                    Padding="8,0"
+                    HorizontalAlignment="Right"
+                    Background="Transparent"
+                    Foreground="{DynamicResource Accent}"
+                    BorderThickness="1"
+                    BorderBrush="{DynamicResource Accent}"
+                    Cursor="Hand"
+                    Click="RescanButton_Click" />
+        </Border>
+    </Grid>
+</UserControl>

@@ -173,10 +173,11 @@ Dua sumber link, dipakai **dua-duanya** (saling menutupi), karena `url_extractor
 baris duplikat menyatu tanpa membuang URL yang masih bisa diunduh.
 
 ```text
-klik Extract → ExtractionFeature.ExtractAsync(currentUrl, core)
-   ├─ A: dump DOM → decode → (cek batas) → regex hosts
-   ├─ B: baca buffer tap WebResourceRequested
-   └─ List<VideoLink> → parent buka LinkDrawerView → centang → copy (F3) / Queue (F4)
+klik Extract → Browser membentuk `BrowserExtractionSnapshot` publik
+   ├─ A: Browser dump DOM → decode → (cek batas)
+   ├─ B: Browser ambil snapshot buffer tap WebResourceRequested
+   └─ ExtractionFeature.ExtractAsync(snapshot) → regex hosts + gabung A∪B
+       → List<VideoLink> → parent buka LinkDrawerView → centang → copy (F3) / Queue (F4)
 ```
 
 Kenapa bersih: tanpa subprocess Python, tanpa Playwright (WebView2 udah renderer), regex port sekali.
@@ -212,10 +213,10 @@ lain (reuse quarantine). [ ] Cancel jalan.
 
 | # | Task | Owner | Risk | Cek | Gate? |
 |---|---|---|---|---|---|
-| 0 | Putuskan kontrak (**A/B**) + gigi guard (**gigi-1/2**) — **keputusan kamu** | — | — | keputusan tercatat | **BLOCKER** |
-| 0b | Guard `test_yuzvid_architecture.py` sesuai cakupan §1a | tests | Low | sengaja langgar→merah | pre-req |
+| 0 | Kontrak guard **B** + **gigi-1** | selesai | — | tercatat di §1 | selesai |
+| 0b | Guard `test_yuzvid_architecture.py` sesuai cakupan §1a | selesai | Low | hijau 3/3 | selesai |
 | 1 | Wire `WebMessageReceived`→event + payload `post/onCommand` | Browser | Med (fail-fast) | CS0067 hilang + smoke 2 arah | — |
-| 2 | Freeze daftar host + `VideoLinkExtractor` (regex+dedup, **decode JSON+bate size**) | Extraction | Med | cek terarah fixture | — |
+| 2 | Freeze daftar host + `VideoLinkExtractor` (regex+dedup, **decode JSON+batas ukuran**) | Extraction | Med | cek terarah fixture | — |
 | 3 | Tap dinamis (Source B) di `OnAdBlockResourceRequested` | Browser↔Extraction | **High** | cdn .mp4 kebaca, ad tetap block | — |
 | 4 | `LinkDrawerView` + `ExtractionFeature.ExtractAsync` + slot parent | Extraction+parent | Low | drawer keisi, halaman kosong aman | — |
 | 5 | Pindah logika Extract keluar parent (raise event) — **PERLU IZIN** | parent | Med | parent tipis, guard lolos | — |

@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Threading.Tasks;
 using System.Windows;
 
@@ -63,6 +64,12 @@ public interface IYuzvidBrowserController
 
     event EventHandler<BrowserState>? StateChanged;
 
+    /// <summary>
+    /// JS→C# half of the bridge. JSON string posted by page scripts.
+    /// Added T2.1 (was the CS0067 dead event on the view).
+    /// </summary>
+    event EventHandler<string>? ScriptMessageReceived;
+
     void Navigate(string input);
     void GoBack();
     void GoForward();
@@ -70,4 +77,37 @@ public interface IYuzvidBrowserController
     void SetProxyEnabled(bool enabled);
     void SetDnsMode(YuzvidDnsMode mode);
     Task RetryInitAsync();
+
+    /// <summary>
+    /// C#→JS half of the bridge. Returns the JSON-encoded result.
+    /// Added T2.2 — the Extraction feature uses this for DOM dumps (T3.2).
+    /// </summary>
+    Task<string> ExecuteScriptAsync(string script);
+
+    /// <summary>
+    /// Immutable snapshot of recently seen direct-media URIs (Source B tap).
+    /// Added T3.3 — the ONLY tap data crossing the feature boundary.
+    /// </summary>
+    IReadOnlyList<string> GetVideoRequestSnapshot();
+
+    void ClearVideoRequests();
+
+    /// <summary>
+    /// Proxy for out-of-browser downloads (Queue engine). Framework-typed so
+    /// consumers never learn Browser internals. Null = direct connection.
+    /// Added T4.1 — routes downloads through the same local proxy as browsing.
+    /// </summary>
+    System.Net.IWebProxy? DownloadProxy { get; }
+
+    /// <summary>
+    /// Detach path: close every hidden popup session; new popup requests are
+    /// rejected until <see cref="ResumeTransientHosts"/>. Sync + idempotent.
+    /// </summary>
+    void CloseTransientHosts();
+
+    /// <summary>
+    /// Attach path: accept new popup requests again. Old sessions stay closed.
+    /// Sync + idempotent.
+    /// </summary>
+    void ResumeTransientHosts();
 }

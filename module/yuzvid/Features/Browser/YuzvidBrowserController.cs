@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Threading.Tasks;
 using System.Windows;
 using CitadelBridge;
@@ -30,6 +31,7 @@ public sealed class YuzvidBrowserController : IYuzvidBrowserController, IDisposa
         _view.NavigationFailed += (s, message) => NavigationFailed?.Invoke(this, message);
         _view.NavigationQueued += (s, message) => NavigationQueued?.Invoke(this, message);
         _view.StateChanged += (s, state) => StateChanged?.Invoke(this, state);
+        _view.ScriptMessageReceived += (s, json) => ScriptMessageReceived?.Invoke(this, json);
     }
 
     /// <summary>
@@ -75,12 +77,27 @@ public sealed class YuzvidBrowserController : IYuzvidBrowserController, IDisposa
     public event EventHandler<string>? NavigationFailed;
     public event EventHandler<string>? NavigationQueued;
     public event EventHandler<BrowserState>? StateChanged;
+    public event EventHandler<string>? ScriptMessageReceived;
 
     public void Navigate(string input) => _view.Navigate(input);
     public void GoBack() => _view.GoBack();
     public void GoForward() => _view.GoForward();
     public void Refresh() => _view.Refresh();
     public Task RetryInitAsync() => _view.RetryInitAsync();
+    public Task<string> ExecuteScriptAsync(string script) => _view.ExecuteScriptAsync(script);
+    public IReadOnlyList<string> GetVideoRequestSnapshot() => _view.GetVideoRequestSnapshot();
+    public void ClearVideoRequests() => _view.ClearVideoRequests();
+
+    public System.Net.IWebProxy? DownloadProxy
+    {
+        get
+        {
+            var port = _view.LocalProxyPort;
+            return port > 0
+                ? new System.Net.WebProxy($"http://127.0.0.1:{port}")
+                : null;
+        }
+    }
 
     /// <summary>
     /// Mirrors the baseline toolbar toggle semantics: adapter flag first,
@@ -134,7 +151,18 @@ public sealed class YuzvidBrowserController : IYuzvidBrowserController, IDisposa
     {
         if (_disposed) return;
         _disposed = true;
+        // Ordered teardown: popup sessions first (blocking), proxy last.
+        // Dispose must never throw — Lifetime callbacks run at shutdown.
+        try { _view.Shutdown(); }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"[Yuzvid] popup shutdown: {ex.Message}");
+        }
         _localProxy?.Dispose();
         _localProxy = null;
     }
+
+    public void CloseTransientHosts() => _view.CloseSilentPopups("detach");
+
+    public void ResumeTransientHosts() => _view.ResumeSilentPopups();
 }

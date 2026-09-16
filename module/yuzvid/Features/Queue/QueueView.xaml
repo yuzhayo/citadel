@@ -1,0 +1,111 @@
+<UserControl x:Class="Module.Yuzvid.Features.Queue.QueueView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:setting="clr-namespace:Citadel.Setting.Components;assembly=Citadel.Setting"
+             Background="{DynamicResource Bg}"
+             Foreground="{DynamicResource Fg}"
+             UseLayoutRounding="True"
+             SnapsToDevicePixels="True">
+    <setting:SettingViewport Mode="Contained">
+        <Grid>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="*" />
+            </Grid.RowDefinitions>
+
+            <setting:SettingActionCard Grid.Row="0">
+                <setting:SettingActionCard.Content>
+                    <WrapPanel>
+                        <setting:SettingButton MinWidth="140"
+                                               Content="Clear completed"
+                                               Click="ClearCompleted_Click" />
+                        <setting:SettingButton MinWidth="120"
+                                               Margin="10,0,0,0"
+                                               Content="Start all"
+                                               Click="StartAll_Click" />
+                        <setting:SettingButton Margin="10,0,0,0"
+                                               Content="Stop All"
+                                               Click="StopAll_Click" />
+                        <setting:SettingButton Margin="10,0,0,0"
+                                               Content="Remove failed"
+                                               Click="RemoveFailed_Click" />
+                    </WrapPanel>
+                </setting:SettingActionCard.Content>
+                <setting:SettingActionCard.ActionContent>
+                    <TextBlock x:Name="SummaryText"
+                               VerticalAlignment="Center"
+                               Foreground="{DynamicResource Body}"
+                               Text="0 active · 0 failed · 0 total" />
+                </setting:SettingActionCard.ActionContent>
+            </setting:SettingActionCard>
+
+            <Border Grid.Row="1"
+                    Margin="0,10,0,0"
+                    Style="{DynamicResource SettingCardStyle}">
+                <setting:SettingTable x:Name="QueueTable"
+                                      setting:UiPreference.Key="yuzvid.queue.table"
+                                      AutomationProperties.Name="Yuzvid download queue"
+                                      CanUserSortColumns="True">
+                    <setting:SettingTable.InteractiveColumns>
+                        <DataGridTextColumn Header="Title"
+                                            Width="*"
+                                            Binding="{Binding Title}" />
+                        <DataGridTextColumn Header="Item"
+                                            Width="180"
+                                            Binding="{Binding Item}" />
+                        <DataGridTextColumn Header="Status"
+                                            Width="140"
+                                            Binding="{Binding Status}" />
+                        <DataGridTextColumn Header="Progress"
+                                            Width="120"
+                                            Binding="{Binding Progress}" />
+                        <DataGridTextColumn Header="Detail"
+                                            Width="260"
+                                            Binding="{Binding Detail}" />
+                        <DataGridTemplateColumn Header="Action" Width="150">
+                            <DataGridTemplateColumn.CellTemplate>
+                                <DataTemplate>
+                                    <StackPanel Orientation="Horizontal">
+                                        <Button Content="Start"
+                                                FontSize="11"
+                                                Padding="6,1"
+                                                Margin="0,0,4,0"
+                                                Background="Transparent"
+                                                Foreground="{DynamicResource Accent}"
+                                                BorderThickness="1"
+                                                BorderBrush="{DynamicResource Accent}"
+                                                Cursor="Hand"
+                                                Click="RowStart_Click"
+                                                Tag="{Binding}" />
+                                        <Button Content="Stop"
+                                                FontSize="11"
+                                                Padding="6,1"
+                                                Margin="0,0,4,0"
+                                                Background="Transparent"
+                                                Foreground="{DynamicResource Dim}"
+                                                BorderThickness="1"
+                                                BorderBrush="{DynamicResource Dim}"
+                                                Cursor="Hand"
+                                                Click="RowStop_Click"
+                                                Tag="{Binding}" />
+                                        <Button Content="&#xE74D;"
+                                                FontFamily="Segoe MDL2 Assets"
+                                                FontSize="11"
+                                                Padding="6,1"
+                                                Background="Transparent"
+                                                Foreground="{DynamicResource Dim}"
+                                                BorderThickness="0"
+                                                Cursor="Hand"
+                                                Click="RowRemove_Click"
+                                                Tag="{Binding}"
+                                                ToolTip="Remove" />
+                                    </StackPanel>
+                                </DataTemplate>
+                            </DataGridTemplateColumn.CellTemplate>
+                        </DataGridTemplateColumn>
+                    </setting:SettingTable.InteractiveColumns>
+                </setting:SettingTable>
+            </Border>
+        </Grid>
+    </setting:SettingViewport>
+</UserControl>

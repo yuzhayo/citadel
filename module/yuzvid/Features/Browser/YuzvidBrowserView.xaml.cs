@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Concurrent;
 using System.IO;
 using System.Threading.Tasks;
 using System.Windows;
@@ -27,6 +28,44 @@ public partial class YuzvidBrowserView : UserControl
     private Task? _initializationTask;
     private BrowserState _state = BrowserState.Initializing;
     private int _proxyPort;
+    private CoreWebView2Environment? _environment;
+    private SilentPopupHostManager? _popupManager;
+
+    // True while the next NewDocument navigation is ours (address bar, bookmark,
+    // pending URL). Consumed by the first NewDocument start; a page racing us
+    // in that micro-window is misattributed as ours (accepted risk, documented).
+    private bool _expectSelfNav;
+
+    // NavigationIds we cancelled in NavigationStarting: their Completed event
+    // must stay silent instead of showing "Navigasi gagal".
+    private readonly HashSet<ulong> _cancelledNavIds = new();
+
+    // In-flight main-tab navigations (id → normalized URL). Lets the popup
+    // gateway skip duplicate main-tab routes for the same click (Fase 1 dedup):
+    // without this, one click produced TWO tab navigations racing each other
+    // (observed: ConnectionAborted + blink-back). UI thread only.
+
+    // T3.3 Source B tap: recent directly-downloadable media URIs seen by the
+    // engine. ConcurrentQueue because WebResourceRequested may fire off-UI.
+    private readonly ConcurrentQueue<string> _videoTap = new();
+    private const int MaxTapEntries = 200;
+
+    /// <summary>
+    /// Immutable snapshot of recently seen direct-media URIs (newest last).
+    /// The ONLY tap data that leaves the Browser feature.
+    /// </summary>
+    public IReadOnlyList<string> GetVideoRequestSnapshot() => _videoTap.ToArray();
+
+    public void ClearVideoRequests()
+    {
+        while (_videoTap.TryDequeue(out _)) { }
+    }
+
+    private void RecordVideoTap(string uri)
+    {
+        _videoTap.Enqueue(uri);
+        while (_videoTap.Count > MaxTapEntries && _videoTap.TryDequeue(out _)) { }
+    }
 
     /// <summary>Raised when the page URL changes (for toolbar URL field sync).</summary>
     public event EventHandler<string>? Navigated;
@@ -45,6 +84,18 @@ public partial class YuzvidBrowserView : UserControl
 
     /// <summary>Raised when a message is received from injected scripts (Phase 2).</summary>
     public event EventHandler<string>? ScriptMessageReceived;
+
+    /// <summary>
+    /// C#→JS half of the bridge. Returns the JSON-encoded result.
+    /// Throws InvalidOperationException when the engine is not ready.
+    /// </summary>
+    public Task<string> ExecuteScriptAsync(string script)
+    {
+        var core = Browser.CoreWebView2;
+        if (State != BrowserState.Ready || core is null)
+            throw new InvalidOperationException("Browser CoreWebView2 not ready.");
+        return core.ExecuteScriptAsync(script);
+    }
 
     public YuzvidBrowserView()
     {
@@ -74,6 +125,9 @@ public partial class YuzvidBrowserView : UserControl
         _proxyPort = port;
     }
 
+    /// <summary>Active local-proxy port (0 = direct). For controller routing only.</summary>
+    internal int LocalProxyPort => _proxyPort;
+
     public void Navigate(string url)
     {
         if (!TryNormalizeUrl(url, out var target, out var error))
@@ -86,6 +140,7 @@ public partial class YuzvidBrowserView : UserControl
         {
             if (State == BrowserState.Ready && Browser.CoreWebView2 is not null)
             {
+                _expectSelfNav = true;
                 Browser.CoreWebView2.Navigate(target);
             }
             else if (State == BrowserState.Initializing)
@@ -164,6 +219,7 @@ public partial class YuzvidBrowserView : UserControl
     private async Task InitWebView2Async()
     {
         State = BrowserState.Initializing;
+        PopupTrace.Write("init", "start");
 
         try
         {
@@ -179,21 +235,40 @@ public partial class YuzvidBrowserView : UserControl
                 browserExecutableFolder: null,
                 userDataFolder: UserDataFolder,
                 options: envOptions);
+            PopupTrace.Write("init", "env-ok");
 
             await Browser.EnsureCoreWebView2Async(env);
+            PopupTrace.Write("init", "core-ok");
         }
         catch (Exception ex)
         {
             State = BrowserState.Failed;
+            PopupTrace.Write("init", "failed: " + ex.Message);
             ErrorTitle.Text = "Browser engine failed to initialize";
             ErrorDetail.Text = ex.Message;
             return;
         }
 
+        _environment = Browser.CoreWebView2?.Environment;
         var cv2 = Browser.CoreWebView2;
+        if (cv2 is null || _environment is null)
+        {
+            State = BrowserState.Failed;
+            PopupTrace.Write("init", "failed: no-core");
+            ErrorTitle.Text = "Browser engine failed to initialize";
+            ErrorDetail.Text = "CoreWebView2 unavailable after EnsureCoreWebView2Async.";
+            return;
+        }
+
+        // Silent popup sessions share this environment (R1: manager created now,
+        // before any navigation can raise NewWindowRequested).
+        _popupManager = new SilentPopupHostManager(
+            _environment, Dispatcher, RecordVideoTap, ForwardPopupScriptMessage,
+            () => PopupTrace.HostOf(Browser.CoreWebView2?.Source),
+            NavigatePopupTarget);
 
         // Set realistic user-agent — default WebView2 UA looks like a bot
-        cv2.Settings.UserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36 Edg/131.0.0.0";
+        cv2.Settings.UserAgent = SharedUserAgent;
 
         // Register ad-block filter (must be added before event fires)
         cv2.AddWebResourceRequestedFilter("*", CoreWebView2WebResourceContext.All);
@@ -201,35 +276,131 @@ public partial class YuzvidBrowserView : UserControl
         // Block ad domains at network level
         cv2.WebResourceRequested += OnAdBlockResourceRequested;
 
-        // Block popups — redirect to same tab
+        // Block new windows/popups; normal same-tab navigation is unaffected.
         cv2.NewWindowRequested += OnNewWindowRequested;
 
-        // Phase 2 placeholder — floating controls will be injected here
-        await cv2.AddScriptToExecuteOnDocumentCreatedAsync(@"
-            window.__yuzvid = { version: '1.0.0', phase: 1 };
-        ");
+        // T2.1 JS→C# bridge: page calls chrome.webview.postMessage(json)
+        // → re-raised as ScriptMessageReceived (kills CS0067).
+        cv2.WebMessageReceived += (s, e) =>
+            ScriptMessageReceived?.Invoke(this, e.WebMessageAsJson);
+
+        // T2.2 JS bridge payload. post() = JS→C# (lands in WebMessageReceived).
+        // onCommand = C#→JS entry (called via ExecuteScriptAsync); pages may
+        // override it — default echoes back so the ping smoke works unmodified.
+        await cv2.AddScriptToExecuteOnDocumentCreatedAsync(BridgeScript);
 
         // Wire navigation events
         Browser.NavigationStarting += Browser_NavigationStarting;
         Browser.NavigationCompleted += Browser_NavigationCompleted;
 
         State = BrowserState.Ready;
+        PopupTrace.Write("init", "ready");
 
         // Navigate to pending URL if user typed one before init completed
         if (!string.IsNullOrEmpty(_pendingUrl))
         {
+            _expectSelfNav = true;
             cv2.Navigate(_pendingUrl);
             _pendingUrl = null;
         }
     }
 
+    /// <summary>
+    /// Gateway entry for content popups: navigate the main tab unless it is
+    /// already there or already heading there (same click firing both the
+    /// default same-tab navigation and window.open). Skips are traced.
+    /// </summary>
+    internal void NavigatePopupTarget(string url)
+    {
+        var norm = NormalizeNavUrl(url);
+        var current = Browser.CoreWebView2?.Source;
+        if (norm is not null && norm == NormalizeNavUrl(current))
+        {
+            PopupTrace.Write("maintab-dedup-skip", "already-here host=" + PopupTrace.HostOf(url));
+            return;
+        }
+        foreach (var pending in _inflightNavs.Values)
+        {
+            if (norm is not null && norm == pending)
+            {
+                PopupTrace.Write("maintab-dedup-skip", "in-flight host=" + PopupTrace.HostOf(url));
+                return;
+            }
+        }
+        PopupTrace.Write("maintab-nav", "host=" + PopupTrace.HostOf(url));
+        Navigate(url);
+    }
+
+    private static string? NormalizeNavUrl(string? url)
+    {
+        if (string.IsNullOrEmpty(url)) return null;
+        if (!Uri.TryCreate(url, UriKind.Absolute, out var uri)) return null;
+        return uri.AbsoluteUri.TrimEnd('/').ToLowerInvariant();
+    }
+
+    private readonly Dictionary<ulong, string> _inflightNavs = new();
+
     private void Browser_NavigationStarting(object? sender, CoreWebView2NavigationStartingEventArgs e)
     {
+        PopupTrace.Write("nav-start", $"id={e.NavigationId} user={e.IsUserInitiated} host={PopupTrace.HostOf(e.Uri)}");
+        var norm = NormalizeNavUrl(e.Uri);
+        if (norm is not null) _inflightNavs[e.NavigationId] = norm;
+        if (ShouldCancelDocumentNav(e))
+        {
+            e.Cancel = true;
+            _cancelledNavIds.Add(e.NavigationId);
+            PopupTrace.Write("nav-cancel", "host=" + PopupTrace.HostOf(e.Uri));
+            NavigationStateChanged?.Invoke(this, false);
+            return;
+        }
         NavigationStateChanged?.Invoke(this, true);
+    }
+
+    /// <summary>
+    /// Decides whether a starting top-level document navigation must die.
+    /// Allowed, in order: non-documents (Reload/BackOrForward), our own
+    /// programmatic navigations, explicit user gestures (click/keypress —
+    /// a human asked for this, list or not), same-host moves. Only
+    /// non-gesture hops to a listed redirector host are cancelled — the tab
+    /// stays exactly where it was (no URL change, no blank page).
+    /// Trade-off, stated plainly: a click handler that JS-redirects to an ad
+    /// host passes (it carries the click's gesture). Timer/onload hijacks,
+    /// which carry no gesture, still die.
+    /// </summary>
+    private bool ShouldCancelDocumentNav(CoreWebView2NavigationStartingEventArgs e)
+    {
+        if (e.NavigationKind != CoreWebView2NavigationKind.NewDocument)
+            return false;
+        if (_expectSelfNav)
+        {
+            _expectSelfNav = false;
+            return false;
+        }
+        if (e.IsUserInitiated)
+            return false;
+        var current = Browser.CoreWebView2?.Source;
+        if (string.IsNullOrEmpty(current))
+            return false;
+        if (Uri.TryCreate(current, UriKind.Absolute, out var curi)
+            && Uri.TryCreate(e.Uri, UriKind.Absolute, out var dest)
+            && curi.Host.Equals(dest.Host, StringComparison.OrdinalIgnoreCase))
+            return false;
+        return RedirectBlockList.IsBlockedUri(e.Uri);
     }
 
     private void Browser_NavigationCompleted(object? sender, CoreWebView2NavigationCompletedEventArgs e)
     {
+        _inflightNavs.Remove(e.NavigationId);
+        if (_cancelledNavIds.Remove(e.NavigationId))
+        {
+            // Our own cancel — stay silent, keep the tab untouched.
+            PopupTrace.Write("nav-done", $"id={e.NavigationId} cancelled-by-guard");
+            NavigationStateChanged?.Invoke(this, false);
+            return;
+        }
+        PopupTrace.Write("nav-done",
+            $"id={e.NavigationId} ok={e.IsSuccess} host={PopupTrace.HostOf(CurrentUrl)}"
+            + (e.IsSuccess ? string.Empty : " err=" + e.WebErrorStatus));
         NavigationStateChanged?.Invoke(this, false);
         if (e.IsSuccess)
         {
@@ -308,6 +479,29 @@ public partial class YuzvidBrowserView : UserControl
         await EnsureInitializedAsync();
     }
 
+    // ─── Shared popup-session surface (one source of truth) ──────────────
+
+    /// <summary>Realistic UA — default WebView2 UA looks like a bot.</summary>
+    internal const string SharedUserAgent =
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36 Edg/131.0.0.0";
+
+    /// <summary>T2.2 bridge payload, injected into the main page and every popup.</summary>
+    internal const string BridgeScript = @"
+        window.__yuzvid = { version: '1.0.0', phase: 2 };
+        window.__yuzvid.post = function (obj) { chrome.webview.postMessage(JSON.stringify(obj)); };
+        window.__yuzvid.onCommand = function (cmd) { window.__yuzvid.post({ echo: cmd }); };
+    ";
+
+    internal static bool IsBlockedDomain(string uri)
+    {
+        foreach (var domain in BlockedDomains)
+        {
+            if (uri.Contains(domain, StringComparison.OrdinalIgnoreCase))
+                return true;
+        }
+        return false;
+    }
+
     // ─── Ad Blocking ──────────────────────────────────────────────────────
 
     private static readonly string[] BlockedDomains =
@@ -325,36 +519,79 @@ public partial class YuzvidBrowserView : UserControl
     {
         if (sender is not CoreWebView2 cv2) return;
         var uri = e.Request.Uri;
-        foreach (var domain in BlockedDomains)
+        if (IsBlockedDomain(uri))
         {
-            if (uri.Contains(domain, StringComparison.OrdinalIgnoreCase))
-            {
-                e.Response = cv2.Environment.CreateWebResourceResponse(
-                    null, 200, "Blocked", "Content-Type: text/plain");
-                return;
-            }
+            e.Response = cv2.Environment.CreateWebResourceResponse(
+                null, 200, "Blocked", "Content-Type: text/plain");
+            return;
         }
+
+        // T3.3: non-blocked direct media → record for Extraction (Source B).
+        if (IsLikelyMediaUri(uri))
+            RecordVideoTap(uri);
     }
 
-    private int _popupNavCount;
-    private DateTime _popupNavReset = DateTime.UtcNow;
+    /// <summary>
+    /// Minimal extension check. The canonical media rule + host list live in
+    /// Extraction.VideoLinkExtractor; this stays a local predicate on purpose —
+    /// the hot request path must not call feature-to-feature, and hoisting 3
+    /// lines into shared infra would be a tower for a predicate.
+    /// </summary>
+    internal static bool IsLikelyMediaUri(string uri)
+    {
+        var path = uri.Split('?', '#')[0];
+        return path.EndsWith(".mp4", StringComparison.OrdinalIgnoreCase)
+            || path.EndsWith(".m3u8", StringComparison.OrdinalIgnoreCase)
+            || path.EndsWith(".webm", StringComparison.OrdinalIgnoreCase);
+    }
 
     private void OnNewWindowRequested(object? sender, CoreWebView2NewWindowRequestedEventArgs e)
     {
-        e.Handled = true;
-
-        // Rate limit: max 5 new-window navigations per 3 seconds
-        // Prevents popup bomb while allowing normal target="_blank" links
-        var now = DateTime.UtcNow;
-        if (now - _popupNavReset > TimeSpan.FromSeconds(3))
+        // Each popup gets its own hidden session (concurrent, silent).
+        // Before the manager exists (pre-init) fall back to silent drop so a
+        // popup can never hijack the active Browser tab.
+        var manager = _popupManager;
+        if (manager is null)
         {
-            _popupNavCount = 0;
-            _popupNavReset = now;
+            e.Handled = true;
+            return;
         }
-        _popupNavCount++;
-        if (_popupNavCount > 5) return; // bomb protection — stop navigating
+        manager.HandleNewWindowRequest(e);
+    }
 
-        if (!string.IsNullOrEmpty(e.Uri) && State == BrowserState.Ready)
-            Browser.CoreWebView2?.Navigate(e.Uri);
+    // ─── Silent-popup façade (R1: parent/controller talk only to these) ────
+
+    /// <summary>Popup page scripts land here, then flow to ScriptMessageReceived.</summary>
+    internal void ForwardPopupScriptMessage(string json)
+        => ScriptMessageReceived?.Invoke(this, json);
+
+    /// <summary>Synchronous + idempotent. Detach path: close all, reject new.</summary>
+    internal void CloseSilentPopups(string reason)
+    {
+        if (Dispatcher.CheckAccess())
+            _popupManager?.CloseAllTransient(reason, markDetached: true);
+        else
+            Dispatcher.Invoke(() => _popupManager?.CloseAllTransient(reason, markDetached: true));
+    }
+
+    /// <summary>Synchronous + idempotent. Attach path: accept new requests again.</summary>
+    internal void ResumeSilentPopups()
+    {
+        if (Dispatcher.CheckAccess())
+            _popupManager?.ClearDetached();
+        else
+            Dispatcher.Invoke(() => _popupManager?.ClearDetached());
+    }
+
+    /// <summary>
+    /// Synchronous. Blocking Invoke (never BeginInvoke): Dispose must not
+    /// return before every session is closed.
+    /// </summary>
+    internal void Shutdown()
+    {
+        if (Dispatcher.CheckAccess())
+            _popupManager?.Shutdown();
+        else
+            Dispatcher.Invoke(() => _popupManager?.Shutdown());
     }
 }
