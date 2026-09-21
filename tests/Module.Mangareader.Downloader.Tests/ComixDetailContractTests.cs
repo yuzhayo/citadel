@@ -1,6 +1,9 @@
+using System.IO;
 using System.Text.Json.Nodes;
+using Module.Mangareader.Features.Downloader;
 using Module.Mangareader.Sources;
 using Module.Mangareader.Features.Downloader.Sources.Comix;
+using Module.Mangareader.ShareLogic;
 
 namespace Module.Mangareader.Downloader.Tests;
 
@@ -91,6 +94,50 @@ public sealed class ComixDetailContractTests
       }
     }
     """;
+
+    [Fact]
+    public async Task GroupsAndSelectedGroupReuseOneChapterPaginationResult()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "comix-detail-cache-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        var proxyPath = Path.Combine(root, "proxy.txt");
+        await File.WriteAllTextAsync(proxyPath, "http://proxy.test:8080");
+        var pool = new ProxyPoolAdapter("Downloader", proxyPath) { Enabled = true };
+        var chapterRequests = 0;
+
+        try
+        {
+            using var client = new DownloaderPyHostClient(
+                Path.Combine(root, "staging"),
+                pool,
+                (_, _) => Task.FromResult(new JsonObject { ["session"] = "s1" }),
+                (command, _, _) =>
+                {
+                    Assert.Equal("downloader.api", command);
+                    chapterRequests++;
+                    var payload = JsonNode.Parse(ChaptersPayload)!.AsObject();
+                    payload["meta"]!["hasNext"] = false;
+                    return Task.FromResult(new JsonObject
+                    {
+                        ["status"] = 200,
+                        ["is_json"] = true,
+                        ["json"] = payload,
+                    });
+                });
+            var source = new ComixSource(client);
+
+            var groups = await source.GetGroupsAsync(Title, CancellationToken.None);
+            var chapters = await source.GetChaptersAsync(
+                Title, groups[0].Identity, CancellationToken.None);
+
+            Assert.Equal(2, chapters.Count);
+            Assert.Equal(1, chapterRequests);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
 
     /// <summary>Captured <c>GET /api/v1/chapters/11312240</c>, trimmed to 3 pages.</summary>
     private const string ManifestPayload = """

@@ -57,8 +57,12 @@ public sealed class DownloaderPyHostClient : IDisposable
     private PyHost? _host;
     private string? _session;
     private string? _sessionProvider;
+    private string? _sessionStartUrl;
     private bool? _sessionHeadless;
     private bool _sessionProxyMode;
+    private string? _activeProxyDisplay;
+    private string? _activeProxyKey;
+    private string? _nextProxySkipKey;
     private int _showBrowser;
     private int _disposed;
 
@@ -112,10 +116,12 @@ public sealed class DownloaderPyHostClient : IDisposable
     internal DownloaderPyHostClient(
         string stagingRoot,
         ProxyPoolAdapter proxyPool,
-        Func<JsonObject, CancellationToken, Task<JsonObject>> openSession)
+        Func<JsonObject, CancellationToken, Task<JsonObject>> openSession,
+        Func<string, JsonObject, CancellationToken, Task<JsonObject>>? command = null)
         : this(stagingRoot, proxyPool)
     {
         _openSessionOverride = openSession ?? throw new ArgumentNullException(nameof(openSession));
+        _commandOverride = command;
     }
 
     /// <summary>Absolute root every browser write must stay inside.</summary>
@@ -137,6 +143,43 @@ public sealed class DownloaderPyHostClient : IDisposable
     /// merely to decide whether the Stop button is enabled.
     /// </summary>
     public bool HasSession => Volatile.Read(ref _session) is not null;
+
+    /// <summary>
+    /// Full canonical endpoint used by the current interactive browser
+    /// session. Null means direct mode or no active browser session.
+    /// </summary>
+    public string? ActiveProxyDisplay => Volatile.Read(ref _activeProxyDisplay);
+
+    /// <summary>
+    /// Closes the interactive browser and marks its endpoint to be excluded
+    /// from the next proxy reservation. Returns false when there is no active
+    /// rotatable proxy session.
+    /// </summary>
+    public bool RotateProxy()
+    {
+        if (_fixedLease is not null || _proxyPool?.IsProxyMode != true)
+        {
+            return false;
+        }
+
+        var currentKey = Volatile.Read(ref _activeProxyKey);
+        if (string.IsNullOrWhiteSpace(currentKey))
+        {
+            return false;
+        }
+
+        var hasAlternative = _proxyPool.AvailableCandidates(ProxyTarget.Browser)
+            .Any(endpoint => !string.Equals(
+                endpoint.Canonical, currentKey, StringComparison.Ordinal));
+        if (!hasAlternative)
+        {
+            return false;
+        }
+
+        Volatile.Write(ref _nextProxySkipKey, currentKey);
+        AbortSession();
+        return true;
+    }
 
     /// <summary>
     /// Non-blocking provider-specific readiness snapshot used by Queue. This
@@ -197,8 +240,12 @@ public sealed class DownloaderPyHostClient : IDisposable
             _session = response["session"]?.GetValue<string>()
                 ?? throw new PyHostException("BAD_RESPONSE", "downloader.open tidak mengembalikan session");
             _sessionProvider = provider;
+            _sessionStartUrl = url;
             _sessionHeadless = headless;
             _sessionProxyMode = _fixedLease is not null || _proxyPool?.IsProxyMode == true;
+            var activeLease = _fixedLease ?? _sessionReservation?.Lease;
+            Volatile.Write(ref _activeProxyDisplay, activeLease?.Endpoint.Canonical);
+            Volatile.Write(ref _activeProxyKey, activeLease?.Endpoint.Canonical);
             Interlocked.Increment(ref _sessionGeneration);
             return _session;
         }
@@ -215,13 +262,37 @@ public sealed class DownloaderPyHostClient : IDisposable
     public async Task<JsonObject> ApiAsync(string url, CancellationToken cancellationToken)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(url);
-        return await SendOnSessionAsync(
+        try
+        {
+            return await SendApiAsync(url, cancellationToken).ConfigureAwait(false);
+        }
+        catch (PyHostException exception) when (
+            exception.Code is "SITE_CHALLENGE_TIMEOUT" or "API_CLIENT_UNAVAILABLE"
+            && _fixedLease is null
+            && _proxyPool?.IsProxyMode == true)
+        {
+            var provider = Volatile.Read(ref _sessionProvider);
+            var startUrl = Volatile.Read(ref _sessionStartUrl);
+            var headless = _sessionHeadless;
+            if (provider is null || startUrl is null || headless is null
+                || !RotateProxyAfterFailure())
+            {
+                throw;
+            }
+
+            await EnsureSessionAsync(provider, startUrl, headless.Value, cancellationToken)
+                .ConfigureAwait(false);
+            return await SendApiAsync(url, cancellationToken).ConfigureAwait(false);
+        }
+    }
+
+    private Task<JsonObject> SendApiAsync(string url, CancellationToken cancellationToken) =>
+        SendOnSessionAsync(
             "downloader.api",
             payload => payload["url"] = url,
             payload => payload["timeout_ms"] = (int)ApiTimeout.TotalMilliseconds,
             ApiTimeout,
-            cancellationToken).ConfigureAwait(false);
-    }
+            cancellationToken);
 
     /// <summary>
     /// Browser-context fetch of one page into staging. The destination is
@@ -314,10 +385,23 @@ public sealed class DownloaderPyHostClient : IDisposable
         var host = Interlocked.Exchange(ref _host, null);
         Interlocked.Exchange(ref _session, null);
         Interlocked.Exchange(ref _sessionProvider, null);
+        Interlocked.Exchange(ref _sessionStartUrl, null);
         _sessionHeadless = null;
         _sessionProxyMode = false;
+        Volatile.Write(ref _activeProxyDisplay, null);
+        Volatile.Write(ref _activeProxyKey, null);
         host?.Abort();
         Interlocked.Exchange(ref _sessionReservation, null)?.Dispose();
+    }
+
+    private bool RotateProxyAfterFailure()
+    {
+        var reservation = Volatile.Read(ref _sessionReservation);
+        if (reservation is not null)
+        {
+            _proxyPool?.ReportFailure(reservation.Lease);
+        }
+        return RotateProxy();
     }
 
     /// <summary>Canonicalizes a staging-relative path and refuses escapes.</summary>
@@ -454,6 +538,11 @@ public sealed class DownloaderPyHostClient : IDisposable
                 // explicit action bootstraps a fresh one.
                 _session = null;
                 _sessionProvider = null;
+                _sessionStartUrl = null;
+                _sessionHeadless = null;
+                _sessionProxyMode = false;
+                Volatile.Write(ref _activeProxyDisplay, null);
+                Volatile.Write(ref _activeProxyKey, null);
                 Interlocked.Exchange(ref _sessionReservation, null)?.Dispose();
                 throw;
             }
@@ -471,14 +560,24 @@ public sealed class DownloaderPyHostClient : IDisposable
         CancellationToken cancellationToken)
     {
         var attempts = _fixedLease is not null ? 1 : _proxyPool?.IsProxyMode == true ? MaxProxyOpenAttempts : 1;
+        var skipKey = Interlocked.Exchange(ref _nextProxySkipKey, null);
         for (var attempt = 1; ; attempt++)
         {
             cancellationToken.ThrowIfCancellationRequested();
             var lease = _fixedLease;
             if (lease is null && _proxyPool?.IsProxyMode == true)
             {
+                var candidates = _proxyPool.AvailableCandidates(ProxyTarget.Browser);
+                if (!string.IsNullOrWhiteSpace(skipKey))
+                {
+                    var alternatives = candidates
+                        .Where(endpoint => !string.Equals(
+                            endpoint.Canonical, skipKey, StringComparison.Ordinal))
+                        .ToArray();
+                    if (alternatives.Length > 0) candidates = alternatives;
+                }
                 _sessionReservation = await _proxyPool.ReserveAsync(
-                    "downloader-browser", _proxyPool.AvailableCandidates(ProxyTarget.Browser), cancellationToken)
+                    "downloader-browser", candidates, cancellationToken)
                     .ConfigureAwait(false);
                 lease = _sessionReservation.Lease;
             }
@@ -531,7 +630,7 @@ public sealed class DownloaderPyHostClient : IDisposable
         if (cancellationToken.IsCancellationRequested) return false;
         return error is TimeoutException
             || error is PyHostException pyhost
-                && pyhost.Code is "BROWSER_LAUNCH" or "TIMEOUT";
+                && pyhost.Code is "BROWSER_LAUNCH" or "TIMEOUT" or "SITE_CHALLENGE_TIMEOUT";
     }
 
     private async Task CloseSessionCoreAsync(CancellationToken cancellationToken)
@@ -540,8 +639,11 @@ public sealed class DownloaderPyHostClient : IDisposable
         var session = _session;
         _session = null;
         _sessionProvider = null;
+        _sessionStartUrl = null;
         _sessionHeadless = null;
         _sessionProxyMode = false;
+        Volatile.Write(ref _activeProxyDisplay, null);
+        Volatile.Write(ref _activeProxyKey, null);
         if (host is null || session is null)
         {
             Interlocked.Exchange(ref _sessionReservation, null)?.Dispose();

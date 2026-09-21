@@ -202,6 +202,27 @@ public partial class CatalogScreen : UserControl, IDisposable
     {
         if (_disposed || _context is null) return;
         _context.ProxyPool.Enabled = ProxyModeToggle.IsChecked == true;
+        RenderProxySession();
+    }
+
+    private async void ChangeProxyButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (_disposed || _context is null || _catalog is null) return;
+        if (!_context.Browser.RotateProxy())
+        {
+            SetStatus("No alternate proxy is currently available.", isError: false);
+            return;
+        }
+
+        RenderProxySession();
+        if (_catalog.State.Detail is { } detail)
+        {
+            await RunActionAsync(token => _catalog.OpenTitleAsync(detail.Summary, token));
+        }
+        else
+        {
+            await StartCatalogAsync();
+        }
     }
 
     private async void SearchButton_Click(object sender, RoutedEventArgs e)
@@ -557,6 +578,27 @@ public partial class CatalogScreen : UserControl, IDisposable
             && !state.IsActionBusy;
         ManualButton.IsEnabled = !processBusy && !state.IsActionBusy;
         StopButton.IsEnabled = hasSession || state.IsBrowseBusy;
+        RenderProxySession();
+    }
+
+    private void RenderProxySession()
+    {
+        if (_context is null)
+        {
+            ActiveProxyText.Text = "Direct connection";
+            ChangeProxyButton.IsEnabled = false;
+            return;
+        }
+
+        var active = _context.Browser.ActiveProxyDisplay;
+        ActiveProxyText.Text = active ?? (ProxyModeToggle.IsChecked == true
+            ? "Proxy not connected"
+            : "Direct connection");
+        ActiveProxyText.ToolTip = active ?? "Proxy used by the active Downloader browser session";
+        ChangeProxyButton.IsEnabled = ProxyModeToggle.IsChecked == true
+            && _context.Browser.HasSession
+            && !string.IsNullOrWhiteSpace(active)
+            && _catalog?.State.IsActionBusy != true;
     }
 
     private void RenderDetail(CatalogState state)

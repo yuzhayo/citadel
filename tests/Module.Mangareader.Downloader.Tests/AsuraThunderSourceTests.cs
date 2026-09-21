@@ -84,6 +84,27 @@ public sealed class AsuraThunderSourceTests
     }
 
     [Fact]
+    public void AsuraNullSearchDataIsAnEmptyResultInsteadOfAContractFailure()
+    {
+        var page = AsuraScansJsonParser.ParseCatalog(
+            "{\"data\":null,\"meta\":{\"per_page\":28}}",
+            1);
+
+        Assert.Empty(page.Items);
+        Assert.False(page.HasMore);
+    }
+
+    [Theory]
+    [InlineData("fun territory", "fun-territory")]
+    [InlineData("I Got The Weakest Class, Dragon Tamer!?", "i-got-the-weakest-class-dragon-tamer")]
+    public void ThunderSearchUsesTheSameWordSeparatorsAsItsTitleSlugs(
+        string query,
+        string expected)
+    {
+        Assert.Equal(expected, ThunderScansSource.NormalizeSearchText(query));
+    }
+
+    [Fact]
     public void AsuraDetailAndAstroChaptersMapProviderFieldsToTheirDisplayContract()
     {
         const string detail = """
@@ -123,8 +144,10 @@ public sealed class AsuraThunderSourceTests
     {
         const string titleHtml = """
             <h1>Global Martial Arts</h1><img src="https://en-thunderscans.com/wp-content/uploads/2026/07/cover.jpg">
-            <a href="/global-martial-arts-chapter-371/">Chapter 371</a>
-            <a href="/global-martial-arts-chapter-372/">Chapter 372</a>
+            <div id="chapterlist"><ul>
+            <li data-num="371"><a href="/global-martial-arts-chapter-371/">Chapter 371</a></li>
+            <li data-num="372"><a href="/global-martial-arts-chapter-372/">Chapter 372</a></li>
+            </ul></div>
             """;
         const string chapterHtml = """
             <script>ts_reader.run({"sources":[{"source":"Server 1","images":[
@@ -151,25 +174,47 @@ public sealed class AsuraThunderSourceTests
     }
 
     [Fact]
-    public async Task ThunderChaptersUseTheFullSitemapInsteadOfOnlyTheVisibleTitlePageRows()
+    public async Task ThunderChaptersReadNumbersAndRoutesDirectlyFromTheChapterListRows()
     {
-        using var client = new HttpClient(new StubHandler(request => request.RequestUri?.AbsolutePath switch
+        var requests = new List<string>();
+        using var client = new HttpClient(new StubHandler(request =>
         {
-            "/comics/0086250808-i-got-the-weakest-class-dragon-tamer/" => Html("<a href=\"/i-got-the-weakest-class-dragon-tamer-chapter-24/\">Chapter 24</a>"),
-            "/sitemap_index.xml" => Xml("<sitemapindex><sitemap><loc>https://en-thunderscans.com/wp-sitemap-posts-post-1.xml</loc></sitemap></sitemapindex>"),
-            "/wp-sitemap-posts-post-1.xml" => Xml("<urlset><url><loc>https://en-thunderscans.com/i-got-the-weakest-class-dragon-tamer-chapter-1/</loc></url><url><loc>https://en-thunderscans.com/i-got-the-weakest-class-dragon-tamer-chapter-24/</loc></url></urlset>"),
-            "/i-got-the-weakest-class-dragon-tamer-chapter-1/" => Html("<script>ts_reader.run({\"sources\":[{\"images\":[\"https://en-thunderscans.com/wp-content/uploads/manga/a/0001_x.jpg\"]}]});</script>"),
-            _ => throw new Xunit.Sdk.XunitException("Unexpected request: " + request.RequestUri)
+            requests.Add(request.RequestUri!.AbsolutePath);
+            return request.RequestUri.AbsolutePath switch
+            {
+                "/comics/0086250808-i-got-the-weakest-class-dragon-tamer/" => Html("""
+                    <div id="chapterlist"><ul>
+                    <li data-num="50"><a data-id="locked">Chapter 50</a></li>
+                    <li data-num="286"><a href="/i-got-the-weakest-class-dragon-tamer-chapter-286/">Chapter 286</a></li>
+                    <li data-num="8"><a href="/1482765166-i-got-the-weakest-class-dragon-tamer-chapter-8/">Chapter 8</a></li>
+                    <li data-num="7"><a href="/1482765166-i-got-the-weakest-class-dragon-tamer-7/">Chapter 7</a></li>
+                    <li data-num="06"><a href="/1482765166-i-got-the-weakest-class-dragon-tamer-06/">Chapter 06</a></li>
+                    <li data-num="1"><a href="/1482765166-i-got-the-weakest-class-dragon-tamer-1/">Chapter 1</a></li>
+                    </ul></div>
+                    """),
+                "/1482765166-i-got-the-weakest-class-dragon-tamer-06/" => Html("""
+                    <script>ts_reader.run({"sources":[{"images":[
+                    "https://en-thunderscans.com/wp-content/uploads/manga/a/0001_x.jpg"
+                    ]}]});</script>
+                    """),
+                _ => throw new Xunit.Sdk.XunitException("Unexpected request: " + request.RequestUri),
+            };
         }));
         var source = new ThunderScansSource(client);
         var title = new RemoteTitleIdentity(ThunderScansContract.SourceId, "0086250808-i-got-the-weakest-class-dragon-tamer", "0086250808-i-got-the-weakest-class-dragon-tamer", "0086250808-i-got-the-weakest-class-dragon-tamer");
 
         var chapters = await source.GetChaptersAsync(title, ThunderScansSource.Group.Identity, CancellationToken.None);
-        var manifest = await source.GetManifestAsync(chapters[0].Identity, CancellationToken.None);
+        var chapterSix = Assert.Single(chapters, chapter => chapter.Identity.ChapterNumber == "6");
+        var manifest = await source.GetManifestAsync(chapterSix.Identity, CancellationToken.None);
 
-        Assert.Equal(["1", "24"], chapters.Select(chapter => chapter.Identity.ChapterNumber));
-        Assert.Equal("i-got-the-weakest-class-dragon-tamer-chapter-1", chapters[0].Identity.ChapterId);
+        Assert.Equal(["1", "6", "7", "8", "286"], chapters.Select(chapter => chapter.Identity.ChapterNumber));
+        Assert.Equal("1482765166-i-got-the-weakest-class-dragon-tamer-1", chapters[0].Identity.ChapterId);
+        Assert.Equal("1482765166-i-got-the-weakest-class-dragon-tamer-06", chapterSix.Identity.ChapterId);
         Assert.Single(manifest.Pages);
+        Assert.Equal([
+            "/comics/0086250808-i-got-the-weakest-class-dragon-tamer/",
+            "/1482765166-i-got-the-weakest-class-dragon-tamer-06/",
+        ], requests);
     }
 
     private static HttpResponseMessage Xml(string content) => new(HttpStatusCode.OK)

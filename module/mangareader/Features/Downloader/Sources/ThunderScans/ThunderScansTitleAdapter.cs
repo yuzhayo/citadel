@@ -27,17 +27,13 @@ internal sealed class ThunderScansTitleAdapter(
     public async Task<RemoteTitleDetail> GetDetailAsync(RemoteTitleIdentity title, CancellationToken token) =>
         ThunderScansHtmlParser.ParseTitle(await getText(TitlePath(title), token).ConfigureAwait(false), title);
 
-    public async Task<ThunderScansTitleChapters> GetChapterRoutesAsync(
+    public async Task<IReadOnlyList<RemoteChapterSummary>> GetChaptersAsync(
         RemoteTitleIdentity title,
         RemoteGroupIdentity group,
         CancellationToken token)
     {
-        var visible = ThunderScansHtmlParser.ParseChapters(
+        return ThunderScansHtmlParser.ParseChapters(
             await getText(TitlePath(title), token).ConfigureAwait(false), title, group);
-        var readerRoute = visible
-            .Select(chapter => ThunderScansHtmlParser.TitleSlugFromChapterId(chapter.Identity.ChapterId))
-            .FirstOrDefault(route => !string.IsNullOrWhiteSpace(route));
-        return new ThunderScansTitleChapters(visible, readerRoute);
     }
 
     private static string TitlePath(RemoteTitleIdentity title) =>
@@ -46,7 +42,3 @@ internal sealed class ThunderScansTitleAdapter(
     private static string RouteSlug(RemoteTitleIdentity title) =>
         !string.IsNullOrWhiteSpace(title.Slug) ? title.Slug : title.TitleId;
 }
-
-internal sealed record ThunderScansTitleChapters(
-    IReadOnlyList<RemoteChapterSummary> VisibleChapters,
-    string? ReaderRoute);

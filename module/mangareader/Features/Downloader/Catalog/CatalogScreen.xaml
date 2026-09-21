@@ -70,6 +70,23 @@
 
                 <setting:SettingActionCard Grid.Column="1" Padding="10,5">
                     <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                        <TextBlock x:Name="ActiveProxyText"
+                                   Width="190"
+                                   Margin="0,0,8,0"
+                                   VerticalAlignment="Center"
+                                   Foreground="{DynamicResource Dim}"
+                                   Text="Direct connection"
+                                   TextTrimming="CharacterEllipsis"
+                                   ToolTip="Proxy used by the active Downloader browser session"
+                                   AutomationProperties.Name="Active Downloader proxy" />
+                        <setting:SettingButton x:Name="ChangeProxyButton"
+                                               MinWidth="104"
+                                               Height="34"
+                                               Margin="0,0,8,0"
+                                               Content="Change proxy"
+                                               Click="ChangeProxyButton_Click"
+                                               ToolTip="Close the current browser session and reconnect with a different proxy"
+                                               AutomationProperties.Name="Change active Downloader proxy" />
                         <setting:SettingToggle x:Name="ProxyModeToggle"
                                                setting:UiPreference.Key="mangareader.downloader.use-proxy-pool"
                                                Margin="0,0,8,0"

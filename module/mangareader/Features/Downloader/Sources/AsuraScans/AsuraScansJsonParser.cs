@@ -35,14 +35,28 @@ internal static class AsuraScansJsonParser
     {
         using var document = Parse(payload);
         var root = document.RootElement;
-        var data = root.TryGetProperty("data", out var wrapped) && wrapped.ValueKind == JsonValueKind.Array
-            ? wrapped
-            : root.ValueKind == JsonValueKind.Array
-                ? root
-                : throw new AsuraScansContractException("AsuraScans catalog response has no data array.");
+        IEnumerable<JsonElement> entries;
+        if (root.TryGetProperty("data", out var wrapped))
+        {
+            entries = wrapped.ValueKind switch
+            {
+                JsonValueKind.Array => wrapped.EnumerateArray(),
+                JsonValueKind.Null => [],
+                _ => throw new AsuraScansContractException(
+                    "AsuraScans catalog response has an invalid data value."),
+            };
+        }
+        else if (root.ValueKind == JsonValueKind.Array)
+        {
+            entries = root.EnumerateArray();
+        }
+        else
+        {
+            throw new AsuraScansContractException("AsuraScans catalog response has no data array.");
+        }
 
         var items = new List<RemoteTitleSummary>();
-        foreach (var item in data.EnumerateArray())
+        foreach (var item in entries)
         {
             if (item.ValueKind != JsonValueKind.Object) continue;
             var slug = RequiredString(item, "slug");

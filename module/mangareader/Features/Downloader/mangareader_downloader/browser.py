@@ -222,28 +222,48 @@ def _connect_timeout_ms(msg, default_ms):
     return int(min(value, 30000))
 
 
+def _challenge_timeout_ms(msg):
+    # A proxied browser must fail over promptly when one endpoint is served the
+    # interactive WAF. Direct/headed mode keeps the existing longer window.
+    if isinstance(msg.get("proxy"), dict):
+        return _connect_timeout_ms(msg, 5000)
+    return _timeout_ms(msg, 120000)
+
+
 def _is_waf_challenge(url):
     if not isinstance(url, str):
         return False
     return urlparse(url).path.startswith("/@waf/")
 
 
-async def _wait_for_application_page(page, timeout_ms):
-    if not _is_waf_challenge(page.url):
-        return
+async def _is_waf_challenge_page(page):
+    if _is_waf_challenge(page.url):
+        return True
     try:
-        # The WAF page can complete its browser check without user input. Keep
-        # waiting in the same isolated headless profile instead of relaunching a
-        # visible browser, which used to create a second profile lifecycle and
-        # surface Camoufox windows during normal Downloader work.
-        await page.wait_for_url(
-            lambda value: not _is_waf_challenge(str(value)),
-            timeout=timeout_ms)
-        await page.wait_for_load_state("domcontentloaded", timeout=timeout_ms)
-    except Exception as exc:  # noqa: BLE001 - browser boundary
-        raise PyhostError(
-            "SITE_CHALLENGE_TIMEOUT",
-            "verifikasi Comix belum selesai: %s" % exc) from exc
+        return bool(await page.evaluate(r"""() => {
+            const title = (document.title || '').trim().toLowerCase();
+            if (title === 'security check') return true;
+            if (document.querySelector('#stage #dragLayer, form[action*="/@waf/"]')) return true;
+            return Array.from(document.scripts).some(script =>
+                (script.textContent || '').includes('/@waf/generate'));
+        }"""))
+    except Exception:  # noqa: BLE001 - document can be replaced while probing
+        return _is_waf_challenge(page.url)
+
+
+async def _wait_for_application_page(page, timeout_ms):
+    if not await _is_waf_challenge_page(page):
+        return
+
+    deadline = asyncio.get_running_loop().time() + (timeout_ms / 1000.0)
+    while asyncio.get_running_loop().time() < deadline:
+        await asyncio.sleep(0.25)
+        if not await _is_waf_challenge_page(page):
+            await page.wait_for_load_state("domcontentloaded", timeout=timeout_ms)
+            return
+    raise PyhostError(
+        "SITE_CHALLENGE_TIMEOUT",
+        "verifikasi Comix belum selesai pada proxy aktif")
 
 
 async def _navigate_application_page(
@@ -296,7 +316,7 @@ async def cmd_open(host, msg):
             if session.get("headless", headless) == headless:
                 await _navigate_application_page(
                     page, start_url, _connect_timeout_ms(msg, 120000),
-                    _timeout_ms(msg, 120000))
+                    _challenge_timeout_ms(msg))
                 return {"session": sid, "provider": provider,
                         "url": page.url, "headless": headless}
         await _forget_dead_provider_session(host, profile)
@@ -326,7 +346,8 @@ async def cmd_open(host, msg):
     host.next_sid += 1
     sid = "s%d" % host.next_sid
     host.sessions[sid] = {"profile": profile, "cm": cm, "ctx": None,
-                          "page": None, "dir": pdir, "headless": headless}
+                          "page": None, "dir": pdir, "headless": headless,
+                          "api_module_url": None}
     try:
         ctx = await cm.__aenter__()
         host.sessions[sid]["ctx"] = ctx
@@ -334,7 +355,7 @@ async def cmd_open(host, msg):
         host.sessions[sid]["page"] = page
         await _navigate_application_page(
             page, start_url, _connect_timeout_ms(msg, 120000),
-            _timeout_ms(msg, 120000))
+            _challenge_timeout_ms(msg))
     except asyncio.CancelledError:
         await host._drop_session(sid)
         raise
@@ -396,20 +417,50 @@ def _api_call_target(url):
     return path, params
 
 
-async def _ensure_bridge(page):
-    """Pasang bridge di main realm; navigasi membuang dokumen beserta isinya."""
+def _valid_api_module_url(page_url, candidate):
+    """Accept only the provider's same-origin env module."""
+    parsed_page = urlparse(page_url)
+    parsed_candidate = urlparse(candidate) if isinstance(candidate, str) else None
+    if (parsed_candidate is None
+            or parsed_candidate.scheme not in ("http", "https")
+            or parsed_candidate.scheme != parsed_page.scheme
+            or parsed_candidate.netloc != parsed_page.netloc
+            or not re.search(r"/env-[^/]*\.js$", parsed_candidate.path)):
+        return None
+    return candidate
+
+
+async def _ensure_bridge(page, session):
+    """Pasang bridge dan pulihkan module API setelah document reload."""
+    await _wait_for_application_page(page, 5000)
     present = "document.getElementById('%s') !== null" % BRIDGE_ID
     if await page.evaluate(present):
         return
 
-    env_url = await page.evaluate(_LOCATE_ENV_URL_JS)
-    parsed_page = urlparse(page.url)
-    parsed_env = urlparse(env_url) if isinstance(env_url, str) else None
-    if (parsed_env is None
-            or parsed_env.scheme not in ("http", "https")
-            or parsed_env.scheme != parsed_page.scheme
-            or parsed_env.netloc != parsed_page.netloc
-            or not re.search(r"/env-[^/]*\.js$", parsed_env.path)):
+    # DOMContentLoaded only proves that the HTML shell is ready. Comix loads
+    # the env bundle afterwards, so an immediate lookup races a fresh session.
+    cached = _valid_api_module_url(page.url, session.get("api_module_url"))
+    discovered = None
+    deadline = asyncio.get_running_loop().time() + 10.0
+    while (cached is None and discovered is None
+           and asyncio.get_running_loop().time() < deadline):
+        try:
+            candidate = await page.evaluate(_LOCATE_ENV_URL_JS)
+        except Exception:  # noqa: BLE001 - document may be replaced mid-probe
+            candidate = None
+        discovered = _valid_api_module_url(page.url, candidate)
+        if discovered is None:
+            await asyncio.sleep(0.1)
+    if discovered is not None:
+        session["api_module_url"] = discovered
+
+    # Comix can replace the active document between API calls. The replacement
+    # drops both our bridge and PerformanceResourceTiming entries even though
+    # the browser session and the already validated API module remain usable.
+    # Keep that provider-owned module URL with the session so detail/chapter
+    # calls can rebuild the bridge instead of failing on the transient document.
+    env_url = discovered or cached
+    if env_url is None:
         raise PyhostError(
             "API_CLIENT_UNAVAILABLE",
             "modul API Comix tidak ditemukan pada dokumen aktif")
@@ -433,7 +484,7 @@ async def cmd_api(host, msg):
     timeout_ms = _timeout_ms(msg, 45000)
     path, params = _api_call_target(url)
 
-    await _ensure_bridge(page)
+    await _ensure_bridge(page, sess)
 
     request_id = uuid.uuid4().hex
     request = json.dumps({

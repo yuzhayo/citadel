@@ -52,6 +52,86 @@ public sealed class ProxyBrowserFailoverTests : IDisposable
         AssertThreeDistinctAttempts(attempts);
     }
 
+    [Fact]
+    public async Task Downloader_ExplicitRotationExcludesCurrentProxyAndShowsFullEndpoint()
+    {
+        Directory.CreateDirectory(_root);
+        var path = Path.Combine(_root, "rotate-proxy.txt");
+        File.WriteAllLines(path,
+        [
+            "http://user-one:secret-one@shared.test:8000",
+            "http://user-two:secret-two@shared.test:8000",
+        ]);
+        var adapter = new ProxyPoolAdapter("Downloader", path) { Enabled = true };
+        var attempts = new List<string>();
+        using var client = new DownloaderPyHostClient(
+            Path.Combine(_root, "rotate-downloader"),
+            adapter,
+            (payload, _) =>
+            {
+                var proxy = Assert.IsType<JsonObject>(payload["proxy"]);
+                attempts.Add(string.Join('|',
+                    proxy["server"]!.GetValue<string>(),
+                    proxy["username"]!.GetValue<string>(),
+                    proxy["password"]!.GetValue<string>()));
+                return Task.FromResult(new JsonObject { ["session"] = "s" + attempts.Count });
+            });
+
+        await client.EnsureSessionAsync(
+            "comix", "https://comix.ws/browse", true, CancellationToken.None);
+        var firstDisplay = client.ActiveProxyDisplay;
+
+        Assert.Equal("http://user-one:secret-one@shared.test:8000", firstDisplay);
+        Assert.True(client.RotateProxy());
+        Assert.Null(client.ActiveProxyDisplay);
+
+        await client.EnsureSessionAsync(
+            "comix", "https://comix.ws/browse", true, CancellationToken.None);
+
+        Assert.Equal(2, attempts.Count);
+        Assert.NotEqual(attempts[0], attempts[1]);
+        Assert.NotEqual(firstDisplay, client.ActiveProxyDisplay);
+        Assert.Equal("http://user-two:secret-two@shared.test:8000", client.ActiveProxyDisplay);
+    }
+
+    [Theory]
+    [InlineData("SITE_CHALLENGE_TIMEOUT")]
+    [InlineData("API_CLIENT_UNAVAILABLE")]
+    public async Task Downloader_ApiReadinessFailureRotatesProxyAndRetriesTheRequestOnce(
+        string failureCode)
+    {
+        var adapter = CreatePool("Downloader");
+        var opened = new List<string>();
+        var apiCalls = 0;
+        using var client = new DownloaderPyHostClient(
+            Path.Combine(_root, "challenge-downloader"),
+            adapter,
+            (payload, _) =>
+            {
+                var proxy = Assert.IsType<JsonObject>(payload["proxy"]);
+                opened.Add(proxy["server"]!.GetValue<string>());
+                return Task.FromResult(new JsonObject { ["session"] = "s" + opened.Count });
+            },
+            (command, _, _) =>
+            {
+                Assert.Equal("downloader.api", command);
+                apiCalls++;
+                if (apiCalls == 1)
+                    throw new PyHostException(failureCode, "provider page is not ready");
+                return Task.FromResult(new JsonObject { ["status"] = 200 });
+            });
+
+        await client.EnsureSessionAsync(
+            "comix", "https://comix.ws/browse", true, CancellationToken.None);
+        var response = await client.ApiAsync(
+            "https://comix.ws/api/v1/manga/example", CancellationToken.None);
+
+        Assert.Equal(200, response["status"]!.GetValue<int>());
+        Assert.Equal(2, apiCalls);
+        Assert.Equal(2, opened.Count);
+        Assert.NotEqual(opened[0], opened[1]);
+    }
+
     public void Dispose()
     {
         if (Directory.Exists(_root)) Directory.Delete(_root, true);

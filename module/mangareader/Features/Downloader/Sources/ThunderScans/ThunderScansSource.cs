@@ -13,7 +13,6 @@ public sealed class ThunderScansSource : IMangaSource
     private readonly HttpClient _client;
     private readonly ProxyHttpTransport? _transport;
     private readonly ThunderScansTitleAdapter _titleAdapter;
-    private readonly ThunderScansChapterAdapter _chapterAdapter;
 
     public ThunderScansSource() : this(SharedClient, null) { }
     internal ThunderScansSource(HttpClient client) : this(client, null) { }
@@ -23,7 +22,6 @@ public sealed class ThunderScansSource : IMangaSource
         _client = client ?? throw new ArgumentNullException(nameof(client));
         _transport = transport;
         _titleAdapter = new ThunderScansTitleAdapter(GetTextAsync, GetSitemapLocationsAsync);
-        _chapterAdapter = new ThunderScansChapterAdapter(GetTextAsync, GetSitemapLocationsAsync);
     }
 
     public static RemoteSourceGroup Group { get; } = new(new RemoteGroupIdentity(ThunderScansContract.SourceId, ThunderScansContract.GroupId), ThunderScansContract.DisplayName);
@@ -36,7 +34,7 @@ public sealed class ThunderScansSource : IMangaSource
         ArgumentNullException.ThrowIfNull(request);
         if (request.Page < 1) throw new ArgumentOutOfRangeException(nameof(request.Page));
         if (request.Filter is not null and not ThunderScansBrowseQuery) throw new ThunderScansContractException("ThunderScans received a filter owned by another provider.");
-        var keyword = string.IsNullOrWhiteSpace(request.Query) ? null : request.Query.Trim();
+        var keyword = NormalizeSearchText(request.Query);
         var matches = (await _titleAdapter.GetTitleRoutesAsync(cancellationToken).ConfigureAwait(false))
             .Where(slug => keyword is null || slug.Contains(keyword, StringComparison.OrdinalIgnoreCase))
             .OrderBy(slug => slug, StringComparer.OrdinalIgnoreCase).ToArray();
@@ -49,6 +47,29 @@ public sealed class ThunderScansSource : IMangaSource
         return new RemoteCatalogPage(details, matches.Length, request.Page, request.Page * ThunderScansContract.PageSize < matches.Length);
     }
 
+    internal static string? NormalizeSearchText(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value)) return null;
+
+        var normalized = new StringBuilder(value.Length);
+        var separatorPending = false;
+        foreach (var character in value.Trim())
+        {
+            if (char.IsLetterOrDigit(character))
+            {
+                if (separatorPending && normalized.Length > 0) normalized.Append('-');
+                normalized.Append(char.ToLowerInvariant(character));
+                separatorPending = false;
+            }
+            else
+            {
+                separatorPending = normalized.Length > 0;
+            }
+        }
+
+        return normalized.Length == 0 ? null : normalized.ToString();
+    }
+
     public Task<IReadOnlyList<RemoteLookupOption>> LookupAsync(RemoteLookupKind kind, string query, CancellationToken cancellationToken) => throw new ThunderScansContractException($"ThunderScans does not expose the '{kind}' lookup in this provider version.");
     public async Task<RemoteTitleDetail> GetTitleAsync(RemoteTitleIdentity title, CancellationToken cancellationToken) { ValidateTitle(title); return await _titleAdapter.GetDetailAsync(title, cancellationToken).ConfigureAwait(false); }
     internal async Task<RemoteTitleDetail> ResolveTitleAsync(string slug, CancellationToken cancellationToken) { ArgumentException.ThrowIfNullOrWhiteSpace(slug); var identity = new RemoteTitleIdentity(ThunderScansContract.SourceId, slug, slug, slug); return await GetTitleAsync(identity, cancellationToken).ConfigureAwait(false); }
@@ -56,15 +77,7 @@ public sealed class ThunderScansSource : IMangaSource
     public async Task<IReadOnlyList<RemoteChapterSummary>> GetChaptersAsync(RemoteTitleIdentity title, RemoteGroupIdentity group, CancellationToken cancellationToken)
     {
         ValidateTitle(title); ValidateGroup(group);
-        var titleChapters = await _titleAdapter.GetChapterRoutesAsync(title, group, cancellationToken).ConfigureAwait(false);
-        if (titleChapters.ReaderRoute is not null)
-        {
-            var chapters = await _chapterAdapter.GetChaptersAsync(
-                titleChapters.ReaderRoute, title, group, cancellationToken).ConfigureAwait(false);
-            if (chapters.Count > 0) return chapters;
-        }
-
-        return titleChapters.VisibleChapters;
+        return await _titleAdapter.GetChaptersAsync(title, group, cancellationToken).ConfigureAwait(false);
     }
     public async Task<RemoteChapterManifest> GetManifestAsync(RemoteChapterIdentity chapter, CancellationToken cancellationToken)
     {
@@ -107,9 +120,7 @@ public sealed class ThunderScansSource : IMangaSource
     private static string RouteSlug(RemoteTitleIdentity title) => !string.IsNullOrWhiteSpace(title.Slug) ? title.Slug : title.TitleId;
     private static string TitlePath(RemoteTitleIdentity title) => "/comics/" + Uri.EscapeDataString(RouteSlug(title)) + "/";
     private static string ChapterPath(RemoteChapterIdentity chapter) =>
-        chapter.ChapterId.Contains("-chapter-", StringComparison.OrdinalIgnoreCase)
-            ? "/" + Uri.EscapeDataString(chapter.ChapterId) + "/"
-            : "/" + Uri.EscapeDataString(RouteSlug(chapter.Title)) + "-" + Uri.EscapeDataString(chapter.ChapterId) + "/";
+        "/" + Uri.EscapeDataString(chapter.ChapterId.Trim('/')) + "/";
     private static string Hash(RemoteChapterIdentity chapter, IReadOnlyList<RemotePage> pages) => "sha256:" + Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(string.Join('|', pages.Select(page => page.Url).Prepend(ThunderScansContract.Version + "|" + chapter.ChapterId)))));
     private static void ValidateTitle(RemoteTitleIdentity title) { ArgumentNullException.ThrowIfNull(title); if (!string.Equals(title.SourceId, ThunderScansContract.SourceId, StringComparison.Ordinal) || string.IsNullOrWhiteSpace(title.TitleId)) throw new ThunderScansContractException("Invalid ThunderScans title identity."); }
     private static void ValidateGroup(RemoteGroupIdentity group) { ArgumentNullException.ThrowIfNull(group); if (!Equals(group, Group.Identity)) throw new ThunderScansContractException("Invalid ThunderScans source group."); }

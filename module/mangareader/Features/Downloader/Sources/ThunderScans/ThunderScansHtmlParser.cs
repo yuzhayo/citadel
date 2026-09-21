@@ -27,9 +27,13 @@ internal static partial class ThunderScansHtmlParser
     {
         var document = Parser.ParseDocument(html);
         var rows = new List<(string Id, string Number)>();
-        foreach (var href in document.QuerySelectorAll("a[href]").Select(node => node.GetAttribute("href")))
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var chapterRow in document.QuerySelectorAll("#chapterlist li[data-num]"))
         {
-            if (TryChapter(href, out var id, out var number) && rows.All(row => row.Id != id)) rows.Add((id, number));
+            var number = NormalizeChapterNumber(chapterRow.GetAttribute("data-num"));
+            var href = chapterRow.QuerySelector("a[href]")?.GetAttribute("href");
+            if (string.IsNullOrWhiteSpace(number) || !TryChapterRoute(href, out var id) || !seen.Add(id)) continue;
+            rows.Add((id, number));
         }
         return rows.OrderBy(row => NumericSort(row.Number)).ThenBy(row => row.Number, StringComparer.OrdinalIgnoreCase)
             .Select((row, index) => new RemoteChapterSummary(
@@ -113,6 +117,35 @@ internal static partial class ThunderScansHtmlParser
         number = Uri.UnescapeDataString(match.Groups["number"].Value);
         id = Uri.UnescapeDataString(path.Trim('/'));
         return number.Length > 0;
+    }
+
+    private static bool TryChapterRoute(string? href, out string id)
+    {
+        id = string.Empty;
+        if (string.IsNullOrWhiteSpace(href)) return false;
+
+        string path;
+        if (Uri.TryCreate(href, UriKind.Absolute, out var uri))
+        {
+            if (!uri.Host.Equals(ThunderScansContract.Host, StringComparison.OrdinalIgnoreCase)) return false;
+            path = uri.AbsolutePath;
+        }
+        else
+        {
+            path = href.Split(['?', '#'], 2)[0];
+        }
+
+        id = Uri.UnescapeDataString(path.Trim('/'));
+        return id.Length > 0 && !id.Contains('/');
+    }
+
+    private static string NormalizeChapterNumber(string? value)
+    {
+        var number = value?.Trim() ?? string.Empty;
+        if (number.Length == 0 || number.Any(character => character is < '0' or > '9')) return number;
+
+        var normalized = number.TrimStart('0');
+        return normalized.Length == 0 ? "0" : normalized;
     }
 
     private static decimal NumericSort(string text) => decimal.TryParse(text, System.Globalization.NumberStyles.Number, System.Globalization.CultureInfo.InvariantCulture, out var value) ? value : decimal.MaxValue;

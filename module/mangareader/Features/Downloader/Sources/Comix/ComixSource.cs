@@ -480,6 +480,9 @@ public sealed class ComixSource(DownloaderPyHostClient client)
     private const int MaximumChapterPages = 100;
 
     private readonly DownloaderPyHostClient _client = client;
+    private readonly object _chapterCacheGate = new();
+    private string? _chapterCacheTitleKey;
+    private IReadOnlyList<JsonObject>? _chapterCache;
 
     public string Id => ComixContract.SourceId;
 
@@ -974,6 +977,7 @@ public sealed class ComixSource(DownloaderPyHostClient client)
     {
         ArgumentNullException.ThrowIfNull(title);
         var chapters = await ReadChaptersAsync(title, cancellationToken).ConfigureAwait(false);
+        RememberChapters(title, chapters);
         return ReadGroups(chapters);
     }
 
@@ -1008,9 +1012,41 @@ public sealed class ComixSource(DownloaderPyHostClient client)
     {
         ArgumentNullException.ThrowIfNull(title);
         ArgumentNullException.ThrowIfNull(group);
-        var chapters = await ReadChaptersAsync(title, cancellationToken).ConfigureAwait(false);
+        var chapters = RecallChapters(title);
+        if (chapters is null)
+        {
+            chapters = await ReadChaptersAsync(title, cancellationToken).ConfigureAwait(false);
+            RememberChapters(title, chapters);
+        }
         return ReadGroupChapters(chapters, title, group);
     }
+
+    private void RememberChapters(
+        RemoteTitleIdentity title,
+        IReadOnlyList<JsonObject> chapters)
+    {
+        lock (_chapterCacheGate)
+        {
+            _chapterCacheTitleKey = ChapterCacheKey(title);
+            _chapterCache = chapters;
+        }
+    }
+
+    private IReadOnlyList<JsonObject>? RecallChapters(RemoteTitleIdentity title)
+    {
+        lock (_chapterCacheGate)
+        {
+            return string.Equals(
+                _chapterCacheTitleKey,
+                ChapterCacheKey(title),
+                StringComparison.Ordinal)
+                ? _chapterCache
+                : null;
+        }
+    }
+
+    private static string ChapterCacheKey(RemoteTitleIdentity title) =>
+        title.SourceId + "\0" + title.TitleHid;
 
     /// <summary>
     /// One group's chapters only, in the provider's own captured order. The
