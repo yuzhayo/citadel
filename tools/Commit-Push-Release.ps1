@@ -88,6 +88,27 @@ try {
         throw 'Commit message tidak boleh kosong.'
     }
 
+    Write-Host '[Citadel] Menjalankan preflight CI lokal sebelum staging...'
+    Invoke-Native dotnet @('restore', 'Citadel.slnx')
+    Invoke-Native dotnet @(
+        'test', 'Citadel.slnx',
+        '--configuration', 'Release',
+        '--no-restore',
+        '--nologo')
+    foreach ($citizen in @('ftf', 'proxy', 'blank', 'camoprof', 'mangareader')) {
+        $projectName = switch ($citizen) {
+            'ftf' { 'Module.FTF.csproj' }
+            'proxy' { 'Module.Proxy.csproj' }
+            'blank' { 'Module.Blank.csproj' }
+            'camoprof' { 'Module.Camoprof.csproj' }
+            'mangareader' { 'Module.Mangareader.csproj' }
+        }
+        Invoke-Native dotnet @(
+            'build', "module/$citizen/$projectName",
+            '-v', 'q',
+            '--nologo')
+    }
+
     Invoke-Native git @('add', '-A', '--', '.')
     & git diff --cached --quiet
     if ($LASTEXITCODE -eq 0) {

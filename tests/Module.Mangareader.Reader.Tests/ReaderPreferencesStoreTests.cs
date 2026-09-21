@@ -80,7 +80,10 @@ public sealed class ReaderPreferencesStoreTests : IDisposable
         }
 
         using var reloaded = new ReaderPreferencesStore(path);
-        Assert.Equal(new ReaderPreferenceValues(45, 13), reloaded.Current);
+        Assert.Equal(new ReaderPreferenceValues(
+            45,
+            13,
+            ReaderValuePolicy.DefaultManualScrollPercentPerTick), reloaded.Current);
         var json = File.ReadAllText(path);
         Assert.DoesNotContain("zoom", json, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("drawer", json, StringComparison.OrdinalIgnoreCase);
@@ -113,7 +116,7 @@ public sealed class ReaderPreferencesStoreTests : IDisposable
     {
         var path = PathOf("parallel.json");
         var candidates = Enumerable.Range(0, 16)
-            .Select(index => new ReaderPreferenceValues(index * 5, index + 1))
+            .Select(index => new ReaderPreferenceValues(index * 5, index + 1, index + 2))
             .ToArray();
 
         Parallel.For(
@@ -138,7 +141,10 @@ public sealed class ReaderPreferencesStoreTests : IDisposable
         string? warning = null;
         store.WarningRaised += (_, value) => warning = value;
 
-        var result = store.Save(new ReaderPreferenceValues(20, 10));
+        var result = store.Save(new ReaderPreferenceValues(
+            20,
+            10,
+            ReaderValuePolicy.DefaultManualScrollPercentPerTick));
 
         Assert.False(result.Saved);
         Assert.NotNull(warning);
