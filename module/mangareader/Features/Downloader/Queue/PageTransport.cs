@@ -42,7 +42,8 @@ public sealed record PageFetchResult(
     string? Sha256,
     string Format,
     string? Detail,
-    bool UsedBrowserFallback)
+    bool UsedBrowserFallback,
+    IReadOnlyDictionary<string, string>? ResponseHeaders = null)
 {
     public bool Succeeded => Outcome == PageFetchOutcome.Stored;
 
@@ -212,7 +213,8 @@ public sealed class PageTransport : IDisposable
                     Convert.ToHexString(SHA256.HashData(bytes)),
                     format,
                     null,
-                    UsedBrowserFallback: false);
+                    UsedBrowserFallback: false,
+                    ResponseHeaders: CopyResponseHeaders(response));
             }
         }
         catch (OperationCanceledException) when (
@@ -303,7 +305,25 @@ public sealed class PageTransport : IDisposable
             evidence.Sha256 ?? Convert.ToHexString(SHA256.HashData(bytes)),
             format,
             null,
-            UsedBrowserFallback: true);
+            UsedBrowserFallback: true,
+            ResponseHeaders: evidence.ResponseHeaders);
+    }
+
+    private static IReadOnlyDictionary<string, string> CopyResponseHeaders(
+        HttpResponseMessage response)
+    {
+        var headers = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var header in response.Headers)
+        {
+            headers[header.Key] = string.Join(",", header.Value);
+        }
+
+        foreach (var header in response.Content.Headers)
+        {
+            headers[header.Key] = string.Join(",", header.Value);
+        }
+
+        return headers;
     }
 
     private static async Task<long> StreamToAsync(

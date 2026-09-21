@@ -489,12 +489,12 @@ public sealed class ChapterDownloadPipeline
 
         var format = fetch.Format;
         var transformed = false;
-        if (page.Transform is not null)
+        if (page.Transform is not null || _source.Capabilities.TransformsPages)
         {
             try
             {
                 var image = await _source
-                    .TransformPageAsync(page, bytes, cancellationToken)
+                    .TransformPageAsync(page, bytes, fetch.ResponseHeaders, cancellationToken)
                     .ConfigureAwait(false);
                 bytes = image.Bytes;
                 format = image.Format;

@@ -248,7 +248,21 @@ public partial class DownloadListScreen : UserControl, IDisposable
 
     private async void Remove_Click(object sender, RoutedEventArgs e)
     {
-        if (Row(sender) is not { } job || _queue is null) return;
+        if ((sender as FrameworkElement)?.Tag is not QueueDisplayRow row || _queue is null) return;
+        var job = row.Job;
+
+        if (row.IsGroup)
+        {
+            var confirmed = SettingDialog.Confirm(
+                Window.GetWindow(this),
+                "Downloader",
+                $"Remove '{job.TitleDisplayName}' and all {row.JobIds.Count} queued chapters?\n\nDownloaded staging data will be discarded. Published CBZ files remain intact.",
+                "Remove");
+            if (!confirmed) return;
+
+            await RemoveAsync(row.JobIds);
+            return;
+        }
 
         // Staging is deleted only after the queue state is committed, and the
         // user is asked first when there is something to lose.

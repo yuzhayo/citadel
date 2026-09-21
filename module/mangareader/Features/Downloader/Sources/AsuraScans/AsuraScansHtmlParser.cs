@@ -30,6 +30,9 @@ internal static partial class AsuraScansHtmlParser
     public static IReadOnlyList<RemoteChapterSummary> ParseChapters(
         string html, RemoteTitleIdentity title, RemoteGroupIdentity group)
     {
+        var serialized = ParseAstroChapters(html, title, group);
+        if (serialized.Count > 0) return serialized;
+
         var document = Parser.ParseDocument(html);
         var seen = new HashSet<string>(StringComparer.Ordinal);
         var result = new List<RemoteChapterSummary>();
@@ -41,6 +44,36 @@ internal static partial class AsuraScansHtmlParser
                 "Chapter " + number,
                 result.Count));
         }
+        return result;
+    }
+
+    private static IReadOnlyList<RemoteChapterSummary> ParseAstroChapters(
+        string html,
+        RemoteTitleIdentity title,
+        RemoteGroupIdentity group)
+    {
+        var decoded = WebUtility.HtmlDecode(html);
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        var result = new List<RemoteChapterSummary>();
+        foreach (var match in AstroChapter().Matches(decoded).Cast<Match>())
+        {
+            if (!string.Equals(
+                    match.Groups["series"].Value,
+                    title.Slug,
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            var id = match.Groups["slug"].Value;
+            var number = match.Groups["number"].Value.Trim('"');
+            if (id.Length == 0 || number.Length == 0 || !seen.Add(id)) continue;
+            result.Add(new RemoteChapterSummary(
+                new RemoteChapterIdentity(AsuraScansContract.SourceId, title, id, number, group),
+                "Chapter " + number,
+                result.Count));
+        }
+
         return result;
     }
 
@@ -82,6 +115,7 @@ internal static partial class AsuraScansHtmlParser
         var match = ChapterPath().Match(path);
         if (!match.Success || !string.Equals(match.Groups["slug"].Value, slug, StringComparison.OrdinalIgnoreCase)) return false;
         id = Uri.UnescapeDataString(match.Groups["chapter"].Value);
+        if (Guid.TryParse(id, out _)) return false;
         number = id.StartsWith("chapter-", StringComparison.OrdinalIgnoreCase) ? id[8..] : id;
         return !string.IsNullOrWhiteSpace(number);
     }
@@ -94,4 +128,7 @@ internal static partial class AsuraScansHtmlParser
 
     [GeneratedRegex("<loc>\\s*(?<url>.*?)\\s*</loc>", RegexOptions.Singleline | RegexOptions.IgnoreCase)]
     private static partial Regex SitemapLocation();
+
+    [GeneratedRegex("\"number\":\\[0,(?<number>\"?-?\\d+(?:\\.\\d+)?\"?)\\],\"slug\":\\[0,\"(?<slug>[^\"]+)\"\\],\"page_count\":\\[0,\\d+\\].{0,1500}?\"series_slug\":\\[0,\"(?<series>[^\"]+)\"\\]", RegexOptions.Singleline)]
+    private static partial Regex AstroChapter();
 }

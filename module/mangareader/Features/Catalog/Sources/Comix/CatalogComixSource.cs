@@ -159,7 +159,7 @@ public static class ComixContract
     /// provenance embedded in already published archives while changing no
     /// behavior, so it moves only when the manifest or page contract moves.
     /// </summary>
-    public const int Version = 2;
+    public const int Version = 3;
 
     public const string SourceId = "comix";
     public const string DisplayName = "Comix";
@@ -1105,28 +1105,45 @@ public sealed class CatalogComixSource(CatalogBrowserClient client)
     public Task<RemotePageImage> TransformPageAsync(
         RemotePage page,
         byte[] payload,
+        CancellationToken cancellationToken) =>
+        TransformPageAsync(page, payload, responseHeaders: null, cancellationToken);
+
+    public Task<RemotePageImage> TransformPageAsync(
+        RemotePage page,
+        byte[] payload,
+        IReadOnlyDictionary<string, string>? responseHeaders,
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(page);
         ArgumentNullException.ThrowIfNull(payload);
+        cancellationToken.ThrowIfCancellationRequested();
 
-        // Scramble descriptors arrive with the page response and travel inside
-        // the manifest page's transform; the queue never interprets them.
-        if (page.Transform is not { } transform)
+        ComixScrambleHeader? header;
+        if (page.Transform is { } transform)
+        {
+            if (!string.Equals(transform.Kind, "comix-scramble", StringComparison.Ordinal))
+            {
+                throw new ComixContractException("Unknown Comix page transform: " + transform.Kind);
+            }
+
+            header = new ComixScrambleHeader(
+                ReadParameter(transform, "seed"),
+                (int)ReadParameter(transform, "grid"),
+                (int)ReadParameter(transform, "algo"),
+                transform.Parameters.TryGetValue("hash", out var hash)
+                    ? (int)long.Parse(hash, CultureInfo.InvariantCulture)
+                    : null);
+        }
+        else
+        {
+            header = ComixScrambleHeaders.Parse(responseHeaders);
+        }
+
+        if (header is null)
         {
             return Task.FromResult(new RemotePageImage(payload, DetectFormat(payload)));
         }
 
-        if (!string.Equals(transform.Kind, "comix-scramble", StringComparison.Ordinal))
-        {
-            throw new ComixContractException("Unknown Comix page transform: " + transform.Kind);
-        }
-
-        var header = new ComixScrambleHeader(
-            ReadParameter(transform, "seed"),
-            (int)ReadParameter(transform, "grid"),
-            (int)ReadParameter(transform, "algo"),
-            transform.Parameters.TryGetValue("hash", out var hash) ? (int)long.Parse(hash, CultureInfo.InvariantCulture) : null);
         if (!CatalogComixPageDecoder.IsSupported(header))
         {
             throw new ComixContractException(

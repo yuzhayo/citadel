@@ -139,6 +139,11 @@ internal sealed class QueueDisplayRow(string id, bool isGroup, Action<QueueDispl
     public bool CanResume => IsGroup
         ? !_children.Any(job => job.IsInFlight) && _children.Any(job => job.CanResume)
         : Job.CanResume;
+    public bool CanPauseChapter => IsChapter && Job.CanPause;
+    public bool CanResumeChapter => IsChapter && Job.CanResume;
+    public IReadOnlyList<string> JobIds => IsGroup
+        ? _children.Select(job => job.JobId).ToArray()
+        : [Job.JobId];
     public string ResumeActionLabel => IsGroup ? GroupResumeActionLabel() : Job.ResumeActionLabel;
     public bool CanActNow => IsGroup || Job.CanActNow;
     public bool CanChooseFallback => !IsGroup && Job.CanChooseFallback;

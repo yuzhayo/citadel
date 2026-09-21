@@ -88,6 +88,17 @@ public sealed class QueueGroupProjectionTests
         Assert.Equal("Start", row.ResumeActionLabel);
     }
 
+    [Fact]
+    public void TitleGroupExposesEveryChildIdForRemoveAction()
+    {
+        var view = new QueueGroupProjection();
+        view.Update([Job("first"), Job("second")]);
+
+        var group = Assert.Single(view.Visible, item => item.IsGroup);
+
+        Assert.Equal(["first", "second"], group.JobIds);
+    }
+
     private static DownloadJobRecord Job(string id) => new()
     {
         JobId = id, TitleDisplayName = "Same title", Identity = new("comix", "title", "hid", id, "group"),

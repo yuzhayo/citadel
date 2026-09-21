@@ -166,7 +166,7 @@ direction and fit modes are explicitly outside this scope.
       auto-scroll, Pin, zoom, Dim Pages, and global Reset contributions.
 - [x] Add themed auto-fading Reader chrome, current-monitor true fullscreen,
       toast, and the locked fullscreen → Drawer → Reader `Esc` priority.
-- [x] Persist only Dim and auto-scroll speed with validated atomic fallback;
+- [x] Persist Dim, auto-scroll speed, and manual-scroll speed with validated atomic fallback;
       keep zoom, fullscreen, Drawer, Pin, and running state session-only.
 - [x] Complete pure behavior, shared-component, regression, and live WPF gates
       before marking this scope implemented.

@@ -20,7 +20,7 @@ public sealed class ReaderResetController : IReaderFeature, IReaderDrawerContrib
         _action = new SettingButton
         {
             Content = "Reset",
-            ToolTip = "Reset zoom, dim, auto-scroll speed/running state, and Pin",
+            ToolTip = "Reset zoom, dim, scroll speeds/running state, and Pin",
         };
         AutomationProperties.SetName(_action, "Reset controls");
         AutomationProperties.SetAutomationId(_action, "ReaderResetAction");
@@ -47,6 +47,7 @@ public sealed class ReaderResetController : IReaderFeature, IReaderDrawerContrib
     {
         _commands.StopAutoScroll();
         _commands.SetAutoScrollSpeed(ReaderValuePolicy.DefaultAutoScrollSeconds);
+        _commands.SetManualScrollSpeed(ReaderValuePolicy.DefaultManualScrollPercentPerTick);
         _commands.ResetZoom(ReaderActivityOrigin.ControlsReset);
         _commands.ResetDim();
         if (_state.IsDrawerPinned) _commands.TogglePin();

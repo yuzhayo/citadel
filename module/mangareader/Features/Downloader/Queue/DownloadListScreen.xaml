@@ -151,7 +151,7 @@
 
                             <DataGridTemplateColumn Header="Action"
                                                     CanUserSort="False"
-                                                    MinWidth="200">
+                                                    MinWidth="300">
                                 <DataGridTemplateColumn.CellTemplate>
                                     <DataTemplate>
                                         <!--
@@ -165,19 +165,34 @@
                                             <setting:SettingTableActions.PrimaryContent>
                                                 <WrapPanel>
                                                     <setting:SettingButton MinWidth="88"
-                                                                           AutomationProperties.Name="Stop job or title group"
+                                                                           AutomationProperties.Name="Resume title group"
+                                                                           Click="PauseResume_Click"
+                                                                           Content="{Binding ResumeActionLabel}"
+                                                                           IsEnabled="{Binding CanResume}"
+                                                                           Tag="{Binding}"
+                                                                           Visibility="{Binding IsGroup, Converter={StaticResource BoolToVisibility}}" />
+                                                    <setting:SettingButton MinWidth="88"
+                                                                           Margin="6,0,0,0"
+                                                                           AutomationProperties.Name="Stop title group"
+                                                                           Click="PauseResume_Click"
+                                                                           Content="Stop"
+                                                                           IsEnabled="{Binding CanPause}"
+                                                                           Tag="{Binding}"
+                                                                           Visibility="{Binding IsGroup, Converter={StaticResource BoolToVisibility}}" />
+                                                    <setting:SettingButton MinWidth="88"
+                                                                           AutomationProperties.Name="Stop job"
                                                                            Click="PauseResume_Click"
                                                                            Content="Stop"
                                                                            IsEnabled="{Binding CanActNow}"
                                                                            Tag="{Binding}"
-                                                                           Visibility="{Binding CanPause, Converter={StaticResource BoolToVisibility}}" />
+                                                                           Visibility="{Binding CanPauseChapter, Converter={StaticResource BoolToVisibility}}" />
                                                     <setting:SettingButton MinWidth="88"
                                                                            AutomationProperties.Name="{Binding ResumeActionLabel}"
                                                                            Click="PauseResume_Click"
                                                                            Content="{Binding ResumeActionLabel}"
                                                                            IsEnabled="{Binding CanActNow}"
                                                                            Tag="{Binding}"
-                                                                           Visibility="{Binding CanResume, Converter={StaticResource BoolToVisibility}}" />
+                                                                           Visibility="{Binding CanResumeChapter, Converter={StaticResource BoolToVisibility}}" />
                                                     <setting:SettingButton MinWidth="118"
                                                                            AutomationProperties.Name="Choose fallback source group"
                                                                            Click="ChooseSource_Click"
@@ -195,10 +210,9 @@
                                             </setting:SettingTableActions.PrimaryContent>
                                             <setting:SettingTableActions.SecondaryContent>
                                                 <setting:SettingButton MinWidth="80"
-                                                                       AutomationProperties.Name="Remove job"
+                                                                       AutomationProperties.Name="Remove job or title group"
                                                                        Click="Remove_Click"
                                                                        Content="Remove"
-                                                                       Visibility="{Binding IsChapter, Converter={StaticResource BoolToVisibility}}"
                                                                        Tag="{Binding}" />
                                             </setting:SettingTableActions.SecondaryContent>
                                         </setting:SettingTableActions>

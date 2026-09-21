@@ -14,7 +14,8 @@ public sealed record BrowserFetchEvidence(
     long Bytes,
     string? Sha256,
     string ContentType,
-    string? Path);
+    string? Path,
+    IReadOnlyDictionary<string, string>? ResponseHeaders);
 
 /// <summary>
 /// The Downloader's own command/payload adapter over the shared pyhost
@@ -260,7 +261,24 @@ public sealed class DownloaderPyHostClient : IDisposable
             response["bytes"]?.GetValue<long>() ?? 0,
             response["sha256"]?.GetValue<string>(),
             response["content_type"]?.GetValue<string>() ?? string.Empty,
-            response["path"]?.GetValue<string>());
+            response["path"]?.GetValue<string>(),
+            ReadHeaders(response["response_headers"] as JsonObject));
+    }
+
+    private static IReadOnlyDictionary<string, string>? ReadHeaders(JsonObject? value)
+    {
+        if (value is null) return null;
+
+        var headers = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var pair in value)
+        {
+            if (pair.Value is JsonValue node && node.TryGetValue<string>(out var text))
+            {
+                headers[pair.Key] = text;
+            }
+        }
+
+        return headers;
     }
 
     /// <summary>

@@ -23,6 +23,7 @@ internal static class ReaderDefaultFeatureCatalog
             .Add("ChapterNavigation", static () => new ReaderChapterNavigation())
             .Add("Fullscreen", () => new ReaderFullscreenController(window, state, commands))
             .Add("AutoScroll", () => new ReaderAutoScrollController(state, commands))
+            .Add("ManualScroll", () => new ReaderManualScrollController(state, commands))
             .Add("Pin", () => new ReaderPinController(state, commands))
             .Add("Zoom", () => new ReaderZoomController(state, commands))
             .Add("Dim", () => new ReaderDimController(state, commands))

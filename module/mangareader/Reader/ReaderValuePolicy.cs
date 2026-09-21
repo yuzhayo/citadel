@@ -16,6 +16,9 @@ public static class ReaderValuePolicy
     public const double MinimumAutoScrollSeconds = 1;
     public const double MaximumAutoScrollSeconds = 30;
     public const double DefaultAutoScrollSeconds = 5;
+    public const double MinimumManualScrollPercentPerTick = 2;
+    public const double MaximumManualScrollPercentPerTick = 20;
+    public const double DefaultManualScrollPercentPerTick = 8;
 
     public static double NormalizeZoom(double value)
     {
@@ -38,6 +41,15 @@ public static class ReaderValuePolicy
         var finite = double.IsFinite(value) ? value : DefaultAutoScrollSeconds;
         return Math.Round(
             Math.Clamp(finite, MinimumAutoScrollSeconds, MaximumAutoScrollSeconds),
+            MidpointRounding.AwayFromZero);
+    }
+
+    public static double NormalizeManualScroll(double value)
+    {
+        var finite = double.IsFinite(value) ? value : DefaultManualScrollPercentPerTick;
+        return Math.Round(
+            Math.Clamp(finite, MinimumManualScrollPercentPerTick, MaximumManualScrollPercentPerTick),
+            0,
             MidpointRounding.AwayFromZero);
     }
 }

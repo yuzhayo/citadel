@@ -47,7 +47,8 @@ public partial class ReaderWindow : Window
         _preferences = preferences;
         _state = new ReaderSessionState(
             _preferences.Current.DimPercent,
-            _preferences.Current.AutoScrollSecondsPerViewport);
+            _preferences.Current.AutoScrollSecondsPerViewport,
+            _preferences.Current.ManualScrollPercentPerTick);
         DataContext = _state;
 
         _commands = new ReaderCommandHub();

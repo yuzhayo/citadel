@@ -76,11 +76,46 @@ public sealed class AsuraThunderSourceTests
         Assert.True(page.HasMore);
         Assert.Equal("A machine story.", detailResult.Description);
         Assert.Equal(["Action"], detailResult.Genres.Select(genre => genre.DisplayName));
-        Assert.Equal(["297", "e910ccd1-584f-44be-be28-92661f288af0"], chapters.Select(chapter => chapter.Identity.ChapterNumber));
+        Assert.Equal(["297"], chapters.Select(chapter => chapter.Identity.ChapterNumber));
         Assert.Equal(chapters.Select(chapter => chapter.Identity.ChapterId), sitemapChapters.Select(chapter => chapter.Identity.ChapterId));
         Assert.Equal(2, pages.Count);
         Assert.All(pages, url => Assert.Contains("?v=1770499638", url, StringComparison.Ordinal));
         Assert.Equal(20, AsuraScansContract.PageSize);
+    }
+
+    [Fact]
+    public void AsuraDetailAndAstroChaptersMapProviderFieldsToTheirDisplayContract()
+    {
+        const string detail = """
+            {"series":{"id":2110,"slug":"im-not-that-kind-of-talent","title":"I'm Not That Kind of Talent",
+            "description":"<p>First sentence.</p><p>Second sentence.</p>","cover":"https://cdn.asurascans.com/cover.webp",
+            "type":"manhwa","status":"ongoing","author":"Denfee","artist":"Meona",
+            "genres":[{"name":"Action","slug":"action"}]}}
+            """;
+        const string titleHtml = """
+            &quot;id&quot;:[0,163937],&quot;series_id&quot;:[0,2110],&quot;number&quot;:[0,89],&quot;slug&quot;:[0,&quot;7395790b-5358-41a0-a83b-68aa28e6fcd3&quot;],&quot;page_count&quot;:[0,16],&quot;is_premium&quot;:[0,false],&quot;series_slug&quot;:[0,&quot;im-not-that-kind-of-talent&quot;]
+            """;
+        var identity = new RemoteTitleIdentity(
+            AsuraScansContract.SourceId,
+            "im-not-that-kind-of-talent",
+            "2110",
+            "im-not-that-kind-of-talent");
+
+        var parsedDetail = AsuraScansJsonParser.ParseTitle(detail, identity);
+        var chapters = AsuraScansHtmlParser.ParseChapters(
+            titleHtml,
+            identity,
+            AsuraScansSource.Group.Identity);
+
+        Assert.Equal("First sentence. Second sentence.", parsedDetail.Description);
+        Assert.Contains(parsedDetail.Metadata, item => item.DisplayName == "Type" && item.Key == "manhwa");
+        Assert.Contains(parsedDetail.Metadata, item => item.DisplayName == "Status" && item.Key == "ongoing");
+        Assert.Contains(parsedDetail.Metadata, item => item.DisplayName == "Author" && item.Key == "Denfee");
+        Assert.Contains(parsedDetail.Metadata, item => item.DisplayName == "Artist" && item.Key == "Meona");
+        var chapter = Assert.Single(chapters);
+        Assert.Equal("7395790b-5358-41a0-a83b-68aa28e6fcd3", chapter.Identity.ChapterId);
+        Assert.Equal("89", chapter.Identity.ChapterNumber);
+        Assert.Equal("Chapter 89", chapter.DisplayName);
     }
 
     [Fact]

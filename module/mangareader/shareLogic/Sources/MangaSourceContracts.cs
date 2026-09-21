@@ -270,6 +270,19 @@ public interface IMangaSource
         CancellationToken cancellationToken);
 
     /// <summary>
+    /// Source-owned transform with the response metadata that accompanied the
+    /// downloaded bytes. The default preserves providers whose transforms are
+    /// fully described by the manifest; providers such as Comix can override
+    /// this seam when the server declares its transform on the image response.
+    /// </summary>
+    Task<RemotePageImage> TransformPageAsync(
+        RemotePage page,
+        byte[] payload,
+        IReadOnlyDictionary<string, string>? responseHeaders,
+        CancellationToken cancellationToken) =>
+        TransformPageAsync(page, payload, cancellationToken);
+
+    /// <summary>
     /// Searches the other groups of the same title for an exact match of this
     /// chapter number. Matching is by the provider's chapter number, which is
     /// display metadata — the returned identity always carries the alternate

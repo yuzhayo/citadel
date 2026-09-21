@@ -535,6 +535,7 @@ async def cmd_fetch(host, msg):
             # Bukan error protokol: C# yang mengklasifikasikan 404/429/5xx.
             return {"status": status, "bytes": 0, "sha256": None,
                     "content_type": response.headers.get("content-type", ""),
+                    "response_headers": dict(response.headers),
                     "path": None}
 
         body = await response.body()
@@ -560,6 +561,7 @@ async def cmd_fetch(host, msg):
             "bytes": len(body),
             "sha256": hashlib.sha256(body).hexdigest(),
             "content_type": response.headers.get("content-type", ""),
+            "response_headers": dict(response.headers),
             "path": target}
 
 

@@ -11,6 +11,7 @@ public interface IReaderStateView : INotifyPropertyChanged
     bool IsDrawerPinned { get; }
     bool IsAutoScrollRunning { get; }
     double AutoScrollSecondsPerViewport { get; }
+    double ManualScrollPercentPerTick { get; }
     bool IsLoading { get; }
     bool HasError { get; }
     bool IsTransitioning { get; }
@@ -29,16 +30,19 @@ public sealed class ReaderSessionState : IReaderStateView
     private bool _isDrawerPinned;
     private bool _isAutoScrollRunning;
     private double _autoScrollSecondsPerViewport = ReaderValuePolicy.DefaultAutoScrollSeconds;
+    private double _manualScrollPercentPerTick = ReaderValuePolicy.DefaultManualScrollPercentPerTick;
     private bool _isLoading = true;
     private bool _hasError;
     private bool _isTransitioning;
 
     public ReaderSessionState(
         double dimPercent = ReaderValuePolicy.MinimumDimPercent,
-        double autoScrollSecondsPerViewport = ReaderValuePolicy.DefaultAutoScrollSeconds)
+        double autoScrollSecondsPerViewport = ReaderValuePolicy.DefaultAutoScrollSeconds,
+        double manualScrollPercentPerTick = ReaderValuePolicy.DefaultManualScrollPercentPerTick)
     {
         _dimPercent = NormalizeDim(dimPercent);
         _autoScrollSecondsPerViewport = NormalizeAutoScroll(autoScrollSecondsPerViewport);
+        _manualScrollPercentPerTick = NormalizeManualScroll(manualScrollPercentPerTick);
     }
 
     public event PropertyChangedEventHandler? PropertyChanged;
@@ -50,6 +54,7 @@ public sealed class ReaderSessionState : IReaderStateView
     public bool IsDrawerPinned => _isDrawerPinned;
     public bool IsAutoScrollRunning => _isAutoScrollRunning;
     public double AutoScrollSecondsPerViewport => _autoScrollSecondsPerViewport;
+    public double ManualScrollPercentPerTick => _manualScrollPercentPerTick;
     public bool IsLoading => _isLoading;
     public bool HasError => _hasError;
     public bool IsTransitioning => _isTransitioning;
@@ -78,6 +83,12 @@ public sealed class ReaderSessionState : IReaderStateView
             NormalizeAutoScroll(value),
             nameof(AutoScrollSecondsPerViewport));
 
+    internal void SetManualScrollPercentPerTick(double value) =>
+        SetField(
+            ref _manualScrollPercentPerTick,
+            NormalizeManualScroll(value),
+            nameof(ManualScrollPercentPerTick));
+
     internal void SetLoading(bool value) =>
         SetField(ref _isLoading, value, nameof(IsLoading));
 
@@ -93,6 +104,9 @@ public sealed class ReaderSessionState : IReaderStateView
 
     public static double NormalizeAutoScroll(double value) =>
         ReaderValuePolicy.NormalizeAutoScroll(value);
+
+    public static double NormalizeManualScroll(double value) =>
+        ReaderValuePolicy.NormalizeManualScroll(value);
 
     private void SetField<T>(ref T field, T value, string propertyName)
     {

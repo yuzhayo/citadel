@@ -8,15 +8,18 @@ namespace Module.Mangareader.ReaderCore;
 
 public sealed record ReaderPreferenceValues(
     double DimPercent,
-    double AutoScrollSecondsPerViewport)
+    double AutoScrollSecondsPerViewport,
+    double ManualScrollPercentPerTick)
 {
     public static ReaderPreferenceValues Default { get; } = new(
         ReaderValuePolicy.MinimumDimPercent,
-        ReaderValuePolicy.DefaultAutoScrollSeconds);
+        ReaderValuePolicy.DefaultAutoScrollSeconds,
+        ReaderValuePolicy.DefaultManualScrollPercentPerTick);
 
     public ReaderPreferenceValues Normalize() => new(
         ReaderValuePolicy.NormalizeDim(DimPercent),
-        ReaderValuePolicy.NormalizeAutoScroll(AutoScrollSecondsPerViewport));
+        ReaderValuePolicy.NormalizeAutoScroll(AutoScrollSecondsPerViewport),
+        ReaderValuePolicy.NormalizeManualScroll(ManualScrollPercentPerTick));
 }
 
 public sealed record ReaderPreferenceLoadResult(ReaderPreferenceValues Values, string? Warning);
@@ -82,7 +85,8 @@ public sealed class ReaderPreferencesStore : IDisposable
         {
             _current = new ReaderPreferenceValues(
                 state.DimPercent,
-                state.AutoScrollSecondsPerViewport).Normalize();
+                state.AutoScrollSecondsPerViewport,
+                state.ManualScrollPercentPerTick).Normalize();
         }
         state.PropertyChanged += OnStatePropertyChanged;
     }
@@ -143,8 +147,14 @@ public sealed class ReaderPreferencesStore : IDisposable
                     ReaderPreferenceValues.Default.AutoScrollSecondsPerViewport,
                     ReaderValuePolicy.NormalizeAutoScroll,
                     warnings);
+                var manualSpeed = ReadIndependentNumber(
+                    root,
+                    "manualScrollPercentPerTick",
+                    ReaderPreferenceValues.Default.ManualScrollPercentPerTick,
+                    ReaderValuePolicy.NormalizeManualScroll,
+                    warnings);
                 return new ReaderPreferenceLoadResult(
-                    new ReaderPreferenceValues(dim, speed),
+                    new ReaderPreferenceValues(dim, speed, manualSpeed),
                     warnings.Count == 0 ? null : string.Join(" ", warnings));
             }
             catch (Exception exception) when (exception is IOException
@@ -198,6 +208,7 @@ public sealed class ReaderPreferencesStore : IDisposable
                         Version = SchemaVersion,
                         DimPercent = normalized.DimPercent,
                         AutoScrollSecondsPerViewport = normalized.AutoScrollSecondsPerViewport,
+                        ManualScrollPercentPerTick = normalized.ManualScrollPercentPerTick,
                     },
                     new JsonSerializerOptions
                     {
@@ -253,14 +264,16 @@ public sealed class ReaderPreferencesStore : IDisposable
     {
         if (_boundState is null) return;
         if (e.PropertyName is not nameof(IReaderStateView.DimPercent)
-            and not nameof(IReaderStateView.AutoScrollSecondsPerViewport))
+            and not nameof(IReaderStateView.AutoScrollSecondsPerViewport)
+            and not nameof(IReaderStateView.ManualScrollPercentPerTick))
         {
             return;
         }
 
         var current = new ReaderPreferenceValues(
             _boundState.DimPercent,
-            _boundState.AutoScrollSecondsPerViewport).Normalize();
+            _boundState.AutoScrollSecondsPerViewport,
+            _boundState.ManualScrollPercentPerTick).Normalize();
         lock (_stateGate)
         {
             if (_current == current) return;
@@ -351,6 +364,7 @@ public sealed class ReaderPreferencesStore : IDisposable
         public int Version { get; init; }
         public double DimPercent { get; init; }
         public double AutoScrollSecondsPerViewport { get; init; }
+        public double ManualScrollPercentPerTick { get; init; }
     }
 }
 

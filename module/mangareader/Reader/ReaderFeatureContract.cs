@@ -63,6 +63,7 @@ public interface IReaderCommands
     void ResetDim();
     void StartAutoScroll();
     void SetAutoScrollSpeed(double secondsPerViewport);
+    void SetManualScrollSpeed(double percentPerTick);
     void StopAutoScroll();
     void ResetAll();
 }
@@ -82,6 +83,7 @@ internal sealed class ReaderCommandHub : IReaderCommands
     internal event Action? ResetDimRequested;
     internal event Action? StartAutoScrollRequested;
     internal event Action<double>? SetAutoScrollSpeedRequested;
+    internal event Action<double>? SetManualScrollSpeedRequested;
     internal event Action? StopAutoScrollRequested;
     internal event Action? ResetAllRequested;
 
@@ -100,6 +102,8 @@ internal sealed class ReaderCommandHub : IReaderCommands
     public void StartAutoScroll() => StartAutoScrollRequested?.Invoke();
     public void SetAutoScrollSpeed(double secondsPerViewport) =>
         SetAutoScrollSpeedRequested?.Invoke(secondsPerViewport);
+    public void SetManualScrollSpeed(double percentPerTick) =>
+        SetManualScrollSpeedRequested?.Invoke(percentPerTick);
     public void StopAutoScroll() => StopAutoScrollRequested?.Invoke();
     public void ResetAll() => ResetAllRequested?.Invoke();
 }

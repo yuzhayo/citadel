@@ -263,6 +263,37 @@ public sealed class ComixContractTests
         Assert.Equal(Pixels(original), Pixels(restored));
     }
 
+    [Fact]
+    public async Task ResponseScrambleHeadersAreDecodedBeforeThePageIsStaged()
+    {
+        const int grid = 2;
+        const int tilePixels = 24;
+        const long seed = 3641158735L;
+        var header = new ComixScrambleHeader(seed, grid, ComixPageDecoder.SupportedAlgorithm, null);
+        var permutation = ComixPageDecoder.GeneratePermutation(grid, seed, null);
+        var original = Render(Enumerable.Range(0, grid * grid).ToList(), grid, tilePixels);
+        var scrambled = Render(
+            Enumerable.Range(0, grid * grid).Select(index => permutation[index]).ToList(),
+            grid,
+            tilePixels);
+        var page = new RemotePage(0, "0", "https://image.example/page", null, null);
+        var headers = new Dictionary<string, string>
+        {
+            [ComixScrambleHeaders.SeedHeader] = seed.ToString(),
+            [ComixScrambleHeaders.GridHeader] = grid.ToString(),
+            [ComixScrambleHeaders.AlgorithmHeader] = ComixPageDecoder.SupportedAlgorithm.ToString(),
+        };
+
+        var result = await new ComixSource(null!).TransformPageAsync(
+            page,
+            EncodePng(scrambled),
+            headers,
+            CancellationToken.None);
+
+        Assert.Equal("png", result.Format);
+        Assert.Equal(Pixels(original), Pixels(DecodePng(result.Bytes)));
+    }
+
     [Theory]
     [InlineData(0)]
     [InlineData(1)]

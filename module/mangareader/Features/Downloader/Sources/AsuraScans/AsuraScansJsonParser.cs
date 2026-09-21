@@ -1,4 +1,5 @@
 using System.Text.Json;
+using AngleSharp.Html.Parser;
 using Module.Mangareader.Sources;
 
 namespace Module.Mangareader.Features.Downloader.Sources.AsuraScans;
@@ -18,16 +19,16 @@ internal static class AsuraScansJsonParser
                 .Select(item => new RemoteOption(String(item, "slug") ?? RequiredString(item, "name"), RequiredString(item, "name"))).ToArray()
             : [];
         var metadata = new List<RemoteOption>();
-        if (String(series, "type") is { } type) metadata.Add(new("Type", type));
-        if (String(series, "status") is { } status) metadata.Add(new("Status", status));
-        if (String(series, "author") is { } author) metadata.Add(new("Author", author));
-        if (String(series, "artist") is { } artist) metadata.Add(new("Artist", artist));
+        if (String(series, "type") is { } type) metadata.Add(new(type, "Type"));
+        if (String(series, "status") is { } status) metadata.Add(new(status, "Status"));
+        if (String(series, "author") is { } author) metadata.Add(new(author, "Author"));
+        if (String(series, "artist") is { } artist) metadata.Add(new(artist, "Artist"));
         return new RemoteTitleDetail(
             new RemoteTitleSummary(identity, title, Cover(series), LatestChapter(series))
             {
                 CoverRequestHeaders = RefererHeaders(),
             },
-            String(series, "description"), genres, metadata);
+            PlainText(String(series, "description")), genres, metadata);
     }
 
     public static RemoteCatalogPage ParseCatalog(string payload, int requestedPage)
@@ -105,5 +106,26 @@ internal static class AsuraScansJsonParser
         element.TryGetProperty(name, out var value)
         && value.ValueKind is JsonValueKind.True or JsonValueKind.False
         && value.GetBoolean();
+
+    private static string? PlainText(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value)) return null;
+
+        var document = new HtmlParser().ParseDocument("<body>" + value + "</body>");
+        var body = document.Body;
+        if (body is null) return NormalizeWhitespace(value);
+
+        var blocks = body.Children
+            .Select(element => NormalizeWhitespace(element.TextContent))
+            .Where(text => text.Length > 0)
+            .ToArray();
+        var text = blocks.Length > 0
+            ? string.Join(" ", blocks)
+            : NormalizeWhitespace(body.TextContent);
+        return text.Length == 0 ? null : text;
+    }
+
+    private static string NormalizeWhitespace(string value) =>
+        string.Join(" ", value.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
 
 }
