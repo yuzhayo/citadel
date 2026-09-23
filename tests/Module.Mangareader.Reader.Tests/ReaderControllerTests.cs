@@ -730,6 +730,63 @@ public sealed class ReaderControllerTests
         });
     }
 
+    [Fact]
+    public void ManualWheel_ScrollsWithMomentumAndSettlesUsingManualWheelOrigin()
+    {
+        WpfTest.Run(() =>
+        {
+            var state = new ReaderSessionState();
+            state.SetLoading(false);
+            var commands = new ReaderCommandHub();
+            var viewport = new TestViewport { ViewportHeight = 600, ScrollableHeight = 2400 };
+            viewport.ScrollToVerticalOffset(500, ReaderActivityOrigin.LayoutRestore);
+            viewport.VerticalScrolls.Clear();
+            var input = new TestInputEvents();
+            var context = ReaderTestContext.Create(state, commands, viewport, input: input);
+            using var feature = new ReaderManualScrollController(state, commands);
+            feature.Attach(context);
+            // The momentum glide runs off CompositionTarget.Rendering, which only
+            // fires against a real render surface, so host the viewport in a window.
+            var window = new Window
+            {
+                Width = 320,
+                Height = 240,
+                ShowInTaskbar = false,
+                Left = -10000,
+                Top = -10000,
+                Content = viewport.InputElement,
+            };
+
+            try
+            {
+                window.Show();
+                var args = new MouseWheelEventArgs(Mouse.PrimaryDevice, Environment.TickCount, -120)
+                {
+                    RoutedEvent = UIElement.MouseWheelEvent,
+                };
+                input.Wheel(args);
+
+                // A downward notch drives the offset down and then coasts to rest,
+                // whether the OS animates (momentum) or not (a single direct step).
+                WpfTest.PumpFor(TimeSpan.FromMilliseconds(1500));
+                var rest = viewport.VerticalOffset;
+                WpfTest.PumpFor(TimeSpan.FromMilliseconds(300));
+
+                Assert.True(args.Handled);
+                Assert.True(rest > 500, "a wheel-down notch should increase the offset");
+                Assert.Equal(rest, viewport.VerticalOffset, 1);
+                Assert.NotEmpty(viewport.VerticalScrolls);
+                Assert.All(
+                    viewport.VerticalScrolls,
+                    scroll => Assert.Equal(ReaderActivityOrigin.ManualWheel, scroll.Origin));
+            }
+            finally
+            {
+                window.Close();
+            }
+        });
+    }
+
     private static IEnumerable<T> Descendants<T>(DependencyObject root)
         where T : DependencyObject
     {

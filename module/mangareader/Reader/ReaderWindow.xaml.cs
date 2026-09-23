@@ -23,12 +23,13 @@ public partial class ReaderWindow : Window
     private bool _loadStarted;
     private bool _closed;
 
-    public ReaderWindow(MangaTitle title, ChapterInfo chapter)
+    public ReaderWindow(MangaTitle title, ChapterInfo chapter, double? resumeProgress = null)
         : this(
             title,
             chapter,
             new ReaderPreferencesStore(),
-            new CbzReaderChapterLoader())
+            new CbzReaderChapterLoader(),
+            resumeProgress)
     {
     }
 
@@ -36,7 +37,8 @@ public partial class ReaderWindow : Window
         MangaTitle title,
         ChapterInfo chapter,
         ReaderPreferencesStore preferences,
-        IReaderChapterLoader chapterLoader)
+        IReaderChapterLoader chapterLoader,
+        double? resumeProgress = null)
     {
         ArgumentNullException.ThrowIfNull(title);
         ArgumentNullException.ThrowIfNull(chapter);
@@ -64,7 +66,7 @@ public partial class ReaderWindow : Window
             CloseAfterErrorButton,
             _notifications);
         _navigation = new ReaderChapterNavigationHub(title, chapter);
-        var content = new ReaderContentContext(title, chapter, chapterLoader, status);
+        var content = new ReaderContentContext(title, chapter, chapterLoader, status, resumeProgress);
 
         _input = new ReaderInputRouter(this, _viewport, _state, _commands, _activity);
         var context = new ReaderFeatureContext(

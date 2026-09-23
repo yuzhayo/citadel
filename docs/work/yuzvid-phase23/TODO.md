@@ -1,6 +1,8 @@
 # Yuzvid Phase 2–4 — task breakdown (v2, post-review)
 
-> Baseline: 2.8.16 → hasil: 2.8.17 (kode T2.1–T4.2 selesai, verifikasi build+unit; smoke visual menyusul).
+> Baseline: 2.8.16 → hasil: 2.8.17 (kode T2.1–T4.2 selesai, verifikasi build+unit) → 2.8.38
+> (silent-popup R1–R4, redirect fence + EasyList, floating/toggle/gear, bookmark/history,
+> maintab dedup; smoke visual menyusul). Sinkron 2026-09-23.
 > Setiap task ≤5 file. Stop di checkpoint. Blocker #0 sudah selesai.
 > Guard = verifikasi **lokal** (bukan CI) sampai kamu putuskan upgrade CI.
 > Nama metode/prop mengacu baseline audit — **jangan tebak**.
@@ -82,3 +84,10 @@
 - Host ber-captcha → Source B baru nyala setelah interaksi.
 - Multi-tab paralel belum diuji.
 - Smoke visual DNS/proxy (review #6) belum tercatat → jadwalkan verifikasi live terpisah.
+- Resolver embed→stream hilang di port (audit 2026-09-23): `QueueEngine` GET mentah
+  `link.Full` → link embed tersimpan sebagai HTML, bukan video. Butuh resolver di
+  titik enqueue/start (parity doodlib). Prioritas 1.
+- `ClearVideoRequests` dead code (grep: nol pemanggil): tap menumpuk lintas halaman.
+  Kawat ke `Navigated`. Satu baris.
+- `.m3u8` di-GET mentah → playlist tersimpan sebagai file (temuan turunan kode,
+  UNVERIFIABLE sampai live). Butuh perakitan segmen HLS.

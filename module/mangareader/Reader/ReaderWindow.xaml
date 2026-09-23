@@ -28,6 +28,8 @@
             IsDeferredScrollingEnabled="False"
             PanningMode="VerticalOnly"
             Background="#05060A"
+            SnapsToDevicePixels="False"
+            UseLayoutRounding="False"
             Style="{DynamicResource SettingScrollViewerStyle}">
             <ItemsControl
                 x:Name="ChapterList"
@@ -36,7 +38,7 @@
                 <ItemsControl.ItemContainerStyle>
                     <Style TargetType="{x:Type ContentPresenter}">
                         <Setter Property="HorizontalAlignment" Value="Stretch" />
-                        <Setter Property="SnapsToDevicePixels" Value="True" />
+                        <Setter Property="SnapsToDevicePixels" Value="False" />
                         <Setter Property="Panel.ZIndex" Value="{Binding ZIndex}" />
                     </Style>
                 </ItemsControl.ItemContainerStyle>
@@ -60,7 +62,7 @@
                                 <ItemsControl.ItemContainerStyle>
                                     <Style TargetType="{x:Type ContentPresenter}">
                                         <Setter Property="HorizontalAlignment" Value="Stretch" />
-                                        <Setter Property="SnapsToDevicePixels" Value="True" />
+                                        <Setter Property="SnapsToDevicePixels" Value="False" />
                                     </Style>
                                 </ItemsControl.ItemContainerStyle>
                                 <ItemsControl.ItemsPanel>
@@ -77,18 +79,8 @@
                                             Stretch="Uniform"
                                             HorizontalAlignment="Center"
                                             VerticalAlignment="Top"
-                                            SnapsToDevicePixels="True">
-                                            <Image.Style>
-                                                <Style TargetType="{x:Type Image}">
-                                                    <Setter Property="RenderOptions.BitmapScalingMode" Value="Fant" />
-                                                    <Style.Triggers>
-                                                        <DataTrigger Binding="{Binding Quality}" Value="Preview">
-                                                            <Setter Property="RenderOptions.BitmapScalingMode" Value="LowQuality" />
-                                                        </DataTrigger>
-                                                    </Style.Triggers>
-                                                </Style>
-                                            </Image.Style>
-                                        </Image>
+                                            SnapsToDevicePixels="False"
+                                            RenderOptions.BitmapScalingMode="Fant" />
                                     </DataTemplate>
                                 </ItemsControl.ItemTemplate>
                             </ItemsControl>

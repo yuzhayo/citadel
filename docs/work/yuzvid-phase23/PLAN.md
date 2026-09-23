@@ -1,6 +1,8 @@
 # Yuzvid Phase 2 & 3 — implementasi plan (puzzle-block)
 
-> Status: **Phase 0 selesai; Phase 2–4 belum dimulai.** Baseline aktif: **2.8.16**.
+> Status (sinkron 2026-09-23): **kode T2.1–T4.2 selesai (2.8.17)** + R1–R4 silent-popup,
+> redirect fence + EasyList, floating/toggle/gear, bookmark/history, maintab dedup/dup-cancel
+> **s/d 2.8.38**. Tersisa: **E2E visual** + 3 temuan audit (TODO §Terbuka). Detail realisasi: §11.
 > Revisi v2 setelah review — enam temuan diverifikasi ke disk, semuanya valid.
 > Prinsip: fitur = adapter tipis yang merangkai blok yang sudah ada. Menara dilarang.
 
@@ -238,3 +240,21 @@ extract→drawer end-to-end sebelum sentuh download.
 - Flag Chromium DNS (memang tidak dipakai; DoH di C# — sudah benar).
 - Daftar `DEFAULT_VIDEO_HOSTS` dikurangi/dikurasi — **keputusan kamu** kalau mau diedit.
 - `ouo.io` unwrap & pagination — di luar Phase 3 (navigasi multi-halaman = scope sendiri).
+
+---
+
+## 11. Realisasi pasca-v2 (sinkron 2026-09-23, histori §1–§10 dipertahankan)
+
+- **2.8.17:** T2.1–T4.2 selesai — bridge 2 arah, `VideoLinkExtractor` + `ExtractionFeature`
+  (A∪B, B menang), `LinkDrawerView` + re-scan, `QueueEngine` + `QueueView`. Verifikasi:
+  build + unit; smoke visual menyusul (masih terbuka → TODO §E2E).
+- **2.8.18–2.8.25:** `SilentPopupHostManager` (hidden session, 20s hard + 3s idle),
+  trace `%LOCALAPPDATA%\Citadel\Yuzvid\popup-trace.log`, redirect fence
+  (`NavigationStarting` + `e.Cancel`, gesture-exempt + same-host-exempt),
+  EasyList subset dokumen + baked fallback, floating window + toggle + gear popup.
+- **2.8.26–2.8.38:** bookmark/history, content→main-tab (revert: opener/race),
+  gateway akhir `floating = gesture && content-host`, maintab dedup + `dup-cancel`.
+- **Model yang dikonfirmasi audit baca-ulang:** ekstraktor = **batch harvester halaman**
+  (silsilah `urllib_lib.extract(page)` → JSON per-server → doodlib), BUKAN downloader
+  per played media. Konsekuensi terbuka: resolver embed→stream hilang di port,
+  `ClearVideoRequests` dead code, `.m3u8` di-GET mentah → TODO §Terbuka.

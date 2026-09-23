@@ -16,7 +16,8 @@
                 <local:LibraryView x:Name="LibraryTab"
                                    TitlesChanged="LibraryTab_TitlesChanged"
                                    CoverBuilderRequested="LibraryTab_CoverBuilderRequested"
-                                   OpenChapterRequested="OpenChapterRequested" />
+                                   OpenChapterRequested="OpenChapterRequested"
+                                   ResumeRequested="LibraryTab_ResumeRequested" />
             </TabItem>
             <TabItem Header="History" Padding="12,9">
                 <local:HistoryView x:Name="HistoryTab"

@@ -184,4 +184,128 @@ public sealed class ReaderPolicyTests
         Assert.Equal(20, Marshal.OffsetOf<ReaderMonitorInfoEx>(nameof(ReaderMonitorInfoEx.WorkArea)).ToInt32());
         Assert.Equal(40, Marshal.OffsetOf<ReaderMonitorInfoEx>(nameof(ReaderMonitorInfoEx.DeviceName)).ToInt32());
     }
+
+    [Fact]
+    public void MomentumImpulse_IsSignedScalesWithDistanceAndCapsAtMaxVelocity()
+    {
+        Assert.True(ReaderMomentumScrollPolicy.ImpulseForDistance(48) > 0);
+        Assert.True(ReaderMomentumScrollPolicy.ImpulseForDistance(-48) < 0);
+        Assert.Equal(
+            ReaderMomentumScrollPolicy.ImpulseForDistance(48),
+            -ReaderMomentumScrollPolicy.ImpulseForDistance(-48),
+            6);
+        Assert.Equal(0, ReaderMomentumScrollPolicy.ImpulseForDistance(0), 6);
+        Assert.Equal(0, ReaderMomentumScrollPolicy.ImpulseForDistance(double.NaN), 6);
+        Assert.Equal(
+            ReaderMomentumScrollPolicy.MaxVelocity,
+            ReaderMomentumScrollPolicy.ImpulseForDistance(1e9),
+            6);
+    }
+
+    [Fact]
+    public void MomentumDecay_IsFrameRateIndependentAndStopsBelowThreshold()
+    {
+        const double v = 1000;
+
+        // Exponential friction: two half-frames equal one whole frame.
+        Assert.Equal(
+            ReaderMomentumScrollPolicy.DecayVelocity(v, 0.032),
+            ReaderMomentumScrollPolicy.DecayVelocity(
+                ReaderMomentumScrollPolicy.DecayVelocity(v, 0.016),
+                0.016),
+            6);
+        Assert.InRange(ReaderMomentumScrollPolicy.DecayVelocity(v, 0.016), 0.001, v);
+
+        // A long enough gap stops it; no elapsed time does not decay it.
+        Assert.Equal(0, ReaderMomentumScrollPolicy.DecayVelocity(v, 10), 6);
+        Assert.Equal(v, ReaderMomentumScrollPolicy.DecayVelocity(v, 0), 6);
+        Assert.Equal(0, ReaderMomentumScrollPolicy.DecayVelocity(double.NaN, 0.016), 6);
+    }
+
+    [Fact]
+    public void MomentumFrameDistance_IntegratesVelocityOverElapsed()
+    {
+        Assert.Equal(1.6, ReaderMomentumScrollPolicy.DistanceForFrame(100, 0.016), 6);
+        Assert.Equal(-1.6, ReaderMomentumScrollPolicy.DistanceForFrame(-100, 0.016), 6);
+        Assert.Equal(0, ReaderMomentumScrollPolicy.DistanceForFrame(100, 0), 6);
+        Assert.Equal(0, ReaderMomentumScrollPolicy.DistanceForFrame(double.NaN, 0.016), 6);
+    }
+
+    [Fact]
+    public void MomentumCoast_TravelsAboutTheNotchDistanceThenStops()
+    {
+        const double notch = 60;
+        var velocity = ReaderMomentumScrollPolicy.ImpulseForDistance(notch);
+        var travelled = 0d;
+        for (var frame = 0; frame < 2000 && !ReaderMomentumScrollPolicy.ShouldStop(velocity); frame++)
+        {
+            travelled += ReaderMomentumScrollPolicy.DistanceForFrame(velocity, 0.016);
+            velocity = ReaderMomentumScrollPolicy.DecayVelocity(velocity, 0.016);
+        }
+
+        var expected = notch * ReaderMomentumScrollPolicy.MomentumGain;
+        Assert.InRange(travelled, expected * 0.85, expected * 1.3);
+        Assert.True(ReaderMomentumScrollPolicy.ShouldStop(velocity));
+    }
+
+    [Fact]
+    public void MomentumShouldStop_UsesTheStopThreshold()
+    {
+        Assert.True(ReaderMomentumScrollPolicy.ShouldStop(0));
+        Assert.True(ReaderMomentumScrollPolicy.ShouldStop(ReaderMomentumScrollPolicy.StopVelocity - 0.001));
+        Assert.False(ReaderMomentumScrollPolicy.ShouldStop(ReaderMomentumScrollPolicy.StopVelocity + 1));
+        Assert.True(ReaderMomentumScrollPolicy.ShouldStop(double.NaN));
+    }
+
+    [Fact]
+    public void VelocityApproach_IsFrameRateIndependentAndConvergesWithoutOvershoot()
+    {
+        // Two half-frames land exactly where one whole frame does (first-order low-pass).
+        var twoHalfFrames = ReaderMomentumScrollPolicy.ApproachVelocity(
+            ReaderMomentumScrollPolicy.ApproachVelocity(0, 100, 0.008), 100, 0.008);
+        var oneWholeFrame = ReaderMomentumScrollPolicy.ApproachVelocity(0, 100, 0.016);
+        Assert.Equal(oneWholeFrame, twoHalfFrames, 6);
+
+        var velocity = 0d;
+        for (var frame = 0; frame < 400; frame++)
+        {
+            var next = ReaderMomentumScrollPolicy.ApproachVelocity(velocity, 100, 0.016);
+            Assert.InRange(next, velocity, 100);
+            velocity = next;
+        }
+
+        Assert.Equal(100, velocity, 1);
+    }
+
+    [Fact]
+    public void VelocityApproach_HoldsForNonPositiveElapsedAndGuardsNonFiniteInput()
+    {
+        Assert.Equal(50, ReaderMomentumScrollPolicy.ApproachVelocity(50, 100, 0), 6);
+        Assert.Equal(50, ReaderMomentumScrollPolicy.ApproachVelocity(50, 100, -1), 6);
+        Assert.Equal(50, ReaderMomentumScrollPolicy.ApproachVelocity(50, double.NaN, 0.016), 6);
+        Assert.Equal(100, ReaderMomentumScrollPolicy.ApproachVelocity(double.NaN, 100, 0.016), 6);
+    }
+
+    [Fact]
+    public void FrameStats_SummarizesFpsAverageWorstAndHitches()
+    {
+        var summary = ReaderFrameStatsPolicy.Summarize([10, 20, 30, 40]);
+
+        Assert.Equal(4, summary.Frames);
+        Assert.Equal(25, summary.AverageFrameMs, 3);
+        Assert.Equal(40, summary.WorstFrameMs, 3);
+        Assert.Equal(40, summary.Fps, 3);
+        Assert.Equal(2, summary.Hitches);
+    }
+
+    [Fact]
+    public void FrameStats_IgnoresNonPositiveAndNonFiniteSamplesAndHandlesEmpty()
+    {
+        Assert.Equal(0, ReaderFrameStatsPolicy.Summarize([]).Frames);
+
+        var summary = ReaderFrameStatsPolicy.Summarize([double.NaN, -5, 0, 16.7]);
+        Assert.Equal(1, summary.Frames);
+        Assert.Equal(16.7, summary.AverageFrameMs, 3);
+        Assert.Equal(0, summary.Hitches);
+    }
 }

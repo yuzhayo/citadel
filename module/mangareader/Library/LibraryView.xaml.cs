@@ -59,6 +59,7 @@ public partial class LibraryView : UserControl, IDisposable
             ChapterSelector.DetailActions,
             () => ChapterSelector.ActiveTitleFolderName);
         ChapterSelector.CoverBuilderRequested += ChapterSelector_CoverBuilderRequested;
+        ChapterSelector.ResumeRequested += ChapterSelector_ResumeRequested;
         _grouping.Changed += Grouping_Changed;
 
         ViewModeSelector.Mode = _viewMode.Mode;
@@ -99,6 +100,8 @@ public partial class LibraryView : UserControl, IDisposable
     }
 
     public event EventHandler<OpenChapterRequestedEventArgs>? OpenChapterRequested;
+
+    public event EventHandler<OpenChapterRequestedEventArgs>? ResumeRequested;
 
     public event EventHandler<CoverBuilderRequestedEventArgs>? CoverBuilderRequested;
 
@@ -321,6 +324,14 @@ public partial class LibraryView : UserControl, IDisposable
         OpenChapterRequested?.Invoke(this, e);
     }
 
+    private void ChapterSelector_ResumeRequested(
+        object? sender,
+        OpenChapterRequestedEventArgs e)
+    {
+        ChapterSelector.Dismiss();
+        ResumeRequested?.Invoke(this, e);
+    }
+
     private void ChapterSelector_CoverBuilderRequested(
         object? sender,
         CoverBuilderRequestedEventArgs e)
@@ -465,6 +476,7 @@ public partial class LibraryView : UserControl, IDisposable
         _disposed = true;
         Loaded -= LibraryView_Loaded;
         ChapterSelector.CoverBuilderRequested -= ChapterSelector_CoverBuilderRequested;
+        ChapterSelector.ResumeRequested -= ChapterSelector_ResumeRequested;
         _grouping.Changed -= Grouping_Changed;
         _viewMode.Changed -= ViewMode_Changed;
         ViewModeSelector.ModeRequested -= ViewModeSelector_ModeRequested;

@@ -13,7 +13,6 @@ internal interface IChapterNeighborPreloader
 {
     Task EnsureNextFullAsync(int expectedActiveIndex, CancellationToken cancellationToken);
     Task EnsurePreviousWarmAsync(int expectedActiveIndex, CancellationToken cancellationToken);
-    Task PromoteActiveToFullAsync(int expectedActiveIndex, CancellationToken cancellationToken);
 }
 
 /// <summary>
@@ -149,7 +148,6 @@ internal sealed class ChapterCoordinator
             RemoveOutsideRollingWindow();
             if (_activeChapterIndex < previousActiveIndex)
             {
-                await RequiredNeighbors.PromoteActiveToFullAsync(_activeChapterIndex, _runtime.Lifetime);
                 await RequiredNeighbors.EnsurePreviousWarmAsync(_activeChapterIndex, _runtime.Lifetime);
                 await RequiredNeighbors.EnsureNextFullAsync(_activeChapterIndex, _runtime.Lifetime);
             }

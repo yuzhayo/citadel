@@ -4,7 +4,6 @@ namespace Module.Mangareader.ShareLogic;
 
 public enum PageRenderQuality
 {
-    Preview,
     Full,
 }
 
@@ -12,8 +11,7 @@ public sealed record ChapterRenderRequest(
     int DecodeMaximumPixelWidth,
     int DisplayMaximumPixelWidth,
     double DpiScale,
-    PageRenderQuality Quality,
-    int FullQualityTailPages = 0)
+    PageRenderQuality Quality)
 {
     public void Validate()
     {
@@ -23,24 +21,9 @@ public sealed record ChapterRenderRequest(
             throw new ArgumentOutOfRangeException(nameof(DisplayMaximumPixelWidth));
         if (DpiScale <= 0 || double.IsNaN(DpiScale) || double.IsInfinity(DpiScale))
             throw new ArgumentOutOfRangeException(nameof(DpiScale));
-        if (FullQualityTailPages < 0)
-            throw new ArgumentOutOfRangeException(nameof(FullQualityTailPages));
     }
 
-    public int DecodeWidthForPage(int pageIndex, int pageCount) =>
-        IsFullQualityTail(pageIndex, pageCount)
-            ? DisplayMaximumPixelWidth
-            : DecodeMaximumPixelWidth;
-
-    public PageRenderQuality QualityForPage(int pageIndex, int pageCount) =>
-        IsFullQualityTail(pageIndex, pageCount)
-            ? PageRenderQuality.Full
-            : Quality;
-
-    private bool IsFullQualityTail(int pageIndex, int pageCount) =>
-        Quality == PageRenderQuality.Preview
-        && FullQualityTailPages > 0
-        && pageIndex >= Math.Max(0, pageCount - FullQualityTailPages);
+    public int DecodeWidthForPage(int pageIndex, int pageCount) => DecodeMaximumPixelWidth;
 }
 
 public sealed record LoadedPage(

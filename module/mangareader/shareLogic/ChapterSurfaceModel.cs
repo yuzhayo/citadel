@@ -42,16 +42,6 @@ public sealed class ChapterSurfaceModel : INotifyPropertyChanged
         _ => 10,
     };
 
-    public void ReplaceContent(LoadedChapter content)
-    {
-        _content = content ?? throw new ArgumentNullException(nameof(content));
-        OnPropertyChanged(nameof(Chapter));
-        OnPropertyChanged(nameof(Pages));
-        OnPropertyChanged(nameof(SurfaceWidth));
-        OnPropertyChanged(nameof(SurfaceHeight));
-        OnPropertyChanged(nameof(IsFullQuality));
-    }
-
     public void SetRole(ChapterSurfaceRole role)
     {
         if (_role == role) return;

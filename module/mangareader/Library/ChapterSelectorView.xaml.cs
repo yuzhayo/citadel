@@ -1,6 +1,7 @@
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
+using Citadel.Setting.Components;
 using Module.Mangareader.Library;
 using Module.Mangareader.ShareLogic;
 
@@ -20,6 +21,7 @@ public partial class ChapterSelectorView : UserControl
     /// </summary>
     private readonly StackPanel _coverActions = new();
     private readonly StackPanel _detailActions = new() { Orientation = Orientation.Horizontal };
+    private readonly SettingButton _resumeButton;
 
     private MangaTitleCardModel? _title;
     private LocalTitleDetailAdapter? _detail;
@@ -37,9 +39,19 @@ public partial class ChapterSelectorView : UserControl
         };
         coverBuilder.Click += CoverBuilderButton_Click;
         _coverActions.Children.Add(coverBuilder);
+
+        _resumeButton = new SettingButton
+        {
+            Content = "Resume",
+            ToolTip = "Continue from where you left off",
+        };
+        _resumeButton.Click += ResumeButton_Click;
+        _detailActions.Children.Add(_resumeButton);
     }
 
     public event EventHandler<OpenChapterRequestedEventArgs>? ChapterSelected;
+
+    public event EventHandler<OpenChapterRequestedEventArgs>? ResumeRequested;
 
     public event EventHandler? Dismissed;
 
@@ -78,6 +90,7 @@ public partial class ChapterSelectorView : UserControl
         ChapterList.ItemsSource = title.Manga.Chapters;
         ChapterList.SelectedItem = selected ?? title.Manga.Chapters.FirstOrDefault();
         OpenButton.IsEnabled = ChapterList.SelectedItem is ChapterInfo;
+        UpdateResumeEnabled();
 
         Visibility = Visibility.Visible;
         Focus();
@@ -97,6 +110,7 @@ public partial class ChapterSelectorView : UserControl
     private void ChapterList_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
         OpenButton.IsEnabled = ChapterList.SelectedItem is ChapterInfo;
+        UpdateResumeEnabled();
         e.Handled = true;
     }
 
@@ -113,6 +127,18 @@ public partial class ChapterSelectorView : UserControl
     {
         if (_title is null) return;
         CoverBuilderRequested?.Invoke(this, new CoverBuilderRequestedEventArgs(_title.Manga));
+    }
+
+    private void ResumeButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (_title is null || ChapterList.SelectedItem is not ChapterInfo chapter) return;
+        ResumeRequested?.Invoke(this, new OpenChapterRequestedEventArgs(_title.Manga, chapter));
+    }
+
+    private void UpdateResumeEnabled()
+    {
+        _resumeButton.IsEnabled = ChapterList.SelectedItem is ChapterInfo chapter
+            && ReadingPositionStore.Shared.Get(chapter.FilePath) is > 0;
     }
 
     private void View_PreviewKeyDown(object sender, KeyEventArgs e)

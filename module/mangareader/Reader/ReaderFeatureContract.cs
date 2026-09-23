@@ -210,18 +210,23 @@ public sealed class ReaderContentContext
         MangaTitle title,
         ChapterInfo initialChapter,
         IReaderChapterLoader chapterLoader,
-        IReaderStatusHost status)
+        IReaderStatusHost status,
+        double? initialProgress = null)
     {
         Title = title ?? throw new ArgumentNullException(nameof(title));
         InitialChapter = initialChapter ?? throw new ArgumentNullException(nameof(initialChapter));
         ChapterLoader = chapterLoader ?? throw new ArgumentNullException(nameof(chapterLoader));
         Status = status ?? throw new ArgumentNullException(nameof(status));
+        InitialProgress = initialProgress;
     }
 
     public MangaTitle Title { get; }
     public ChapterInfo InitialChapter { get; }
     public IReaderChapterLoader ChapterLoader { get; }
     public IReaderStatusHost Status { get; }
+
+    /// <summary>Optional 0..1 position to restore on open; null opens at the top.</summary>
+    public double? InitialProgress { get; }
 }
 
 public enum ReaderOverlayZone

@@ -97,6 +97,9 @@ public partial class MangaReaderView : UserControl, IContentHeaderActionProvider
     private void OpenChapterRequested(object? sender, OpenChapterRequestedEventArgs e) =>
         OpenReader(e.Title, e.Chapter);
 
+    private void LibraryTab_ResumeRequested(object? sender, OpenChapterRequestedEventArgs e) =>
+        OpenReader(e.Title, e.Chapter, ReadingPositionStore.Shared.Get(e.Chapter.FilePath));
+
     /// <summary>
     /// The Downloader asks for the standalone Queue tab; the Queue screen asks
     /// to go back to the Downloader tab. This parent only selects tabs — queue
@@ -154,14 +157,14 @@ public partial class MangaReaderView : UserControl, IContentHeaderActionProvider
         HistoryTab.Refresh();
     }
 
-    private void OpenReader(MangaTitle title, ChapterInfo chapter)
+    private void OpenReader(MangaTitle title, ChapterInfo chapter, double? resumeProgress = null)
     {
         if (_disposed) return;
 
         _readerWindow?.Close();
         _history.Record(title, chapter);
 
-        var reader = new ReaderWindow(title, chapter);
+        var reader = new ReaderWindow(title, chapter, resumeProgress);
         var owner = Window.GetWindow(this);
         if (owner is not null) reader.Owner = owner;
 

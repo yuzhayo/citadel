@@ -12,14 +12,10 @@ namespace Module.Mangareader;
 /// </summary>
 internal sealed class ChapterPreloader : IChapterNeighborPreloader
 {
-    private const int PreviewPixelWidth = 220;
-    private const int PreviousFullQualityTailPages = 4;
-
     private readonly IChapterLoadingRuntime _runtime;
     private readonly ChapterCoordinator _coordinator;
 
     private ChapterRenderRequest? _fullRequest;
-    private ChapterRenderRequest? _previousRequest;
     private long _renderSizeGeneration;
 
     public ChapterPreloader(IChapterLoadingRuntime runtime, ChapterCoordinator coordinator)
@@ -31,9 +27,6 @@ internal sealed class ChapterPreloader : IChapterNeighborPreloader
 
     public ChapterRenderRequest FullRequest =>
         _fullRequest ?? throw new InvalidOperationException("Reader render size is not configured.");
-
-    private ChapterRenderRequest PreviousRequest =>
-        _previousRequest ?? throw new InvalidOperationException("Reader render size is not configured.");
 
     public bool TryConfigureRenderRequests()
     {
@@ -53,12 +46,6 @@ internal sealed class ChapterPreloader : IChapterNeighborPreloader
             displayMaximumPixelWidth,
             dpiScale,
             PageRenderQuality.Full);
-        _previousRequest = new ChapterRenderRequest(
-            Math.Min(PreviewPixelWidth, displayMaximumPixelWidth),
-            displayMaximumPixelWidth,
-            dpiScale,
-            PageRenderQuality.Preview,
-            PreviousFullQualityTailPages);
         return true;
     }
 
@@ -68,8 +55,10 @@ internal sealed class ChapterPreloader : IChapterNeighborPreloader
         if (_runtime.IsDisposed || nextIndex >= _runtime.Title.Chapters.Count) return;
 
         var existing = _coordinator.SurfaceAt(nextIndex);
-        if (existing is { IsFullQuality: true })
+        if (existing is not null)
         {
+            // Never swap an existing surface's content in place: a quality swap
+            // rebuilds its page images and reads as a sharpness pop mid-scroll.
             existing.SetRole(ChapterSurfaceRole.Next);
             return;
         }
@@ -78,18 +67,10 @@ internal sealed class ChapterPreloader : IChapterNeighborPreloader
         cancellationToken.ThrowIfCancellationRequested();
         if (_runtime.IsDisposed || _coordinator.ActiveChapterIndex != expectedActiveIndex) return;
 
-        if (existing is not null)
-        {
-            existing.ReplaceContent(content);
-            existing.SetRole(ChapterSurfaceRole.Next);
-        }
-        else
-        {
-            _coordinator.AddSurfaceOrdered(new ChapterSurfaceModel(
-                nextIndex,
-                content,
-                ChapterSurfaceRole.Next));
-        }
+        _coordinator.AddSurfaceOrdered(new ChapterSurfaceModel(
+            nextIndex,
+            content,
+            ChapterSurfaceRole.Next));
     }
 
     public async Task EnsurePreviousWarmAsync(int expectedActiveIndex, CancellationToken cancellationToken)
@@ -98,37 +79,23 @@ internal sealed class ChapterPreloader : IChapterNeighborPreloader
         if (_runtime.IsDisposed || previousIndex < 0) return;
 
         var existing = _coordinator.SurfaceAt(previousIndex);
-        if (existing is { IsFullQuality: false })
+        if (existing is not null)
         {
+            // Same no-swap rule as the next surface: keep whatever it already has.
             existing.SetRole(ChapterSurfaceRole.Previous);
             return;
         }
 
-        var content = await _runtime.LoadChapterAsync(previousIndex, PreviousRequest, null, cancellationToken);
+        // Load the previous at full quality so the rolling window is uniformly
+        // full-res and no preview<->full sharpness swap is ever needed.
+        var content = await _runtime.LoadChapterAsync(previousIndex, FullRequest, null, cancellationToken);
         cancellationToken.ThrowIfCancellationRequested();
         if (_runtime.IsDisposed || _coordinator.ActiveChapterIndex != expectedActiveIndex) return;
 
-        if (existing is not null)
-        {
-            existing.ReplaceContent(content);
-            existing.SetRole(ChapterSurfaceRole.Previous);
-        }
-        else
-        {
-            _coordinator.AddSurfaceOrdered(new ChapterSurfaceModel(
-                previousIndex,
-                content,
-                ChapterSurfaceRole.Previous));
-        }
-    }
-
-    public async Task PromoteActiveToFullAsync(int expectedActiveIndex, CancellationToken cancellationToken)
-    {
-        var active = _coordinator.SurfaceAt(expectedActiveIndex);
-        if (active is null || active.IsFullQuality) return;
-        var content = await _runtime.LoadChapterAsync(expectedActiveIndex, FullRequest, null, cancellationToken);
-        if (!_runtime.IsDisposed && _coordinator.ActiveChapterIndex == expectedActiveIndex)
-            active.ReplaceContent(content);
+        _coordinator.AddSurfaceOrdered(new ChapterSurfaceModel(
+            previousIndex,
+            content,
+            ChapterSurfaceRole.Previous));
     }
 
     public Task PrepareBoundaryAsync(int direction, CancellationToken cancellationToken)

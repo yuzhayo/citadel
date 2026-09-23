@@ -190,6 +190,8 @@ internal sealed class TestChapterNavigation : IReaderChapterNavigation
 
     public IReadOnlyList<ChapterInfo> Chapters { get; }
     public ReadOnlyObservableCollection<ChapterSurfaceModel> Surfaces => _readOnlySurfaces;
+
+    public void AddSurface(ChapterSurfaceModel surface) => _surfaces.Add(surface);
     public int ActiveChapterIndex { get; set; }
     public ChapterInfo ActiveChapter => Chapters[ActiveChapterIndex];
     public string MangaTitle => "Test title";

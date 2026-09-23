@@ -89,7 +89,7 @@ public sealed class CbzChapterLoader
                     page.Metadata.NaturalPixelHeight,
                     displayPixelWidth / request.DpiScale,
                     displayPixelHeight / request.DpiScale,
-                    request.QualityForPage(index, prepared.Length));
+                    request.Quality);
 
                 Interlocked.Add(
                     ref estimatedBitmapBytes,
@@ -99,9 +99,7 @@ public sealed class CbzChapterLoader
                 progress?.Report(new ChapterLoadProgress(
                     count,
                     prepared.Length,
-                    request.Quality == PageRenderQuality.Full
-                        ? "Preparing full chapter"
-                        : "Preparing previous preview"));
+                    "Preparing full chapter"));
             });
         }
         catch (AggregateException exception)

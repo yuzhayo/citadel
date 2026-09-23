@@ -27,5 +27,7 @@ internal static class ReaderDefaultFeatureCatalog
             .Add("Pin", () => new ReaderPinController(state, commands))
             .Add("Zoom", () => new ReaderZoomController(state, commands))
             .Add("Dim", () => new ReaderDimController(state, commands))
-            .Add("Reset", () => new ReaderResetController(state, commands));
+            .Add("Reset", () => new ReaderResetController(state, commands))
+            .Add("ResumePosition", static () => new ResumePositionFeature())
+            .Add("Diagnostics", static () => new ReaderDiagnosticsFeature());
 }
