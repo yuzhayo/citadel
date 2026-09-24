@@ -27,7 +27,7 @@
                     Orientation="{TemplateBinding Orientation}"
                     Value="{TemplateBinding Value}">
                     <Track.Thumb>
-                        <Thumb Width="12" Height="12">
+                        <Thumb Width="18" Height="18">
                             <Thumb.Template>
                                 <ControlTemplate TargetType="{x:Type Thumb}">
                                     <Ellipse Fill="{DynamicResource Accent}" />

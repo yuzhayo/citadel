@@ -83,6 +83,14 @@ $mainExe = Join-Path $publishPath 'Citadel.Shell.exe'
 if (-not (Test-Path -LiteralPath $mainExe -PathType Leaf)) {
     throw "Executable publish tidak ditemukan: $mainExe"
 }
+$installerIcon = Join-Path $repositoryRoot 'core\Citadel.Shell\Assets\Citadel.ico'
+$installerSplash = Join-Path $repositoryRoot 'core\Citadel.Shell\Assets\Citadel.png'
+if (-not (Test-Path -LiteralPath $installerIcon -PathType Leaf)) {
+    throw "Ikon installer tidak ditemukan: $installerIcon"
+}
+if (-not (Test-Path -LiteralPath $installerSplash -PathType Leaf)) {
+    throw "Splash installer tidak ditemukan: $installerSplash"
+}
 if (-not (Test-Path -LiteralPath (Join-Path $publishPath 'Components') -PathType Container)) {
     throw 'Folder Components tidak ikut publish.'
 }
@@ -118,7 +126,9 @@ $packArguments = @(
     '--mainExe', 'Citadel.Shell.exe',
     '--packTitle', 'Citadel',
     '--packAuthors', 'yuzhayo',
-    '--icon', (Join-Path $repositoryRoot 'core\Citadel.Shell\Assets\Citadel.ico'),
+    '--icon', $installerIcon,
+    '--splashImage', $installerSplash,
+    '--splashProgressColor', '#D4AF65',
     '--outputDir', $outputPath,
     '--runtime', $Runtime,
     '--shortcuts', 'Desktop,StartMenuRoot'
