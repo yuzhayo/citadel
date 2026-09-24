@@ -24,6 +24,26 @@ try {
         [int]$match.Groups[2].Value,
         [int]$match.Groups[3].Value)
 
+    # Local release tags are the other half of the truth. CI advances
+    # version.props only through the release commit, so between releases this
+    # file intentionally lags the newest tag. Without reading tags here a
+    # local build can land on a version that is already released, and the
+    # packer refuses it — exactly the case tools/Release-PushedMain.ps1
+    # avoids by taking the maximum of version.props and every v* tag.
+    if (Get-Command git -ErrorAction SilentlyContinue) {
+        $tagVersions = @(git tag --list 'v*' 2>$null | ForEach-Object {
+            $parsed = [version]::new()
+            if ([version]::TryParse($_.TrimStart('v'), [ref] $parsed) -and $parsed.Revision -le 0) {
+                $parsed
+            }
+        })
+        foreach ($tagVersion in $tagVersions) {
+            if ($tagVersion -gt $highestVersion) {
+                $highestVersion = $tagVersion
+            }
+        }
+    }
+
     if (Test-Path -LiteralPath $releaseDirectory -PathType Container) {
         foreach ($package in Get-ChildItem -LiteralPath $releaseDirectory -File -Filter '*-full.nupkg') {
             if ($package.Name -notmatch '^Yuzhayo\.Citadel-(\d+\.\d+\.\d+)-full\.nupkg$') {
