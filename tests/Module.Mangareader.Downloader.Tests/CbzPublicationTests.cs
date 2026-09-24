@@ -186,7 +186,7 @@ public sealed class CbzPublicationTests : IDisposable
     }
 
     [Fact]
-    public async Task TemporaryPublicationFileIsNotDiscoverableByTheLibraryScanner()
+    public async Task TemporaryPublicationFileIsNotDiscoverableByTheLibraryTitleLoader()
     {
         var titleFolder = Path.Combine(_library, "Some Title");
         Directory.CreateDirectory(titleFolder);
@@ -197,16 +197,15 @@ public sealed class CbzPublicationTests : IDisposable
             Path.Combine(titleFolder, "0005 - Chapter 5 [Official].partial." + Guid.NewGuid().ToString("N") + ".tmp"),
             await PngAsync(8));
 
-        var titles = await new LibraryScanner().ScanAsync(_library, CancellationToken.None);
+        var loader = new LibraryTitleLoader();
+        Assert.Empty(loader.ListChapters(titleFolder));
 
-        Assert.Empty(titles);
-
-        // A real chapter in the same folder is still discovered: the scanner
+        // A real chapter in the same folder is still discovered: the loader
         // requires a supported archive, not merely a chapter extension.
         await WriteZipAsync(Path.Combine(titleFolder, "0005 - Chapter 5 [Official].cbz"), await PngAsync(8));
-        var after = await new LibraryScanner().ScanAsync(_library, CancellationToken.None);
+        var after = loader.ListChapters(titleFolder);
 
-        Assert.Equal("Some Title", Assert.Single(after).Title);
+        Assert.Equal("0005 - Chapter 5 [Official]", Assert.Single(after).Title);
     }
 
     private static async Task WriteZipAsync(string path, byte[] pageBytes)

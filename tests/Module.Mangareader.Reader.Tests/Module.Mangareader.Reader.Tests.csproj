@@ -43,6 +43,8 @@
     <Compile Include="..\..\module\mangareader\Reader\**\*.cs" Link="Reader\%(RecursiveDir)%(Filename)%(Extension)" />
     <Page Include="..\..\module\mangareader\Reader\**\*.xaml" Link="Reader\%(RecursiveDir)%(Filename)%(Extension)" />
     <Compile Include="..\..\module\mangareader\shareLogic\**\*.cs" Link="shareLogic\%(RecursiveDir)%(Filename)%(Extension)" />
+    <Compile Include="..\..\module\mangareader\Library\LibraryIndex.cs"
+             Link="Library\LibraryIndex.cs" />
     <Page Include="..\..\module\mangareader\shareLogic\**\*.xaml" Link="shareLogic\%(RecursiveDir)%(Filename)%(Extension)" />
   </ItemGroup>
 </Project>

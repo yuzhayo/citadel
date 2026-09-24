@@ -80,8 +80,8 @@ public partial class MangaReaderView : UserControl, IContentHeaderActionProvider
 
     private void LibraryTab_TitlesChanged(object? sender, LibraryChangedEventArgs e)
     {
-        HistoryTab.SetLibrary(e.Titles);
-        CoverBuilderTab.SetLibrary(e.Titles);
+        HistoryTab.SetLibrary(e.Entries);
+        CoverBuilderTab.SetLibrary(e.Entries);
     }
 
     private void LibraryTab_CoverBuilderRequested(

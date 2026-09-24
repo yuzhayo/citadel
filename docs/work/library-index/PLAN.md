@@ -1,6 +1,12 @@
 # Plan: Library Index + lazy chapter loading (revisi)
 
-Status: plan ready — belum diimplementasi.
+Status: COMPLETE — increment 1–6 DONE. Full Release suite hijau (0 gagal semua
+project), 5 citizen 0 error. Pelaksanaan vs plan: coordinator core lahir di
+inc 3 (startup reconcile butuh pemilik), watcher + lifecycle di inc 4,
+contract cutover R-05 digabung ke inc 3 (1 subscriber, History + CoverBuilder
+lazy dalam satu increment agar tidak ada interim rusak), cover cache di inc 6
+dengan `ILibraryCoverThumbnails` seam + `LibraryCoverCache` produksi.
+`LibraryScanner` dihapus; tidak ada perilaku yang diregresi.
 Sumber: plan awal operator + review terhadap kode (`Library/LibraryScanner.cs`,
 `Library/LibraryView.xaml.cs`, `shareLogic/MangaTitleCardModel.cs`,
 `shareLogic/MangaReaderEvents.cs`, `Library/LibraryScanPersistence.cs`).

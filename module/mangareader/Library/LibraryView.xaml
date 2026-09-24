@@ -121,7 +121,7 @@
                     <DataGridTemplateColumn CanUserSort="True"
                                             Header="Chapters"
                                             MinWidth="90"
-                                            SortMemberPath="Manga.ChapterCount">
+                                            SortMemberPath="ChapterCount">
                         <DataGridTemplateColumn.CellTemplate>
                             <DataTemplate>
                                 <TextBlock Text="{Binding ChapterSummary}" />
@@ -132,12 +132,12 @@
                     <DataGridTemplateColumn CanUserSort="True"
                                             Header="Latest chapter"
                                             MinWidth="150"
-                                            SortMemberPath="Manga.LatestChapterTitle">
+                                            SortMemberPath="LatestChapterLabel">
                         <DataGridTemplateColumn.CellTemplate>
                             <DataTemplate>
-                                <TextBlock Text="{Binding Manga.LatestChapterTitle}"
+                                <TextBlock Text="{Binding LatestChapterLabel}"
                                            TextTrimming="CharacterEllipsis"
-                                           ToolTip="{Binding Manga.LatestChapterTitle}" />
+                                           ToolTip="{Binding LatestChapterLabel}" />
                             </DataTemplate>
                         </DataGridTemplateColumn.CellTemplate>
                     </DataGridTemplateColumn>

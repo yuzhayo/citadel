@@ -17,15 +17,17 @@ public partial class LibraryView : UserControl, IDisposable
 {
     private static readonly LibrarySortOption[] SortOptions =
     [
-        new("Latest added", nameof(MangaTitle.AddedUtc), ListSortDirection.Descending),
-        new("Oldest added", nameof(MangaTitle.AddedUtc), ListSortDirection.Ascending),
+        new("Latest added", nameof(MangaTitleCardModel.AddedUtc), ListSortDirection.Descending),
+        new("Oldest added", nameof(MangaTitleCardModel.AddedUtc), ListSortDirection.Ascending),
         new("Title (A-Z)", nameof(MangaTitleCardModel.Title), ListSortDirection.Ascending),
         new("Title (Z-A)", nameof(MangaTitleCardModel.Title), ListSortDirection.Descending),
     ];
 
-    private readonly LibraryScanner _scanner = new();
-    private readonly MangaCoverLoader _coverLoader = new();
+    private readonly LibraryIndexCoordinator _coordinator = new(covers: new LibraryCoverCache());
     private readonly ObservableCollection<MangaTitleCardModel> _cards = new();
+    private readonly HashSet<string> _opening = new(StringComparer.OrdinalIgnoreCase);
+    private LibraryIndexWatcher? _watcher;
+    private long _coverGeneration;
     private readonly GroupingStore _groupingStore = new();
     private readonly GroupingFeature _grouping;
     private readonly LibraryViewModeFeature _viewMode = new();
@@ -47,7 +49,7 @@ public partial class LibraryView : UserControl, IDisposable
         // and it never needs a scan.
         _titlesView = CollectionViewSource.GetDefaultView(_cards);
         _titlesView.Filter = candidate =>
-            candidate is MangaTitleCardModel card && _grouping.IsVisible(card.Manga.Title);
+            candidate is MangaTitleCardModel card && _grouping.IsVisible(card.Title);
         SortPicker.ItemsSource = SortOptions;
         SortPicker.SelectedIndex = 0;
         ApplySort(SortOptions[0]);
@@ -109,7 +111,7 @@ public partial class LibraryView : UserControl, IDisposable
 
     public IReadOnlyList<MangaTitleCardModel> Titles => _cards.ToArray();
 
-    public Task RefreshAsync() => ScanLibraryAsync();
+    public Task RefreshAsync() => RefreshLibraryAsync(LibraryPath.Text.Trim(), manual: true);
 
     private async void LibraryView_Loaded(object sender, RoutedEventArgs e)
     {
@@ -125,7 +127,7 @@ public partial class LibraryView : UserControl, IDisposable
         if (loaded.Path is not null)
         {
             LibraryPath.Text = loaded.Path;
-            await ScanLibraryAsync();
+            await RefreshLibraryAsync(loaded.Path, manual: false);
             return;
         }
 
@@ -152,17 +154,25 @@ public partial class LibraryView : UserControl, IDisposable
         if (accepted != true) return;
 
         LibraryPath.Text = dialog.FolderName;
-        await ScanLibraryAsync();
+        await RefreshLibraryAsync(dialog.FolderName, manual: true);
     }
 
     private async void ScanButton_Click(object sender, RoutedEventArgs e) =>
-        await ScanLibraryAsync();
+        await RefreshLibraryAsync(LibraryPath.Text.Trim(), manual: true);
 
-    private async Task ScanLibraryAsync()
+    /// <summary>
+    /// Index-first refresh. Phase 1 paints the grid from the stored index —
+    /// one small file, no chapter reads — so startup stays fast. Phase 2
+    /// reconciles quietly in the background (the primary freshness source);
+    /// only real grid movement repaints and re-notifies. A failed background
+    /// pass keeps the painted grid and reports a warning instead of clearing
+    /// anything. Covers are not loaded here; the cover cache increment
+    /// restores them from thumbnails without opening archives.
+    /// </summary>
+    private async Task RefreshLibraryAsync(string path, bool manual)
     {
         if (_disposed || _root is null) return;
 
-        var path = LibraryPath.Text.Trim();
         if (path.Length == 0)
         {
             ShowEmpty(
@@ -172,7 +182,7 @@ public partial class LibraryView : UserControl, IDisposable
             return;
         }
 
-        // The path is captured once, at scan start. Completion persists
+        // The path is captured once, at refresh start. Completion persists
         // this attempt, never whatever the field says later.
         var attempt = _root.BeginScan(path);
 
@@ -181,23 +191,51 @@ public partial class LibraryView : UserControl, IDisposable
         _scanCancellation = cancellation;
         previous?.Cancel();
 
+        // A refresh owns a new root view of the world: stale-root watcher
+        // events must never land after this point.
+        _watcher?.Dispose();
+        _watcher = null;
+
         ChapterSelector.Dismiss();
         SetBusy(true);
-        StatusText.Text = "Scanning title folders...";
+        StatusText.Text = manual ? "Updating library index…" : "Loading indexed titles…";
 
         try
         {
-            var titles = await _scanner.ScanAsync(path, cancellation.Token);
+            _coordinator.Reload(path);
             if (_disposed || !ReferenceEquals(_scanCancellation, cancellation)) return;
 
-            _cards.Clear();
-            foreach (var title in titles)
-            {
-                _cards.Add(new MangaTitleCardModel(title));
-            }
-            NotifyTitlesChanged(titles);
+            FillCards(_coordinator.Entries);
+            NotifyTitlesChanged(_coordinator.Entries);
+            var painted = _coordinator.Entries.Count;
+            CompleteSuccessfulScan(cancellation, attempt, StatusForCount(painted));
+            UpdateGroupFilter();
+            SetBusy(false);
+            _ = LoadCachedCoversAsync(_cards.ToArray(), cancellation.Token);
 
-            if (titles.Count == 0)
+            if (painted == 0)
+            {
+                StatusText.Text = "Building library index…";
+            }
+            else
+            {
+                StatusText.Text = "Checking library changes…";
+            }
+
+            var reconcile = await Task.Run(
+                () => _coordinator.Reconcile(path, cancellation.Token),
+                cancellation.Token);
+            if (_disposed || !ReferenceEquals(_scanCancellation, cancellation)) return;
+
+            if (reconcile.Added > 0 || reconcile.Updated > 0 || reconcile.Removed > 0)
+            {
+                FillCards(_coordinator.Entries);
+                NotifyTitlesChanged(_coordinator.Entries);
+                UpdateGroupFilter();
+                _ = LoadCachedCoversAsync(_cards.ToArray(), cancellation.Token);
+            }
+
+            if (_coordinator.Entries.Count == 0)
             {
                 ShowEmpty(
                     "No CBZ titles found",
@@ -206,32 +244,49 @@ public partial class LibraryView : UserControl, IDisposable
                 return;
             }
 
-            EmptyPanel.Visibility = Visibility.Collapsed;
-            var chapterCount = titles.Sum(title => title.ChapterCount);
-            CompleteSuccessfulScan(cancellation, attempt, $"{titles.Count} titles · {chapterCount} chapters");
-            SetBusy(false);
-            UpdateGroupFilter();
-
-            await LoadCoversAsync(_cards.ToArray(), cancellation);
-            if (!_disposed && ReferenceEquals(_scanCancellation, cancellation))
-            {
-                NotifyTitlesChanged(titles);
-            }
+            StatusText.Text = reconcile.Warning ?? StatusForCount(_coordinator.Entries.Count);
+            RestartWatcher(path);
         }
         catch (OperationCanceledException) when (cancellation.IsCancellationRequested)
         {
+        }
+        catch (DirectoryNotFoundException)
+        {
+            if (_disposed || !ReferenceEquals(_scanCancellation, cancellation)) return;
+
+            // The folder is gone: a painted grid stays (fast startup from the
+            // index even while unavailable); only a fresh root with nothing
+            // painted goes empty.
+            if (_cards.Count == 0)
+            {
+                NotifyTitlesChanged([]);
+                ShowEmpty(
+                    "The library folder is not available",
+                    "Browse or Scan to choose another folder.");
+                StatusText.Text = "The library folder is not available. Browse or Scan to choose another folder.";
+            }
+            else
+            {
+                StatusText.Text = "The library folder is not available. Showing the saved index.";
+            }
         }
         catch (Exception exception)
         {
             if (_disposed || !ReferenceEquals(_scanCancellation, cancellation)) return;
 
-            _cards.Clear();
-            NotifyTitlesChanged([]);
-            var baseException = exception.GetBaseException();
-            ShowEmpty("Could not scan the library", baseException.Message);
-            StatusText.Text = baseException is DirectoryNotFoundException
-                ? "The library folder is not available. Browse or Scan to choose another folder."
-                : "Scan failed.";
+            // A failed pass keeps the previous grid (plan §2); only a fresh
+            // root with nothing painted goes empty.
+            var message = exception.GetBaseException().Message;
+            if (_cards.Count == 0)
+            {
+                NotifyTitlesChanged([]);
+                ShowEmpty("Could not read the library", message);
+                StatusText.Text = "Library update failed.";
+            }
+            else
+            {
+                StatusText.Text = $"Library update failed; showing the saved index. {message}";
+            }
         }
         finally
         {
@@ -242,6 +297,269 @@ public partial class LibraryView : UserControl, IDisposable
             }
 
             cancellation.Dispose();
+        }
+    }
+
+    private static string StatusForCount(int count) =>
+        count == 1 ? "Loaded 1 indexed title." : $"Loaded {count:N0} indexed titles.";
+
+    /// <summary>
+    /// (Re)starts the watcher's bonus freshness for the reconciled root. The
+    /// watcher never replaces reconciliation: it only shortens the delay
+    /// between a filesystem change and the grid while the module is up.
+    /// </summary>
+    private void RestartWatcher(string path)
+    {
+        _watcher?.Dispose();
+        _watcher = null;
+
+        if (_disposed) return;
+
+        try
+        {
+            var watcher = new LibraryIndexWatcher(path);
+            watcher.TitleChanged += Watcher_TitleChanged;
+            watcher.ResyncRequested += Watcher_ResyncRequested;
+            _watcher = watcher;
+        }
+        catch (Exception exception) when (exception is IOException
+            or UnauthorizedAccessException
+            or ArgumentException)
+        {
+            // No watcher on this root (network shares often refuse one).
+            // Reconciliation stays the freshness source; nothing else changes.
+        }
+    }
+
+    /// <summary>
+    /// Watcher bonus freshness. Filesystem IO and thumbnail imaging run on
+    /// the pool thread; only the grid sync marshals to the UI thread. A late
+    /// event from a disposed or superseded watcher touches nothing: liveness
+    /// is checked on both threads.
+    /// </summary>
+    private void Watcher_TitleChanged(object? sender, LibraryTitleChangedEventArgs e)
+    {
+        if (_disposed || !ReferenceEquals(sender, _watcher)) return;
+
+        try
+        {
+            _coordinator.ReindexOne(e.FolderPath);
+        }
+        catch (Exception exception) when (exception is IOException
+            or UnauthorizedAccessException
+            or ArgumentException)
+        {
+            return;
+        }
+
+        if (_disposed || !ReferenceEquals(sender, _watcher)) return;
+        if (!Dispatcher.CheckAccess())
+        {
+            Dispatcher.BeginInvoke(() =>
+            {
+                if (!_disposed && ReferenceEquals(sender, _watcher))
+                {
+                    SyncCardsFromWatcher(e.FolderPath);
+                }
+            });
+            return;
+        }
+
+        SyncCardsFromWatcher(e.FolderPath);
+    }
+
+    /// <summary>
+    /// Quiet recovery after a watcher overflow: the lost events are
+    /// unknowable, so one reconciliation re-establishes the truth, then the
+    /// same quiet sync as a watcher update. Pool thread for IO, UI thread
+    /// for the grid; a superseded watcher touches nothing on either.
+    /// </summary>
+    private async void Watcher_ResyncRequested(object? sender, EventArgs e)
+    {
+        if (_disposed || !ReferenceEquals(sender, _watcher)) return;
+
+        var root = _coordinator.Root;
+        if (root is null) return;
+
+        LibraryReconcileResult reconcile;
+        try
+        {
+            reconcile = await Task.Run(() => _coordinator.Reconcile(root));
+        }
+        catch (OperationCanceledException)
+        {
+            return;
+        }
+        catch (Exception exception) when (exception is IOException
+            or UnauthorizedAccessException
+            or DirectoryNotFoundException)
+        {
+            if (_disposed || !ReferenceEquals(sender, _watcher)) return;
+            if (!Dispatcher.CheckAccess())
+            {
+                _ = Dispatcher.BeginInvoke(() =>
+                {
+                    if (!_disposed && ReferenceEquals(sender, _watcher))
+                    {
+                        StatusText.Text = "Library folder is not available. Showing the saved index.";
+                    }
+                });
+                return;
+            }
+
+            StatusText.Text = "Library folder is not available. Showing the saved index.";
+            return;
+        }
+
+        if (_disposed || !ReferenceEquals(sender, _watcher)) return;
+        if (!Dispatcher.CheckAccess())
+        {
+            _ = Dispatcher.BeginInvoke(() =>
+            {
+                if (!_disposed && ReferenceEquals(sender, _watcher))
+                {
+                    SyncCardsFromResync(reconcile);
+                }
+            });
+            return;
+        }
+
+        SyncCardsFromResync(reconcile);
+    }
+
+    /// <summary>
+    /// Quiet grid sync after a blind resync: repaint + re-filter + notify,
+    /// without the manual-refresh dismiss. A resync cannot name the affected
+    /// folders, so the open detail closes only when its title is gone from
+    /// the index; otherwise it keeps reading possibly-stale chapters until
+    /// the next open — the same staleness a quiet watcher update allows.
+    /// </summary>
+    private void SyncCardsFromResync(LibraryReconcileResult reconcile)
+    {
+        FillCards(_coordinator.Entries);
+        NotifyTitlesChanged(_coordinator.Entries);
+        _titlesView.Refresh();
+        _ = LoadCachedCoversAsync(_cards.ToArray(), CancellationToken.None);
+
+        var open = ChapterSelector.ActiveTitleFolderPath;
+        if (open is not null && _cards.All(card => !string.Equals(
+            card.FolderPath, open, StringComparison.OrdinalIgnoreCase)))
+        {
+            ChapterSelector.Dismiss();
+            StatusText.Text = "That title was removed; detail closed.";
+            return;
+        }
+
+        StatusText.Text = reconcile.Warning ?? StatusForCount(_coordinator.Entries.Count);
+    }
+
+    /// <summary>
+    /// Quiet grid sync for watcher updates: repaint + re-filter + notify,
+    /// without the manual-refresh dismiss. Only an open detail showing the
+    /// affected title itself is closed; everything else keeps reading.
+    /// </summary>
+    private void SyncCardsFromWatcher(string folderPath)
+    {
+        FillCards(_coordinator.Entries);
+        NotifyTitlesChanged(_coordinator.Entries);
+        _titlesView.Refresh();
+        _ = LoadCachedCoversAsync(_cards.ToArray(), CancellationToken.None);
+
+        var open = ChapterSelector.ActiveTitleFolderPath;
+        if (open is not null && string.Equals(open, folderPath, StringComparison.OrdinalIgnoreCase))
+        {
+            ChapterSelector.Dismiss();
+            StatusText.Text = "That title changed on disk; reopen it for fresh chapters.";
+            return;
+        }
+
+        StatusText.Text = StatusForCount(_coordinator.Entries.Count);
+    }
+
+    private void FillCards(IReadOnlyList<LibraryIndexEntry> entries)
+    {
+        // Decoded covers ride along by folder path: a reconcile that changes
+        // nothing visible must not blank every card and re-decode the world.
+        var covers = _cards
+            .Where(card => card.Cover is not null)
+            .ToDictionary(card => card.FolderPath, card => card.Cover!, StringComparer.OrdinalIgnoreCase);
+
+        _cards.Clear();
+        foreach (var entry in entries)
+        {
+            var card = new MangaTitleCardModel(entry);
+            if (covers.TryGetValue(card.FolderPath, out var cover))
+            {
+                card.Cover = cover;
+            }
+
+            _cards.Add(card);
+        }
+
+        EmptyPanel.Visibility = _cards.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+        System.Threading.Interlocked.Increment(ref _coverGeneration);
+    }
+
+    /// <summary>
+    /// Fills coverless cards from the thumbnail cache — small local files,
+    /// never archives. Best effort per card; a stale refresh generation
+    /// assigns nothing. Fire-and-forget: covers catch up behind the grid.
+    /// </summary>
+    private async Task LoadCachedCoversAsync(
+        IReadOnlyList<MangaTitleCardModel> cards,
+        CancellationToken cancellationToken)
+    {
+        var generation = Volatile.Read(ref _coverGeneration);
+        var options = new ParallelOptions
+        {
+            CancellationToken = cancellationToken,
+            MaxDegreeOfParallelism = 4,
+        };
+
+        try
+        {
+            await Parallel.ForEachAsync(cards, options, async (card, cancellation) =>
+            {
+                if (card.Cover is not null || card.Entry.CoverThumbnailPath.Length == 0) return;
+
+                BitmapSource? cover;
+                try
+                {
+                    cover = await Task.Run(
+                        () => LibraryCoverCache.DecodeFile(card.Entry.CoverThumbnailPath, cancellation),
+                        cancellation);
+                }
+                catch (Exception exception) when (exception is not OperationCanceledException)
+                {
+                    return;
+                }
+
+                if (cover is null || _disposed
+                    || generation != Volatile.Read(ref _coverGeneration)) return;
+                try
+                {
+                    await Dispatcher.InvokeAsync(() =>
+                    {
+                        if (!_disposed
+                            && generation == Volatile.Read(ref _coverGeneration)
+                            && _cards.Contains(card)
+                            && card.Cover is null)
+                        {
+                            card.Cover = cover;
+                        }
+                    });
+                }
+                catch (Exception exception) when (exception is not OperationCanceledException)
+                {
+                    // The dispatcher is going away (shutdown/dispose) while a
+                    // fire-and-forget fill is in flight: drop the cover, not
+                    // the process.
+                    return;
+                }
+            });
+        }
+        catch (OperationCanceledException)
+        {
         }
     }
 
@@ -268,52 +586,64 @@ public partial class LibraryView : UserControl, IDisposable
             : $"{status} Warning: {save.Warning}";
     }
 
-    private async Task LoadCoversAsync(
-        IReadOnlyList<MangaTitleCardModel> cards,
-        CancellationTokenSource scan)
+    /// <summary>
+    /// Lazy open: an entry-backed card resolves its full title on demand —
+    /// one folder read, never a library scan. Double activation while the
+    /// load is in flight is ignored; a title that vanished since indexing
+    /// drops its card instead of failing the grid.
+    /// </summary>
+    private async void TitleCard_Click(object sender, RoutedEventArgs e)
     {
-        var options = new ParallelOptions
+        if (_disposed || sender is not FrameworkElement { Tag: MangaTitleCardModel card }) return;
+        if (card.IsFull)
         {
-            CancellationToken = scan.Token,
-            MaxDegreeOfParallelism = 4,
-        };
+            ChapterSelector.ShowTitle(card);
+            return;
+        }
+
+        if (!_opening.Add(card.FolderPath)) return;
+
+        var control = sender as Control;
+        if (control is not null) control.IsEnabled = false;
+        StatusText.Text = "Loading chapters…";
 
         try
         {
-            await Parallel.ForEachAsync(cards, options, async (card, cancellationToken) =>
+            var title = await Task.Run(() => _coordinator.Titles.LoadTitle(card.FolderPath));
+            if (_disposed || !_cards.Contains(card)) return;
+
+            if (title is null)
             {
-                BitmapSource? cover;
-                try
+                StatusText.Text = "That title is no longer on disk.";
+                // Coordinator IO stays off the UI thread; the grid edit below
+                // stays on it.
+                await Task.Run(() => _coordinator.ReindexOne(card.FolderPath));
+                if (!_disposed)
                 {
-                    cover = await _coverLoader.LoadAsync(
-                        card.Manga,
-                        MangaCoverLoader.PreviewPixelWidth,
-                        cancellationToken);
-                }
-                catch (Exception exception) when (exception is not OperationCanceledException)
-                {
-                    return;
+                    _cards.Remove(card);
+                    NotifyTitlesChanged(_coordinator.Entries);
+                    UpdateGroupFilter();
                 }
 
-                if (cover is null || _disposed || !ReferenceEquals(_scanCancellation, scan)) return;
-                await Dispatcher.InvokeAsync(() =>
-                {
-                    if (!_disposed && ReferenceEquals(_scanCancellation, scan))
-                    {
-                        card.Cover = cover;
-                    }
-                });
-            });
+                return;
+            }
+
+            card.AttachFullTitle(title);
+            if (_disposed || !_cards.Contains(card)) return;
+            ChapterSelector.ShowTitle(card);
         }
-        catch (OperationCanceledException) when (scan.IsCancellationRequested)
+        catch (Exception exception) when (exception is not OperationCanceledException)
         {
+            if (!_disposed)
+            {
+                StatusText.Text = $"Could not open that title: {exception.GetBaseException().Message}";
+            }
         }
-    }
-
-    private void TitleCard_Click(object sender, RoutedEventArgs e)
-    {
-        if (_disposed || sender is not FrameworkElement { Tag: MangaTitleCardModel card }) return;
-        ChapterSelector.ShowTitle(card);
+        finally
+        {
+            _opening.Remove(card.FolderPath);
+            if (control is not null) control.IsEnabled = true;
+        }
     }
 
     private void ChapterSelector_ChapterSelected(
@@ -339,8 +669,8 @@ public partial class LibraryView : UserControl, IDisposable
         if (!_disposed) CoverBuilderRequested?.Invoke(this, e);
     }
 
-    private void NotifyTitlesChanged(IReadOnlyList<MangaTitle> titles) =>
-        TitlesChanged?.Invoke(this, new LibraryChangedEventArgs(titles));
+    private void NotifyTitlesChanged(IReadOnlyList<LibraryIndexEntry> entries) =>
+        TitlesChanged?.Invoke(this, new LibraryChangedEventArgs(entries));
 
     private void Grouping_Changed(object? sender, EventArgs e)
     {
@@ -387,7 +717,7 @@ public partial class LibraryView : UserControl, IDisposable
     /// never caches a Library snapshot and never triggers a scan.
     /// </summary>
     private IReadOnlyList<string> LoadedTitleFolderNames() =>
-        _cards.Select(card => card.Manga.Title).ToArray();
+        _cards.Select(card => card.Title).ToArray();
 
     private void ViewModeSelector_ModeRequested(object? sender, MangaViewMode mode) =>
         _viewMode.Select(mode);
@@ -407,7 +737,7 @@ public partial class LibraryView : UserControl, IDisposable
 
             // Added timestamps may match when folders were copied together. A
             // deterministic title tie-breaker prevents cards from shuffling.
-            if (option.PropertyPath == nameof(MangaTitle.AddedUtc))
+            if (option.PropertyPath == nameof(MangaTitleCardModel.AddedUtc))
             {
                 _titlesView.SortDescriptions.Add(
                     new SortDescription(nameof(MangaTitleCardModel.Title), ListSortDirection.Ascending));
@@ -474,6 +804,8 @@ public partial class LibraryView : UserControl, IDisposable
 
         if (_disposed) return;
         _disposed = true;
+        _watcher?.Dispose();
+        _watcher = null;
         Loaded -= LibraryView_Loaded;
         ChapterSelector.CoverBuilderRequested -= ChapterSelector_CoverBuilderRequested;
         ChapterSelector.ResumeRequested -= ChapterSelector_ResumeRequested;

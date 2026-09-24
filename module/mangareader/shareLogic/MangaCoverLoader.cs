@@ -6,7 +6,11 @@ namespace Module.Mangareader.ShareLogic;
 
 public sealed class MangaCoverLoader
 {
-    public const string PreferredTitleCoverFileName = "cover.png";
+    /// <summary>
+    /// Cover file preference. Owned by <see cref="TitleCoverFiles"/>; kept
+    /// here so existing consumers do not change.
+    /// </summary>
+    public const string PreferredTitleCoverFileName = TitleCoverFiles.PreferredTitleCoverFileName;
 
     /// <summary>
     /// Decode width for card covers. Every consumer must pass this same
@@ -129,18 +133,8 @@ public sealed class MangaCoverLoader
         return null;
     }
 
+    // Selection rule lives in TitleCoverFiles (pure, shared with the
+    // library index). Bitmap decoding stays here.
     private static IEnumerable<string> FindTitleCovers(string titleFolder) =>
-        Directory
-            .EnumerateFiles(titleFolder, "cover.*", SearchOption.TopDirectoryOnly)
-            // Exactly one extension: excludes Auto Cover's unpublished
-            // cover.png.<guid>.tmp files and unrelated names such as cover-old.jpg.
-            .Where(path => string.Equals(
-                Path.GetFileNameWithoutExtension(path),
-                "cover",
-                StringComparison.OrdinalIgnoreCase))
-            .OrderByDescending(path => string.Equals(
-                Path.GetFileName(path),
-                PreferredTitleCoverFileName,
-                StringComparison.OrdinalIgnoreCase))
-            .ThenBy(path => path, StringComparer.OrdinalIgnoreCase);
+        TitleCoverFiles.Enumerate(titleFolder);
 }

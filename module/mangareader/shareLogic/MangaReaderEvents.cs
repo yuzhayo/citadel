@@ -1,20 +1,22 @@
 using Module.Mangareader.Archive;
+using Module.Mangareader.Library;
 
 namespace Module.Mangareader.ShareLogic;
 
 /// <summary>
-/// Cross-feature library snapshot. Carries domain titles only: each consumer
-/// builds its own presentation, so no card model or cover state crosses the
-/// feature boundary.
+/// Cross-feature library snapshot. Carries index entries only, never chapter
+/// lists: each consumer builds its own presentation and resolves full titles
+/// lazily for the titles it actually touches, so no card model, cover state,
+/// or chapter enumeration crosses the feature boundary.
 /// </summary>
 public sealed class LibraryChangedEventArgs : EventArgs
 {
-    public LibraryChangedEventArgs(IReadOnlyList<MangaTitle> titles)
+    public LibraryChangedEventArgs(IReadOnlyList<LibraryIndexEntry> entries)
     {
-        Titles = titles ?? throw new ArgumentNullException(nameof(titles));
+        Entries = entries ?? throw new ArgumentNullException(nameof(entries));
     }
 
-    public IReadOnlyList<MangaTitle> Titles { get; }
+    public IReadOnlyList<LibraryIndexEntry> Entries { get; }
 }
 
 public sealed class CoverBakedEventArgs : EventArgs

@@ -5,6 +5,7 @@ using System.Windows.Controls;
 using Microsoft.Win32;
 using Module.Mangareader.Archive;
 using Module.Mangareader.CoverBuilder;
+using Module.Mangareader.Library;
 using Module.Mangareader.ShareLogic;
 
 namespace Module.Mangareader;
@@ -13,6 +14,7 @@ public partial class CoverBuilderView : UserControl, IDisposable
 {
     private readonly CoverBuilderService _service = new();
     private readonly MangaCoverLoader _coverLoader = new();
+    private readonly LibraryTitleLoader _titles = new();
     private CancellationTokenSource? _operationCancellation;
     private CancellationTokenSource? _coverCancellation;
     private FetchedCoverResult? _fetchedCover;
@@ -30,16 +32,17 @@ public partial class CoverBuilderView : UserControl, IDisposable
     public event EventHandler<CoverBakedEventArgs>? CoverBaked;
 
     /// <summary>
-    /// Receives the domain snapshot and forms this feature's own picker
+    /// Receives the index snapshot and forms this feature's own picker
     /// presentation from it. The combo displays the normalized card title and
-    /// previews the selected card's cover, neither of which the domain record
-    /// carries, so the cards are built here rather than borrowed from Library.
+    /// previews the selected card's cover; full titles resolve lazily for the
+    /// selected title only, so the picker never enumerates chapters
+    /// library-wide. Cards are built here rather than borrowed from Library.
     /// </summary>
-    public void SetLibrary(IReadOnlyList<MangaTitle> titles)
+    public void SetLibrary(IReadOnlyList<LibraryIndexEntry> entries)
     {
         var selectedPath = (TitlePicker.SelectedItem as MangaTitleCardModel)?.FolderPath;
-        var cards = (titles ?? [])
-            .Select(title => new MangaTitleCardModel(title))
+        var cards = (entries ?? [])
+            .Select(entry => new MangaTitleCardModel(entry))
             .ToList();
 
         _settingLibrary = true;
@@ -72,8 +75,8 @@ public partial class CoverBuilderView : UserControl, IDisposable
 
         var selected = (TitlePicker.ItemsSource as IEnumerable<MangaTitleCardModel>)?
             .FirstOrDefault(card => string.Equals(
-                card.Manga.Title,
-                title.Title,
+                card.FolderPath,
+                title.FolderPath,
                 StringComparison.OrdinalIgnoreCase));
         if (selected is not null) TitlePicker.SelectedItem = selected;
     }
@@ -98,7 +101,7 @@ public partial class CoverBuilderView : UserControl, IDisposable
 
         // This is a human-controlled lookup only. Citadel opens the normal
         // visible browser and does not scrape, download, or retain search results.
-        var query = Uri.EscapeDataString($"{selected.Manga.Title} manga cover");
+        var query = Uri.EscapeDataString($"{selected.Title} manga cover");
         var searchUri = $"https://www.google.com/search?tbm=isch&q={query}";
         try
         {
@@ -218,8 +221,17 @@ public partial class CoverBuilderView : UserControl, IDisposable
 
         try
         {
+            var full = await EnsureFullTitleAsync(selected, cancellation.Token);
+            if (_disposed || !ReferenceEquals(_operationCancellation, cancellation)) return;
+            if (full is null)
+            {
+                _resultStatus = "That title is no longer on disk; the cover was not changed.";
+                StatusText.Text = _resultStatus;
+                return;
+            }
+
             var result = await _service.BakeAsync(
-                selected.Manga,
+                full,
                 sourceReference,
                 cancellation.Token);
             if (_disposed || !ReferenceEquals(_operationCancellation, cancellation)) return;
@@ -244,9 +256,10 @@ public partial class CoverBuilderView : UserControl, IDisposable
                 : $" Backup warnings: {string.Join(" ", bake.BackupWarnings)}";
             _resultStatus = $"Cover baked from {sourceLabel}.{released}{backupDetail}{warningDetail}";
             StatusText.Text = _resultStatus;
-            CoverBaked?.Invoke(
-                this,
-                new CoverBakedEventArgs(selected.Manga, bake));
+            if (selected.FullTitle is MangaTitle baked)
+            {
+                CoverBaked?.Invoke(this, new CoverBakedEventArgs(baked, bake));
+            }
         }
         catch (OperationCanceledException) when (cancellation.IsCancellationRequested)
         {
@@ -337,6 +350,26 @@ public partial class CoverBuilderView : UserControl, IDisposable
         _ = LoadCoverAsync(card, cancellation);
     }
 
+    /// <summary>
+    /// Resolves a picker's display card to its full title on demand — one
+    /// folder read for the selected title only. A title that vanished since
+    /// indexing resolves to null instead of failing the feature.
+    /// </summary>
+    private async Task<MangaTitle?> EnsureFullTitleAsync(
+        MangaTitleCardModel card,
+        CancellationToken cancellationToken)
+    {
+        if (card.IsFull) return card.FullTitle;
+
+        var title = await Task.Run(() => _titles.LoadTitle(card.FolderPath), cancellationToken);
+        if (title is not null && !_disposed)
+        {
+            card.AttachFullTitle(title);
+        }
+
+        return title;
+    }
+
     private async Task LoadCoverAsync(
         MangaTitleCardModel? card,
         CancellationTokenSource cancellation)
@@ -345,8 +378,12 @@ public partial class CoverBuilderView : UserControl, IDisposable
         {
             if (card is null || card.Cover is not null) return;
 
+            var full = await EnsureFullTitleAsync(card, cancellation.Token);
+            if (full is null || _disposed
+                || !ReferenceEquals(_coverCancellation, cancellation)) return;
+
             var cover = await _coverLoader.LoadAsync(
-                card.Manga,
+                full,
                 MangaCoverLoader.PreviewPixelWidth,
                 cancellation.Token);
             if (cover is null || _disposed

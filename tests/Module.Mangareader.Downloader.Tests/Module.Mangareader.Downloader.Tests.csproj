@@ -36,8 +36,12 @@
              Link="Library\LibraryPathStore.cs" />
     <Compile Include="..\..\module\mangareader\Library\LibraryScanPersistence.cs"
              Link="Library\LibraryScanPersistence.cs" />
-    <Compile Include="..\..\module\mangareader\Library\LibraryScanner.cs"
-             Link="Library\LibraryScanner.cs" />
+    <Compile Include="..\..\module\mangareader\Library\LibraryTitleLoader.cs"
+             Link="Library\LibraryTitleLoader.cs" />
+    <Compile Include="..\..\module\mangareader\Library\LibraryIndex.cs"
+             Link="Library\LibraryIndex.cs" />
+    <Compile Include="..\..\module\mangareader\Library\LibraryCoverCache.cs"
+             Link="Library\LibraryCoverCache.cs" />
     <Compile Include="..\..\module\mangareader\CoverBuilder\CoverSourceReference.cs"
              Link="CoverBuilder\CoverSourceReference.cs" />
     <Compile Include="..\..\module\mangareader\CoverBuilder\CoverSourceLoader.cs"

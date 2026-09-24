@@ -4,6 +4,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media.Imaging;
 using Module.Mangareader.History;
+using Module.Mangareader.Library;
 using Module.Mangareader.ShareLogic;
 
 namespace Module.Mangareader;
@@ -19,7 +20,10 @@ public partial class HistoryView : UserControl, IDisposable
     private readonly MangaCoverLoader _coverLoader = new();
     private readonly ChapterRenderCache _renderCache = new();
     private readonly HistoryViewModeFeature _viewMode = new();
-    private IReadOnlyList<MangaTitle> _titles = [];
+    private readonly LibraryTitleLoader _titles = new();
+    private readonly Dictionary<string, MangaTitle> _resolved =
+        new(StringComparer.OrdinalIgnoreCase);
+    private IReadOnlyList<LibraryIndexEntry> _entries = [];
     private ReadingHistory? _readingHistory;
     private ClearHistoryFeature? _clearHistory;
     private PinnedHistoryFeature? _pinnedHistory;
@@ -70,9 +74,15 @@ public partial class HistoryView : UserControl, IDisposable
         UpdateActionBar();
     }
 
-    public void SetLibrary(IReadOnlyList<MangaTitle> titles)
+    /// <summary>
+    /// Receives the index snapshot. History resolves full titles lazily —
+    /// one folder read per recorded title actually on screen — so a large
+    /// library never pays for chapters nobody revisits.
+    /// </summary>
+    public void SetLibrary(IReadOnlyList<LibraryIndexEntry> entries)
     {
-        _titles = titles ?? [];
+        _entries = entries ?? [];
+        _resolved.Clear();
         Refresh();
     }
 
@@ -85,11 +95,32 @@ public partial class HistoryView : UserControl, IDisposable
         {
             foreach (var entry in _readingHistory.Read())
             {
-                var title = _titles.FirstOrDefault(candidate => string.Equals(
+                var indexed = _entries.FirstOrDefault(candidate => string.Equals(
                     candidate.FolderPath,
                     entry.TitleFolderPath,
                     StringComparison.OrdinalIgnoreCase));
-                if (title is null) continue;
+                if (indexed is null) continue;
+
+                // Resolved titles are memoized per snapshot: a refresh
+                // re-reads only folders it has not resolved yet. Stale content
+                // cannot outlive the snapshot — SetLibrary clears the cache —
+                // which matches the old full-snapshot semantics exactly.
+                if (!_resolved.TryGetValue(indexed.FolderPath, out var title))
+                {
+                    try
+                    {
+                        title = _titles.LoadTitle(indexed.FolderPath);
+                    }
+                    catch (Exception exception) when (exception is IOException
+                        or UnauthorizedAccessException
+                        or ArgumentException)
+                    {
+                        continue;
+                    }
+
+                    if (title is null) continue;
+                    _resolved[indexed.FolderPath] = title;
+                }
 
                 var chapter = title.Chapters.FirstOrDefault(candidate => string.Equals(
                     candidate.FilePath,

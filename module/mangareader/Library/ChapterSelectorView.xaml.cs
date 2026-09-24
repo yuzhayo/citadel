@@ -76,19 +76,32 @@ public partial class ChapterSelectorView : UserControl
     /// dismissed. Grouping pulls this instead of receiving the card model, so
     /// no card type crosses the feature boundary.
     /// </summary>
-    internal string? ActiveTitleFolderName => _title?.Manga.Title;
+    internal string? ActiveTitleFolderName => _title?.Title;
 
+    /// <summary>
+    /// Raw folder path of the open title, for matching filesystem events.
+    /// Folder name alone is not enough: display titles are normalized.
+    /// </summary>
+    internal string? ActiveTitleFolderPath => _title?.FolderPath;
+
+    /// <summary>
+    /// Shows the chapter detail for a title. The card must already carry its
+    /// full title — Library attaches it during lazy open — because the
+    /// chapter list cannot come from an index entry.
+    /// </summary>
     public void ShowTitle(MangaTitleCardModel title, ChapterInfo? selected = null)
     {
         ArgumentNullException.ThrowIfNull(title);
+        var full = title.FullTitle ?? throw new InvalidOperationException(
+            "The chapter detail requires a loaded title.");
 
         _detail?.Dispose();
         _title = title;
         _detail = new LocalTitleDetailAdapter(title);
 
         DataContext = _detail.Presentation;
-        ChapterList.ItemsSource = title.Manga.Chapters;
-        ChapterList.SelectedItem = selected ?? title.Manga.Chapters.FirstOrDefault();
+        ChapterList.ItemsSource = full.Chapters;
+        ChapterList.SelectedItem = selected ?? full.Chapters.FirstOrDefault();
         OpenButton.IsEnabled = ChapterList.SelectedItem is ChapterInfo;
         UpdateResumeEnabled();
 
@@ -125,14 +138,15 @@ public partial class ChapterSelectorView : UserControl
 
     private void CoverBuilderButton_Click(object sender, RoutedEventArgs e)
     {
-        if (_title is null) return;
-        CoverBuilderRequested?.Invoke(this, new CoverBuilderRequestedEventArgs(_title.Manga));
+        if (_title?.FullTitle is not MangaTitle full) return;
+        CoverBuilderRequested?.Invoke(this, new CoverBuilderRequestedEventArgs(full));
     }
 
     private void ResumeButton_Click(object sender, RoutedEventArgs e)
     {
-        if (_title is null || ChapterList.SelectedItem is not ChapterInfo chapter) return;
-        ResumeRequested?.Invoke(this, new OpenChapterRequestedEventArgs(_title.Manga, chapter));
+        if (_title?.FullTitle is not MangaTitle full
+            || ChapterList.SelectedItem is not ChapterInfo chapter) return;
+        ResumeRequested?.Invoke(this, new OpenChapterRequestedEventArgs(full, chapter));
     }
 
     private void UpdateResumeEnabled()
@@ -157,10 +171,11 @@ public partial class ChapterSelectorView : UserControl
 
     private void AcceptSelection()
     {
-        if (_title is null || ChapterList.SelectedItem is not ChapterInfo chapter) return;
+        if (_title?.FullTitle is not MangaTitle full
+            || ChapterList.SelectedItem is not ChapterInfo chapter) return;
         ChapterSelected?.Invoke(
             this,
-            new OpenChapterRequestedEventArgs(_title.Manga, chapter));
+            new OpenChapterRequestedEventArgs(full, chapter));
     }
 
     private void CloseSelector()
