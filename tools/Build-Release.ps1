@@ -85,11 +85,15 @@ if (-not (Test-Path -LiteralPath $mainExe -PathType Leaf)) {
 }
 $installerIcon = Join-Path $repositoryRoot 'core\Citadel.Shell\Assets\Citadel.ico'
 $installerSplash = Join-Path $repositoryRoot 'core\Citadel.Shell\Assets\Citadel.png'
+$installerSetupStub = Join-Path $repositoryRoot 'tools\installer\VelopackSetup.Citadel.exe'
 if (-not (Test-Path -LiteralPath $installerIcon -PathType Leaf)) {
     throw "Ikon installer tidak ditemukan: $installerIcon"
 }
 if (-not (Test-Path -LiteralPath $installerSplash -PathType Leaf)) {
     throw "Splash installer tidak ditemukan: $installerSplash"
+}
+if (-not (Test-Path -LiteralPath $installerSetupStub -PathType Leaf)) {
+    throw "Bootstrapper installer tidak ditemukan: $installerSetupStub"
 }
 if (-not (Test-Path -LiteralPath (Join-Path $publishPath 'Components') -PathType Container)) {
     throw 'Folder Components tidak ikut publish.'
@@ -118,6 +122,21 @@ if ($contamination.Count -gt 0) {
 & dotnet tool restore
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
+# Velopack's stock setup window does not assign the package icon to its taskbar
+# window. Use the version-matched bootstrapper that explicitly sets WM_SETICON.
+$toolManifest = Get-Content -LiteralPath (Join-Path $repositoryRoot '.config\dotnet-tools.json') -Raw | ConvertFrom-Json
+$vpkVersion = $toolManifest.tools.vpk.version
+$nugetPackages = if ([string]::IsNullOrWhiteSpace($env:NUGET_PACKAGES)) {
+    Join-Path $env:USERPROFILE '.nuget\packages'
+} else {
+    $env:NUGET_PACKAGES
+}
+$vpkSetupStub = Join-Path $nugetPackages "vpk\$vpkVersion\vendor\setup.exe"
+if (-not (Test-Path -LiteralPath $vpkSetupStub -PathType Leaf)) {
+    throw "Bootstrapper vpk tidak ditemukan: $vpkSetupStub"
+}
+$vpkSetupBackup = Join-Path ([System.IO.Path]::GetTempPath()) ("citadel-vpk-setup-{0}.exe" -f [guid]::NewGuid().ToString('N'))
+
 $packArguments = @(
     'vpk', 'pack',
     '--packId', 'Yuzhayo.Citadel',
@@ -141,8 +160,16 @@ if (-not [string]::IsNullOrWhiteSpace($ReleaseNotes)) {
     $packArguments += @('--releaseNotes', $notesPath)
 }
 
-& dotnet @packArguments
-if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+Copy-Item -LiteralPath $vpkSetupStub -Destination $vpkSetupBackup -Force
+try {
+    Copy-Item -LiteralPath $installerSetupStub -Destination $vpkSetupStub -Force
+    & dotnet @packArguments
+    $vpkExitCode = $LASTEXITCODE
+} finally {
+    Copy-Item -LiteralPath $vpkSetupBackup -Destination $vpkSetupStub -Force
+    Remove-Item -LiteralPath $vpkSetupBackup -Force -ErrorAction SilentlyContinue
+}
+if ($vpkExitCode -ne 0) { exit $vpkExitCode }
 
 $setup = Get-ChildItem -LiteralPath $outputPath -Filter '*-Setup.exe' |
     Sort-Object LastWriteTime -Descending |
