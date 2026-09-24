@@ -84,7 +84,7 @@ public class SearcherBridgeTests
             using var shell = new SearcherShell(showWindow: true);
             var tray = new FakeTrayHost();
             var resident = new ResidentShell(
-                shell.Window, shell.Host.CloseWindow, tray, () => { }, () => { });
+                shell.Window, shell.Host.CloseWindow, tray, () => { }, static () => Task.CompletedTask);
 
             try
             {
@@ -157,7 +157,9 @@ internal sealed class SearcherShell : IDisposable
 
         MainWindow? window = null;
         Host = new ShellSettingHost(Gate, Tokens, () => window);
-        window = new MainWindow(Tokens, Gate, _animations, _lifetime, App.BuiltInRoutes(Host));
+        var coordinator = new ModuleRuntimeCoordinator(Gate, Tokens);
+        window = new MainWindow(
+            Tokens, Gate, coordinator, _animations, _lifetime, App.BuiltInRoutes(Host));
         Window = window;
         Window.ShowInTaskbar = false;
         if (showWindow) Window.Show();

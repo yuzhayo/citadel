@@ -27,6 +27,7 @@ internal sealed class QueueScheduler(
     }
 
     public bool IsActive(string id) { lock (gate) return _active.ContainsKey(id); }
+    public bool HasActive { get { lock (gate) return _active.Count > 0; } }
     public void MarkManual(string id) { lock (gate) if (!_active.ContainsKey(id)) _manual.Add(id); }
     public void Wake() { if (_wake.CurrentCount == 0) { try { _wake.Release(); } catch (SemaphoreFullException) { } } }
 
@@ -45,6 +46,27 @@ internal sealed class QueueScheduler(
             Wake();
             return Task.WhenAll(settling);
         }
+    }
+
+    /// <summary>
+    /// Force path: cancel lifetime and active work without awaiting settlement.
+    /// Never blocks; the runtime lifetime owns eventual disposal.
+    /// </summary>
+    public void CancelWithoutWait()
+    {
+        try { _lifetime.Cancel(); }
+        catch (ObjectDisposedException) { }
+
+        lock (gate)
+        {
+            foreach (var entry in _active.Values)
+            {
+                try { entry.Cancel.Cancel(); }
+                catch (ObjectDisposedException) { }
+            }
+            _manual.Clear();
+        }
+        Wake();
     }
 
     public async Task ShutdownAsync()

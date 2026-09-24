@@ -145,6 +145,7 @@ internal sealed class ShellHarness : IDisposable
         Main = new TestMain();
         Tokens = Fake.Store();
         Gate = new ModuleGate(Main.Queue, _lifetime);
+        Coordinator = new ModuleRuntimeCoordinator(Gate, Tokens);
         Host = new ContentControl();
         FrameClock = new ManualFrameClock();
         Animations = new AnimationManager(FrameClock);
@@ -161,7 +162,7 @@ internal sealed class ShellHarness : IDisposable
                 });
         }
 
-        Router = new Router(Host, Gate, Tokens, Animations, builtIn);
+        Router = new Router(Host, Gate, Coordinator, Tokens, Animations, builtIn);
         _lifetime.Add(Router.Dispose);
         Gate.RegistryChanged += () => Router.OnRegistryChanged();
     }
@@ -170,7 +171,13 @@ internal sealed class ShellHarness : IDisposable
 
     public Tokens Tokens { get; }
 
+    /// <summary>Shell/application lifetime shared by Gate eager resident attach.</summary>
+    public Lifetime Lifetime => _lifetime;
+
     public ModuleGate Gate { get; }
+
+    /// <summary>Runtime Start/Stop path shared by Router and host.</summary>
+    public ModuleRuntimeCoordinator Coordinator { get; }
 
     public ContentControl Host { get; }
 
@@ -181,6 +188,12 @@ internal sealed class ShellHarness : IDisposable
     public Router Router { get; }
 
     public int SettingsShown { get; private set; }
+
+    /// <summary>
+    /// True while any route has staged release work (Unregistering or
+    /// RemovalPending). For DrainUntilIdle in Gate 6 tests.
+    /// </summary>
+    internal bool HasStagedReleaseWork => Gate.HasPendingReleaseWork;
 
     public void Dispose()
     {

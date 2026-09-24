@@ -27,12 +27,20 @@ public class ResidentShellTests : IDisposable
             var stopCount = 0;
             var shutdownCount = 0;
             var tray = new FakeTrayHost();
-            using var resident = new ResidentShell(
+            ResidentShell? resident = null;
+            resident = new ResidentShell(
                 window,
                 () => closeSettingsCount++,
                 tray,
                 () => stopCount++,
-                () => shutdownCount++);
+                () =>
+                {
+                    // Successful Exit: App would StopAll, then latch + Shutdown.
+                    shutdownCount++;
+                    resident!.CompleteExit();
+                    return Task.CompletedTask;
+                });
+            using var _ = resident;
 
             window.Close();
 
@@ -56,7 +64,8 @@ public class ResidentShellTests : IDisposable
             Assert.Same(view, window.Router.CurrentView);
             Assert.Same(viewLifetime, window.Router.ViewLifetime);
 
-            tray.RequestExit();
+            // Tray Exit goes through awaitable BeginExitAsync — wait for it.
+            TestAsync.Run(() => resident.RequestExitAsync());
 
             Assert.True(resident.ExitRequested);
             Assert.True(tray.Disposed);
@@ -84,7 +93,7 @@ public class ResidentShellTests : IDisposable
                 () => closeSettingsCount++,
                 tray: null,
                 () => stopCount++,
-                () => throw new InvalidOperationException("shutdown should not be requested"));
+                static () => Task.CompletedTask);
 
             Assert.False(resident.ResidentEnabled);
             window.Close();
@@ -112,7 +121,11 @@ public class ResidentShellTests : IDisposable
                 () => { },
                 tray,
                 () => stopCount++,
-                () => shutdownCount++);
+                () =>
+                {
+                    shutdownCount++;
+                    return Task.CompletedTask;
+                });
 
             resident.PrepareForSessionEnd();
             window.Close();
@@ -120,8 +133,54 @@ public class ResidentShellTests : IDisposable
             Assert.True(resident.ExitRequested);
             Assert.True(tray.Disposed);
             Assert.Equal(1, stopCount);
+            // Session end never calls RequestShutdownAsync — sync latch only.
             Assert.Equal(0, shutdownCount);
             Assert.False(window.IsVisible);
+        });
+    }
+
+    /// <summary>
+    /// Gate 5: failed StopAll must not latch ExitRequested — Exit and Open stay
+    /// retryable so the operator can fix the module and Exit again.
+    /// </summary>
+    [Fact]
+    public void FailedShutdown_LeavesExitRetryable_AndDoesNotLatch()
+    {
+        Sta.Run(() =>
+        {
+            using var fixture = new ShellFixture();
+            var window = fixture.CreateWindow();
+            window.ShowInTaskbar = false;
+            window.Show();
+            var tray = new FakeTrayHost();
+            var shutdownAttempts = 0;
+            using var resident = new ResidentShell(
+                window,
+                () => { },
+                tray,
+                () => { },
+                () =>
+                {
+                    shutdownAttempts++;
+                    // Simulated StopAll failure: App returns without CompleteExit.
+                    return Task.CompletedTask;
+                });
+
+            TestAsync.Run(() => resident.RequestExitAsync());
+
+            Assert.Equal(1, shutdownAttempts);
+            Assert.False(resident.ExitRequested);
+            Assert.False(resident.ExitInProgress);
+            Assert.False(tray.Disposed);
+
+            // Open still works after a failed Exit.
+            tray.RequestOpen();
+            Assert.True(window.IsVisible);
+
+            // Retry Exit — second attempt reaches the shutdown callback again.
+            TestAsync.Run(() => resident.RequestExitAsync());
+            Assert.Equal(2, shutdownAttempts);
+            Assert.False(resident.ExitRequested);
         });
     }
 

@@ -41,6 +41,7 @@ public partial class MainWindow : Window
     internal MainWindow(
         Tokens tokens,
         ModuleGate gate,
+        ModuleRuntimeCoordinator coordinator,
         AnimationManager animations,
         Lifetime lifetime,
         IReadOnlyDictionary<string, BuiltInRoute> builtInRoutes,
@@ -89,7 +90,7 @@ public partial class MainWindow : Window
         lifetime.Add(() => tokens.TokensChanged -= ApplyWindowTokens);
 
         Sidebar.Attach(tokens, animations, lifetime);
-        Router = new Router(Host, gate, tokens, animations, _builtInRoutes);
+        Router = new Router(Host, gate, coordinator, tokens, animations, _builtInRoutes);
         lifetime.Add(Router.Dispose);
 
         CollapseToggle.Click += OnCollapseClick;
@@ -112,6 +113,11 @@ public partial class MainWindow : Window
 
         Router.Navigated += OnNavigated;
         lifetime.Add(() => Router.Navigated -= OnNavigated);
+
+        // Host chrome (Start/Stop buttons, status) lives on Router.CurrentView;
+        // runtime state changes re-read the header action element.
+        Router.ContentHeaderActionInvalidated += RefreshContentHeaderAction;
+        lifetime.Add(() => Router.ContentHeaderActionInvalidated -= RefreshContentHeaderAction);
 
         WirePowerSaving();
         SyncSidebarEntries();

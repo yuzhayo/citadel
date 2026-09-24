@@ -1,6 +1,6 @@
 # Module Runtime Start/Stop — implementation plan
 
-Status: implementation plan; not implemented.
+Status: implemented (Gates 1–7). Audit fixes A–E tracked in FIX-PLAN.md.
 
 ## Goal and non-negotiable behavior
 
@@ -56,9 +56,14 @@ service. Manga pause rules stay in `module/mangareader/Features/Downloader/Queue
 
 `IModule` remains unchanged.
 
-Add this optional contract in `core/Citadel.Contract`:
+Add this optional contract in `core/Citadel.Contract/IRuntimeModuleLifecycle.cs`.
+Like `IModule`, the file lives in Citadel.Contract but the namespace stays
+`Citadel.Core.Modules` so citizens need no new using and the contract set stays
+discoverable in one place:
 
 ```csharp
+namespace Citadel.Core.Modules;
+
 public sealed record RuntimeSession(long Generation);
 
 public interface IRuntimeModuleLifecycle
@@ -73,6 +78,11 @@ public interface IRuntimeModuleLifecycle
     void ForceStopRuntime(RuntimeSession session);
 }
 ```
+
+`RuntimeReleaseResult` is Shell-only (lives beside the coordinator, not in
+Contract): `record RuntimeReleaseResult(bool Success, string? Error)` — Success
+means the runtime is safe to destroy and the descriptor may be removed; Error is
+shown on the retained host with Retry removal.
 
 Contract rules:
 
@@ -97,7 +107,11 @@ Contract rules:
 8. `IResidentModule` remains a one-release compatibility bridge: it is invoked
    only by the runtime coordinator at Start with the slot runtime lifetime,
    never by `ModuleGate` during registration. MangaReader migrates to the new
-   contract in this change.
+   contract in this change, so **after migration the bridge has zero production
+   implementers** — it exists only so a third-party resident citizen discovered
+   mid-release does not break. The bridge is tested with the coordinator test
+   fake, not with MangaReader. If no external resident appears by the next
+   release, delete the bridge rather than carry a third Start path forever.
 
 The bridge keeps an older dynamically discovered resident citizen functional
 while eliminating eager startup. Its documentation and tests must be updated so
@@ -113,6 +127,8 @@ Faulted --Retry Start--> Starting
 
 Running --Stop--> Stopping --success--> Stopped
                          --failure--> Running (with stop error)
+
+Running (with stop error) --Force Stop--> ForceStopping
 
 Stopping --Force Stop--> ForceStopping --dispose--> Stopped
                                       --failure--> Running (with force-stop error)
@@ -131,8 +147,9 @@ Additional rules:
 - Stop is disabled in `Stopped`, `Faulted`, and `Starting`.
 - A Stop requested by shutdown while Start is in progress is recorded as
   `PendingStop`; Start completes or fails first, then the queued Stop runs.
-- Force Stop is available only while `Stopping` or after a visible Stop error;
-  it requires a confirmation dialog and is never triggered by a timeout.
+- Force Stop is available only while `Stopping` or while `Running` with a
+  visible Stop error (the two states where a normal Stop already failed or is
+  stuck); it requires a confirmation dialog and is never triggered by a timeout.
 - No interaction is silently ignored: the host visibly exposes `Starting`,
   `Stopping`, or the failure message.
 
@@ -208,8 +225,8 @@ inspect concrete module types or queue states.
 
 `ModuleRuntimeCoordinator.ForceStopAsync(route)` is a separate transaction:
 
-1. Require the route to be `Stopping` or to have a recorded Stop error, and
-   require prior confirmation from the operator.
+1. Require the route to be `Stopping` or `Running` with a recorded Stop error,
+   and require prior confirmation from the operator.
 2. Under the short-lived state gate, increment the slot operation epoch and
    cancel the normal Stop attempt; then release the gate. Every normal
    Start/Stop continuation checks that its captured epoch is still current
@@ -217,13 +234,20 @@ inspect concrete module types or queue states.
 3. Mark `ForceStopping`, disable the host, and call
    `IRuntimeModuleLifecycle.ForceStopRuntime` when implemented. If that abort
    signal itself throws, restore `Running` with a force-stop error and retain
-   the runtime; do not continue to destruction.
+   the runtime; do not continue to destruction. `ForceStopRuntime` runs on the
+   UI thread but must not block it: any best-effort persistence it performs is
+   fire-and-forget on a background task after the terminal generation is set;
+   a later Start's load-recovery path is the durable safety net.
 4. Immediately call the shared `UnmountRuntimeView` operation and destroy its
    runtime lifetime; do
    not await queue drain, scheduler settlement, or provider requests.
 5. Clear the slot and mark `Stopped`. `Lifetime.Destroy` isolates individual
    cleanup exceptions and continues its LIFO unwind; those exceptions are
    logged but cannot leave the slot falsely marked as a healthy running runtime.
+
+If `ModuleRuntimeHost` itself fails to attach (shell bug, not citizen fault),
+log and leave the route registered showing the host error surface — never call
+`ModuleGate.RejectForFailedView` for a host-level failure.
 
 Force Stop is intentionally an operator-selected interruption. It trades a
 clean checkpoint for immediate release of the module runtime; the next Start
@@ -302,12 +326,15 @@ active work may be interrupted and require manual Resume/recovery afterward.
 The host implements `IContentHeaderActionProvider`:
 
 - While Running, it returns a horizontal composition of the runtime view's
-  existing header action, if any, followed by `Stop <module title>`.
-- While stopped/faulted, it returns no header action; Start/Retry remains in the
-  host screen.
+  existing header action, if any, followed by `Stop <module title>`. Each
+  refresh calls the inner view's `CreateContentHeaderAction()` fresh — never
+  cache a possibly-parented element across refreshes.
+- While stopped/faulted, it returns no header action; Start/Retry remains in
+  the host screen.
 - `ModuleRuntimeCoordinator` publishes `RuntimePresentationChanged`; Router
   forwards it as `ContentHeaderActionInvalidated`; `MainWindow` calls its
-  existing `RefreshContentHeaderAction` method.
+  existing `RefreshContentHeaderAction` method (which now sees the host, not
+  the citizen view, as `Router.CurrentView`).
 
 Required automation names:
 
@@ -362,8 +389,10 @@ abort method through `DownloaderBackgroundService`. It must:
    quiescing generation, and make every normal pause/drain continuation compare
    its captured generation before it can start, publish, or persist state.
 2. Best-effort persist every non-completed in-flight record as `Paused` with a
-   warning that it was force-stopped. Persistence failure is logged and remains
-   visible on recovery; it does not block the requested force operation.
+   warning that it was force-stopped. That write is scheduled on a background
+   task after the terminal generation is set — it must not block the UI thread
+   or the force path. Persistence failure is logged and remains visible on
+   recovery; it does not block the requested force operation.
 3. Cancel scheduler tokens without waiting for settlement.
 4. Immediately signal termination only to MangaReader-owned online/PyHost child
    processes and mark `DownloaderBackgroundService` as forced-terminal. Its
@@ -418,15 +447,19 @@ not use an unobserved fire-and-forget task.
 When safe release fails after a source folder has disappeared, the retained host
 shows the failure and **Retry removal**. That retries `ReleaseRouteAsync` using
 the in-memory descriptor; it does not attempt Start and does not need the source
-folder to exist. Successful retry completes removal. A rediscovered descriptor
-for the same route is retained as the one latest pending replacement; after old
-runtime release, Gate atomically registers that replacement instead of relying
-on another file-system event. If no replacement exists, it removes the route.
+folder to exist. Successful retry completes removal.
 
-While a route is unregistering, a rediscovery of the same route is deferred;
-after successful removal, the next watcher reconciliation registers the newest
-descriptor. This avoids a duplicate-route race while old runtime resources are
-still alive.
+Rediscovery while a route is unregistering is **Option A**: Gate holds at most
+one pending replacement descriptor per route. After `ReleaseRouteAsync`
+succeeds, Gate atomically registers that pending replacement (if any) instead of
+waiting for another file-system event; if no pending replacement exists, Gate
+removes the route. This avoids a duplicate-route race while old runtime
+resources are still alive, and does not depend on the watcher re-firing.
+
+If `ReleaseRouteAsync` is called while the slot is already `Stopping`, it joins
+the in-flight Stop under the state gate: on that Stop's success it proceeds to
+descriptor removal; on failure it becomes `RemovalPending` with Retry removal,
+same as any other release failure. It never starts a second concurrent Stop.
 
 Only successful actual unregistration removes a sidebar item. User Stop never
 does.
@@ -434,13 +467,25 @@ does.
 ## Application exit
 
 Replace the tray shutdown callback with `Func<Task> RequestShutdownAsync`.
+**Every** path that currently reaches `Application.Shutdown` must go through
+this one async request — including the Settings host's static shutdown
+callback (`ShellSettingHost` line that calls `Application.Current?.Shutdown()`).
+No call site may hard-shutdown past `StopAllAsync`; the acceptance criterion is
+"no exit path skips safe Stop", not merely "tray Exit waits".
 
-For user-triggered tray Exit:
+For user-triggered Exit (tray or Settings):
 
-1. Mark exit as in-progress and block duplicate Exit/Open commands.
-2. Await `ModuleRuntimeCoordinator.StopAllAsync()`.
+1. Mark exit as in-progress and block duplicate Exit/Open commands. Do **not**
+   latch `ResidentShell._exitRequested` until StopAll succeeds — on failure the
+   flag stays clear so Exit can be retried after the error is shown.
+2. Await `ModuleRuntimeCoordinator.StopAllAsync()`. Stops run in parallel
+   (slots are independent); collect per-route failures. Routes that already
+   stopped successfully stay stopped — Stop is not transactional across
+   modules, and rolling a successful Stop back would restart work the user
+   asked to end.
 3. On full success, invoke `Application.Shutdown()`.
-4. On failure, cancel exit, retain all unsafe runtime slots, and show the error.
+4. On failure, cancel exit, retain all unsafe runtime slots, show which routes
+   failed, and leave successfully-stopped routes stopped.
 
 Force Stop is deliberately not used by tray Exit. Exit preserves the safe Stop
 contract; an operator who needs emergency interruption must choose Force Stop
@@ -455,39 +500,59 @@ jobs as Paused on the next Start.
 
 | File / area | Change |
 |---|---|
-| `core/Citadel.Contract/IRuntimeModuleLifecycle.cs` | New optional lifecycle contract and `RuntimeSession` generation |
+| `core/Citadel.Contract/IRuntimeModuleLifecycle.cs` | New optional lifecycle contract and `RuntimeSession` generation (namespace `Citadel.Core.Modules`) |
 | `core/Citadel.Contract/IResidentModule.cs` | Clarify legacy runtime-start bridge semantics |
-| `core/Citadel.Shell/Runtime/*` | New generic slots, coordinator, host UI |
-| `core/Citadel.Shell/ModuleGate.cs` | Remove eager resident attach; bound and observed staged actual unregister/retry |
+| `core/Citadel.Shell/Runtime/*` | New generic slots, coordinator, host UI, Shell-only `RuntimeReleaseResult` |
+| `core/Citadel.Shell/ModuleGate.cs` | Remove eager resident attach (same gate as Router cutover); bind and observe staged actual unregister/retry |
 | `core/Citadel.Shell/Router.cs` | Citizen runtime host routing, retained host lifecycle, invalidation event |
 | `core/Citadel.Shell/MainWindow.xaml.cs` | Refresh header on runtime state changes |
-| `core/Citadel.Shell/App.xaml.cs` | Construct coordinator; async graceful shutdown |
-| `core/Citadel.Shell/ResidentShell.cs` | Async Exit request and duplicate-exit guard |
+| `core/Citadel.Shell/App.xaml.cs` | Construct coordinator; async graceful shutdown; bind release handler before Searcher starts |
+| `core/Citadel.Shell/ResidentShell.cs` | Async Exit request; `_exitRequested` latches only after StopAll success |
+| `core/Citadel.Shell/ShellSettingHost.cs` | Route Settings-host shutdown through the same async Exit request |
 | `module/mangareader/MangaReaderModule.cs` | Implement lifecycle; no eager resident runtime |
 | `module/mangareader/Features/Downloader/DownloaderBackgroundService.cs` | Delegate safe queue stop barrier; forced-terminal non-blocking disposal branch |
 | `module/mangareader/Features/Downloader/Queue/DownloadQueueFeature.cs` | Quiesce, pause, drain, session-generation fence, and forced terminal abort |
-| `tests/Citadel.Uia/*` | Gate, Router, host, lifecycle, unregister, exit tests |
+| `tests/Citadel.Uia/*` | Gate, Router, host, lifecycle, unregister, exit tests; rewrite `ResidentModule_StopsOnlyWithApplicationLifetime` |
 | `tests/Module.Mangareader.Downloader.Tests/*` | Pause/drain persistence and no-auto-resume tests |
 
 ## Implementation order and gates
 
-1. **Contracts and state tests** — add lifecycle contract, slots, and tests
-   proving registration does not attach a resident runtime.
+Gate order is constrained: eager resident attach may only be removed in the
+same gate that routes citizen navigation through the coordinator. Removing it
+earlier makes `MangaReaderModule.CreateView` throw (no attached downloader)
+while Router still calls CreateView directly, and Router's failure path would
+`RejectForFailedView` — unregistering MangaReader the first time anyone opens
+it. Each gate must pass before the next phase; no provider/live-download
+behavior is changed by this work.
+
+1. **Contracts and state tests** — add `IRuntimeModuleLifecycle`,
+   `RuntimeSession`, slots, and coordinator test doubles. `ModuleGate` eager
+   attach is **unchanged**. Prove with a test that the *new* coordinator Start
+   path attaches a resident (via bridge) before CreateView, not at registration
+   — but registration still eagerly attaches until gate 3, so the
+   application-lifetime behavior of the live shell is untouched.
 2. **Coordinator and host** — add stopped/faulted/running host, UI-thread guard,
-   and Start failure retention tests.
-3. **Router integration** — route through host; retain on navigation; preserve
-   same-route idempotence; preserve actual unregister fallback.
+   Start failure retention, and header composition. Old Router path still
+   active; coordinator is opt-in under test.
+3. **Router cutover + eager-attach removal (one gate)** — route citizens
+   through `ModuleRuntimeHost`; retain host on navigation; preserve same-route
+   idempotence; preserve actual unregister fallback; **remove
+   `IResidentModule` attach from `ModuleGate.RegisterOnMain` in this same
+   change**. Rewrite
+   `ModuleGateTests.ResidentModule_StopsOnlyWithApplicationLifetime` to assert
+   registration does not attach and Start does. After this gate every citizen
+   boots Stopped.
 4. **MangaReader stop barrier** — implement queue quiesce/pause/drain and
    persistence-failure behavior, then implement its session-generation fence,
    forced-terminal non-blocking disposal branch, and recovery marker.
 5. **Header and exit** — compose existing module action with Stop; add graceful
-   async tray exit.
-6. **Unregister sequencing** — add staged removal and route rediscovery guard.
+   async tray **and Settings-host** exit through one `RequestShutdownAsync`;
+   latch `_exitRequested` only on success.
+6. **Unregister sequencing** — add staged removal and Option A route
+   rediscovery guard (Gate-held pending replacement, registered atomically
+   after release).
 7. **Targeted validation** — run Shell/UIA tests, Manga queue tests, then a
    Release build and live manual smoke checks.
-
-Each gate must pass before the next phase; no provider/live-download behavior is
-changed by this work.
 
 ## Acceptance criteria
 
@@ -501,16 +566,20 @@ changed by this work.
 - A failed MangaReader Stop leaves runtime resources alive and retryable.
 - Force Stop is opt-in, confirms interruption, prevents stale scheduler
   continuations from modifying a later runtime, and leaves unfinished work for
-  explicit recovery/Resume.
+  explicit recovery/Resume. It is available from `Stopping` **or** `Running`
+  with a recorded Stop error.
 - Force Stop preempts a deliberately non-settling normal Stop; it must reach
   Stopped without waiting on the original Stop task, and that stale task cannot
   overwrite the forced state when it eventually completes.
 - Force Stop never reaches `QueueScheduler.ShutdownAsync`, synchronous task
   waiting, or another scheduler-settlement wait through lifetime disposal.
 - A failed source-folder removal remains retryable from its retained route; a
-  deferred rediscovery becomes the newest descriptor after old runtime release.
+  Gate-held rediscovery becomes the newest descriptor after old runtime release
+  (Option A — no dependency on a second watcher event).
 - Yuzvid WebView2 survives ordinary navigation and is disposed on explicit Stop.
 - Actual module removal waits for safe runtime release before sidebar removal.
-- Tray Exit waits for safe module Stop; failure cancels user-triggered exit.
+- **No exit path skips safe Stop**: tray Exit and Settings-host shutdown both
+  await `StopAllAsync`; failure cancels user-triggered exit and leaves
+  `ResidentShell` retryable (`_exitRequested` still false).
 - No citizen references Shell, no new shared primitive is created, and no
   route/sidebar behavior changes merely because a module is stopped.

@@ -208,13 +208,28 @@ public partial class CatalogScreen : UserControl, IDisposable
     private async void ChangeProxyButton_Click(object sender, RoutedEventArgs e)
     {
         if (_disposed || _context is null || _catalog is null) return;
-        if (!_context.Browser.RotateProxy())
+        ChangeProxyButton.IsEnabled = false;
+        ProxyRotationResult rotation;
+        try
         {
-            SetStatus("No alternate proxy is currently available.", isError: false);
+            rotation = await _context.Browser.RotateProxyWithVerifiedEgressAsync(
+                CancellationToken.None);
+        }
+        catch (Exception exception)
+        {
+            RenderProxySession();
+            SetStatus("Proxy rotation failed: " + exception.GetBaseException().Message, isError: true);
             return;
         }
 
         RenderProxySession();
+        if (!rotation.Changed)
+        {
+            SetStatus(rotation.Message, isError: false);
+            return;
+        }
+
+        SetStatus(rotation.Message, isError: false);
         if (_catalog.State.Detail is { } detail)
         {
             await RunActionAsync(token => _catalog.OpenTitleAsync(detail.Summary, token));
@@ -591,10 +606,17 @@ public partial class CatalogScreen : UserControl, IDisposable
         }
 
         var active = _context.Browser.ActiveProxyDisplay;
-        ActiveProxyText.Text = active ?? (ProxyModeToggle.IsChecked == true
+        var egress = _context.Browser.ActiveEgressIp;
+        ActiveProxyText.Text = active is not null
+            ? egress is not null
+                ? active + " | Egress IP: " + egress
+                : active + " | Egress IP: unverified"
+            : (ProxyModeToggle.IsChecked == true
             ? "Proxy not connected"
             : "Direct connection");
-        ActiveProxyText.ToolTip = active ?? "Proxy used by the active Downloader browser session";
+        ActiveProxyText.ToolTip = active is null
+            ? "Proxy used by the active Downloader browser session"
+            : ActiveProxyText.Text;
         ChangeProxyButton.IsEnabled = ProxyModeToggle.IsChecked == true
             && _context.Browser.HasSession
             && !string.IsNullOrWhiteSpace(active)

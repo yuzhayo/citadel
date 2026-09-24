@@ -1,4 +1,5 @@
 using System.IO;
+using System.Net;
 using System.Text.Json.Nodes;
 using CitadelBridge;
 using Module.Mangareader.ShareLogic;
@@ -16,6 +17,13 @@ public sealed record BrowserFetchEvidence(
     string ContentType,
     string? Path,
     IReadOnlyDictionary<string, string>? ResponseHeaders);
+
+/// <summary>Outcome of an operator-requested browser proxy rotation.</summary>
+public sealed record ProxyRotationResult(
+    bool Changed,
+    string? ProxyEndpoint,
+    string? EgressIp,
+    string Message);
 
 /// <summary>
 /// The Downloader's own command/payload adapter over the shared pyhost
@@ -40,6 +48,9 @@ public sealed class DownloaderPyHostClient : IDisposable
     /// <summary>Each single page attempt.</summary>
     public static readonly TimeSpan PageTimeout = TimeSpan.FromSeconds(30);
 
+    /// <summary>Bounded public-IP check from the active browser context.</summary>
+    public static readonly TimeSpan EgressProbeTimeout = TimeSpan.FromSeconds(15);
+
     private const string PluginName = "mangareader_downloader";
     private const int MaxProxyOpenAttempts = 3;
 
@@ -54,6 +65,7 @@ public sealed class DownloaderPyHostClient : IDisposable
     private long _sessionGeneration;
     private readonly Func<JsonObject, CancellationToken, Task<JsonObject>>? _openSessionOverride;
     private readonly Func<string, JsonObject, CancellationToken, Task<JsonObject>>? _commandOverride;
+    private readonly Func<CancellationToken, Task<string>>? _egressProbeOverride;
     private PyHost? _host;
     private string? _session;
     private string? _sessionProvider;
@@ -62,6 +74,7 @@ public sealed class DownloaderPyHostClient : IDisposable
     private bool _sessionProxyMode;
     private string? _activeProxyDisplay;
     private string? _activeProxyKey;
+    private string? _activeEgressIp;
     private string? _nextProxySkipKey;
     private int _showBrowser;
     private int _disposed;
@@ -117,11 +130,13 @@ public sealed class DownloaderPyHostClient : IDisposable
         string stagingRoot,
         ProxyPoolAdapter proxyPool,
         Func<JsonObject, CancellationToken, Task<JsonObject>> openSession,
-        Func<string, JsonObject, CancellationToken, Task<JsonObject>>? command = null)
+        Func<string, JsonObject, CancellationToken, Task<JsonObject>>? command = null,
+        Func<CancellationToken, Task<string>>? egressProbe = null)
         : this(stagingRoot, proxyPool)
     {
         _openSessionOverride = openSession ?? throw new ArgumentNullException(nameof(openSession));
         _commandOverride = command;
+        _egressProbeOverride = egressProbe;
     }
 
     /// <summary>Absolute root every browser write must stay inside.</summary>
@@ -149,6 +164,12 @@ public sealed class DownloaderPyHostClient : IDisposable
     /// session. Null means direct mode or no active browser session.
     /// </summary>
     public string? ActiveProxyDisplay => Volatile.Read(ref _activeProxyDisplay);
+
+    /// <summary>
+    /// Public IP observed from the active browser context. Null means there is
+    /// no active session or the probe did not complete.
+    /// </summary>
+    public string? ActiveEgressIp => Volatile.Read(ref _activeEgressIp);
 
     /// <summary>
     /// Closes the interactive browser and marks its endpoint to be excluded
@@ -179,6 +200,118 @@ public sealed class DownloaderPyHostClient : IDisposable
         Volatile.Write(ref _nextProxySkipKey, currentKey);
         AbortSession();
         return true;
+    }
+
+    /// <summary>
+    /// Reopens the active browser through alternate pool endpoints. A candidate
+    /// is accepted only after its browser-context egress IP differs from the
+    /// current verified IP; otherwise the previous endpoint is restored.
+    /// </summary>
+    public async Task<ProxyRotationResult> RotateProxyWithVerifiedEgressAsync(
+        CancellationToken cancellationToken)
+    {
+        ThrowIfDisposed();
+        await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            ThrowIfDisposed();
+            if (_fixedLease is not null || _proxyPool?.IsProxyMode != true
+                || _session is null || _sessionReservation?.Lease is not { } originalLease
+                || _sessionProvider is not { } provider || _sessionStartUrl is not { } startUrl
+                || _sessionHeadless is not { } headless)
+            {
+                return new(false, ActiveProxyDisplay, ActiveEgressIp,
+                    "Proxy browser session is not ready for rotation.");
+            }
+
+            string? previousIp;
+            try
+            {
+                previousIp = await ProbeEgressCoreAsync(cancellationToken).ConfigureAwait(false);
+            }
+            catch (Exception exception) when (!cancellationToken.IsCancellationRequested)
+            {
+                return new(false, ActiveProxyDisplay, null,
+                    "Current proxy egress IP could not be verified; rotation was not started: "
+                    + exception.GetBaseException().Message);
+            }
+            if (previousIp is null)
+            {
+                return new(false, ActiveProxyDisplay, null,
+                    "Current proxy egress IP could not be verified; rotation was not started.");
+            }
+
+            Volatile.Write(ref _activeEgressIp, previousIp);
+            var excluded = new HashSet<string>(StringComparer.Ordinal)
+            {
+                originalLease.Endpoint.Canonical,
+            };
+            var maximumCandidates = _proxyPool.AvailableCandidates(ProxyTarget.Browser).Count;
+            Exception? lastFailure = null;
+
+            await CloseSessionCoreAsync(cancellationToken).ConfigureAwait(false);
+            for (var candidateAttempt = 0; candidateAttempt < maximumCandidates; candidateAttempt++)
+            {
+                try
+                {
+                    var response = await OpenWithProxyFailoverAsync(
+                        provider, startUrl, headless, cancellationToken, excluded).ConfigureAwait(false);
+                    SetOpenedSession(response, provider, startUrl, headless);
+
+                    var candidateIp = await ProbeEgressCoreAsync(cancellationToken).ConfigureAwait(false);
+                    if (!string.IsNullOrWhiteSpace(candidateIp)
+                        && !string.Equals(candidateIp, previousIp, StringComparison.Ordinal))
+                    {
+                        Volatile.Write(ref _activeEgressIp, candidateIp);
+                        return new(true, ActiveProxyDisplay, candidateIp,
+                            "Proxy changed and egress IP was verified.");
+                    }
+
+                    lastFailure = new PyHostException(
+                        "PROXY_EGRESS_UNCHANGED",
+                        "candidate proxy has the same public egress IP");
+                    if (Volatile.Read(ref _activeProxyKey) is { } rejected)
+                    {
+                        excluded.Add(rejected);
+                    }
+                    await CloseSessionCoreAsync(cancellationToken).ConfigureAwait(false);
+                }
+                catch (Exception exception) when (!cancellationToken.IsCancellationRequested)
+                {
+                    lastFailure = exception;
+                    if (Volatile.Read(ref _activeProxyKey) is { } rejected)
+                    {
+                        excluded.Add(rejected);
+                    }
+                    try { await CloseSessionCoreAsync(CancellationToken.None).ConfigureAwait(false); }
+                    catch (Exception closeException) { lastFailure = closeException; }
+                }
+            }
+
+            try
+            {
+                var restored = await OpenWithProxyFailoverAsync(
+                    provider,
+                    startUrl,
+                    headless,
+                    cancellationToken,
+                    candidatesOverride: [originalLease.Endpoint]).ConfigureAwait(false);
+                SetOpenedSession(restored, provider, startUrl, headless);
+                Volatile.Write(ref _activeEgressIp, previousIp);
+                return new(false, ActiveProxyDisplay, previousIp,
+                    "No proxy with a different verified egress IP is available in the pool.");
+            }
+            catch (Exception restoreException) when (!cancellationToken.IsCancellationRequested)
+            {
+                return new(false, null, null,
+                    "No different egress IP was found and the original session could not be restored: "
+                    + (lastFailure ?? restoreException).GetBaseException().Message);
+            }
+        }
+        finally
+        {
+            _gate.Release();
+        }
     }
 
     /// <summary>
@@ -237,17 +370,22 @@ public sealed class DownloaderPyHostClient : IDisposable
                 headless,
                 cancellationToken).ConfigureAwait(false);
 
-            _session = response["session"]?.GetValue<string>()
-                ?? throw new PyHostException("BAD_RESPONSE", "downloader.open tidak mengembalikan session");
-            _sessionProvider = provider;
-            _sessionStartUrl = url;
-            _sessionHeadless = headless;
-            _sessionProxyMode = _fixedLease is not null || _proxyPool?.IsProxyMode == true;
-            var activeLease = _fixedLease ?? _sessionReservation?.Lease;
-            Volatile.Write(ref _activeProxyDisplay, activeLease?.Endpoint.Canonical);
-            Volatile.Write(ref _activeProxyKey, activeLease?.Endpoint.Canonical);
-            Interlocked.Increment(ref _sessionGeneration);
-            return _session;
+            SetOpenedSession(response, provider, url, headless);
+            try
+            {
+                Volatile.Write(ref _activeEgressIp,
+                    await ProbeEgressCoreAsync(cancellationToken).ConfigureAwait(false));
+            }
+            catch (Exception exception) when (!cancellationToken.IsCancellationRequested)
+            {
+                // An egress diagnostic must not turn an otherwise usable provider
+                // session into a failed catalog start. Explicit rotation refuses
+                // to proceed until this value can be verified.
+                Volatile.Write(ref _activeEgressIp, null);
+                System.Diagnostics.Trace.TraceWarning(
+                    "[Downloader] egress probe unavailable: " + exception.GetBaseException().Message);
+            }
+            return _session!;
         }
         finally
         {
@@ -390,6 +528,7 @@ public sealed class DownloaderPyHostClient : IDisposable
         _sessionProxyMode = false;
         Volatile.Write(ref _activeProxyDisplay, null);
         Volatile.Write(ref _activeProxyKey, null);
+        Volatile.Write(ref _activeEgressIp, null);
         host?.Abort();
         Interlocked.Exchange(ref _sessionReservation, null)?.Dispose();
     }
@@ -543,6 +682,7 @@ public sealed class DownloaderPyHostClient : IDisposable
                 _sessionProxyMode = false;
                 Volatile.Write(ref _activeProxyDisplay, null);
                 Volatile.Write(ref _activeProxyKey, null);
+                Volatile.Write(ref _activeEgressIp, null);
                 Interlocked.Exchange(ref _sessionReservation, null)?.Dispose();
                 throw;
             }
@@ -557,7 +697,9 @@ public sealed class DownloaderPyHostClient : IDisposable
         string provider,
         string url,
         bool headless,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        IReadOnlySet<string>? excludedCandidates = null,
+        IReadOnlyList<ProxyEndpoint>? candidatesOverride = null)
     {
         var attempts = _fixedLease is not null ? 1 : _proxyPool?.IsProxyMode == true ? MaxProxyOpenAttempts : 1;
         var skipKey = Interlocked.Exchange(ref _nextProxySkipKey, null);
@@ -567,7 +709,11 @@ public sealed class DownloaderPyHostClient : IDisposable
             var lease = _fixedLease;
             if (lease is null && _proxyPool?.IsProxyMode == true)
             {
-                var candidates = _proxyPool.AvailableCandidates(ProxyTarget.Browser);
+                var candidates = candidatesOverride ?? _proxyPool.AvailableCandidates(ProxyTarget.Browser);
+                if (excludedCandidates is not null)
+                {
+                    candidates = candidates.Where(endpoint => !excludedCandidates.Contains(endpoint.Canonical)).ToArray();
+                }
                 if (!string.IsNullOrWhiteSpace(skipKey))
                 {
                     var alternatives = candidates
@@ -575,6 +721,10 @@ public sealed class DownloaderPyHostClient : IDisposable
                             endpoint.Canonical, skipKey, StringComparison.Ordinal))
                         .ToArray();
                     if (alternatives.Length > 0) candidates = alternatives;
+                }
+                if (candidates.Count == 0)
+                {
+                    throw new ProxyPoolException("PROXY_POOL_EXHAUSTED", "no eligible browser proxy remains for rotation");
                 }
                 _sessionReservation = await _proxyPool.ReserveAsync(
                     "downloader-browser", candidates, cancellationToken)
@@ -623,6 +773,52 @@ public sealed class DownloaderPyHostClient : IDisposable
         }
     }
 
+    private void SetOpenedSession(JsonObject response, string provider, string url, bool headless)
+    {
+        _session = response["session"]?.GetValue<string>()
+            ?? throw new PyHostException("BAD_RESPONSE", "downloader.open tidak mengembalikan session");
+        _sessionProvider = provider;
+        _sessionStartUrl = url;
+        _sessionHeadless = headless;
+        _sessionProxyMode = _fixedLease is not null || _proxyPool?.IsProxyMode == true;
+        var activeLease = _fixedLease ?? _sessionReservation?.Lease;
+        Volatile.Write(ref _activeProxyDisplay, activeLease?.Endpoint.Canonical);
+        Volatile.Write(ref _activeProxyKey, activeLease?.Endpoint.Canonical);
+        Volatile.Write(ref _activeEgressIp, null);
+        Interlocked.Increment(ref _sessionGeneration);
+    }
+
+    // Called while _gate is held, after _session has been registered.
+    private async Task<string?> ProbeEgressCoreAsync(CancellationToken cancellationToken)
+    {
+        if (_egressProbeOverride is not null)
+        {
+            return ValidateEgressIp(await _egressProbeOverride(cancellationToken).ConfigureAwait(false));
+        }
+
+        // Unit tests with an open-session fake intentionally have no live
+        // browser process. Production always reaches the pyhost command below.
+        if (_openSessionOverride is not null) return null;
+        if (_session is null) return null;
+
+        var host = await EnsureHostCoreAsync().ConfigureAwait(false);
+        var response = await host.SendAsync(
+            "downloader.egress",
+            new JsonObject { ["session"] = _session, ["timeout_ms"] = (int)EgressProbeTimeout.TotalMilliseconds },
+            EgressProbeTimeout,
+            cancellationToken).ConfigureAwait(false);
+        return ValidateEgressIp(response["ip"]?.GetValue<string>());
+    }
+
+    private static string ValidateEgressIp(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value) || !IPAddress.TryParse(value.Trim(), out var address))
+        {
+            throw new PyHostException("BAD_EGRESS_IP", "browser egress probe returned no valid IP address");
+        }
+        return address.ToString();
+    }
+
     private static bool IsRetryableProxyOpenFailure(
         Exception error,
         CancellationToken cancellationToken)
@@ -644,6 +840,7 @@ public sealed class DownloaderPyHostClient : IDisposable
         _sessionProxyMode = false;
         Volatile.Write(ref _activeProxyDisplay, null);
         Volatile.Write(ref _activeProxyKey, null);
+        Volatile.Write(ref _activeEgressIp, null);
         if (host is null || session is null)
         {
             Interlocked.Exchange(ref _sessionReservation, null)?.Dispose();

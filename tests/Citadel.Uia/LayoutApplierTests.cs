@@ -242,10 +242,19 @@ public class LayoutApplierTests
                 layout: Fake.Declaration("""{ "panel": { "kind": "size", "w": 100 } }""")));
             shell.Main.Pump();
 
+            // Gate 3: layout attaches on Start (coordinator CreateView path),
+            // never on Navigate.
             shell.Router.Navigate("alpha");
+            Assert.Null(slot);
 
-            Assert.NotNull(slot);
-            Assert.Equal(321, slot!.Width);
+            Run(() => shell.Coordinator.StartAsync("alpha").ContinueWith(_ =>
+            {
+                Assert.NotNull(slot);
+                Assert.Equal(321, slot!.Width);
+            }, TaskContinuationOptions.ExecuteSynchronously));
         });
     }
+
+    private static void Run(Func<Task> body) =>
+        body().GetAwaiter().GetResult();
 }

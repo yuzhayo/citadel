@@ -151,12 +151,13 @@ public sealed class YuzvidBrowserController : IYuzvidBrowserController, IDisposa
     {
         if (_disposed) return;
         _disposed = true;
-        // Ordered teardown: popup sessions first (blocking), proxy last.
-        // Dispose must never throw — Lifetime callbacks run at shutdown.
+        // Ordered teardown: popups + main WebView2 first (blocking — releases
+        // WebView2ProfileV2), proxy last. Dispose must never throw — Lifetime
+        // callbacks run at Stop on the UI thread.
         try { _view.Shutdown(); }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"[Yuzvid] popup shutdown: {ex.Message}");
+            System.Diagnostics.Debug.WriteLine($"[Yuzvid] browser shutdown: {ex.Message}");
         }
         _localProxy?.Dispose();
         _localProxy = null;

@@ -53,7 +53,7 @@ public sealed class ProxyBrowserFailoverTests : IDisposable
     }
 
     [Fact]
-    public async Task Downloader_ExplicitRotationExcludesCurrentProxyAndShowsFullEndpoint()
+    public async Task Downloader_ExplicitRotationRequiresADifferentVerifiedEgressIp()
     {
         Directory.CreateDirectory(_root);
         var path = Path.Combine(_root, "rotate-proxy.txt");
@@ -61,6 +61,7 @@ public sealed class ProxyBrowserFailoverTests : IDisposable
         [
             "http://user-one:secret-one@shared.test:8000",
             "http://user-two:secret-two@shared.test:8000",
+            "http://user-three:secret-three@shared.test:8000",
         ]);
         var adapter = new ProxyPoolAdapter("Downloader", path) { Enabled = true };
         var attempts = new List<string>();
@@ -75,23 +76,24 @@ public sealed class ProxyBrowserFailoverTests : IDisposable
                     proxy["username"]!.GetValue<string>(),
                     proxy["password"]!.GetValue<string>()));
                 return Task.FromResult(new JsonObject { ["session"] = "s" + attempts.Count });
-            });
+            },
+            egressProbe: _ => Task.FromResult(
+                attempts.Count < 3 ? "198.51.100.10" : "198.51.100.20"));
 
         await client.EnsureSessionAsync(
             "comix", "https://comix.ws/browse", true, CancellationToken.None);
         var firstDisplay = client.ActiveProxyDisplay;
 
         Assert.Equal("http://user-one:secret-one@shared.test:8000", firstDisplay);
-        Assert.True(client.RotateProxy());
-        Assert.Null(client.ActiveProxyDisplay);
+        Assert.Equal("198.51.100.10", client.ActiveEgressIp);
+        var rotation = await client.RotateProxyWithVerifiedEgressAsync(CancellationToken.None);
 
-        await client.EnsureSessionAsync(
-            "comix", "https://comix.ws/browse", true, CancellationToken.None);
-
-        Assert.Equal(2, attempts.Count);
+        Assert.True(rotation.Changed);
+        Assert.Equal(3, attempts.Count);
         Assert.NotEqual(attempts[0], attempts[1]);
+        Assert.NotEqual(attempts[1], attempts[2]);
         Assert.NotEqual(firstDisplay, client.ActiveProxyDisplay);
-        Assert.Equal("http://user-two:secret-two@shared.test:8000", client.ActiveProxyDisplay);
+        Assert.Equal("198.51.100.20", client.ActiveEgressIp);
     }
 
     [Theory]

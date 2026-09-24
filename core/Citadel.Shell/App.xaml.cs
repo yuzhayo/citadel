@@ -47,6 +47,8 @@ public partial class App : System.Windows.Application
     private MainWindow? _window;
     private ResidentShell? _resident;
     private Watcher? _searcher;
+    private ModuleRuntimeCoordinator? _coordinator;
+    private int _shutdownGate; // 0 idle, 1 in-flight, 2 done
 
     public App()
     {
@@ -80,18 +82,34 @@ public partial class App : System.Windows.Application
         _appLifetime.Add(animations.Dispose);
 
         var gate = new ModuleGate(main, _appLifetime);
+        // Compose before MainWindow: Router takes the coordinator, and every
+        // citizen's runtime starts only through it (never eager at register).
+        var coordinator = new ModuleRuntimeCoordinator(gate, tokens);
+        _coordinator = coordinator;
+        // Gate 6: staged Unregister releases runtime via this handler before
+        // the descriptor leaves the sidebar. Must bind before StartSearcher.
+        gate.BindRuntimeReleaseHandler(route => coordinator.ReleaseRouteAsync(route));
         var host = new ShellSettingHost(
             gate,
             tokens,
             () => _window,
             new VelopackUpdateService(),
-            Shutdown,
+            // Settings / update install: same async Exit as tray — never a
+            // hard Application.Shutdown past StopAll.
+            static () =>
+            {
+                if (System.Windows.Application.Current is App app)
+                {
+                    _ = app.RequestShutdownAsync();
+                }
+            },
             new SidebarGroupingStore());
         _appLifetime.Add(host.Detach);
 
         var window = new MainWindow(
             tokens,
             gate,
+            coordinator,
             animations,
             _appLifetime,
             BuiltInRoutes(host),
@@ -114,7 +132,7 @@ public partial class App : System.Windows.Application
                 host.CloseWindow,
                 tray,
                 _instanceHost.StopListening,
-                Shutdown);
+                RequestShutdownAsync);
             _resident = resident;
             if (resident.ResidentEnabled)
             {
@@ -132,6 +150,64 @@ public partial class App : System.Windows.Application
         Log.Main("[App] window shown");
 
         _searcher = StartSearcher(main, gate, host);
+    }
+
+    /// <summary>
+    /// The one async Exit path. Every call site that used to reach
+    /// Application.Shutdown (tray Exit, Settings/update install) comes here:
+    /// StopAllAsync first; on full success latch ResidentShell and Shutdown;
+    /// on any route failure cancel Exit and leave it retryable
+    /// (<c>_exitRequested</c> stays false, gate returns to idle).
+    /// </summary>
+    internal async Task RequestShutdownAsync()
+    {
+        if (Dispatcher.HasShutdownStarted || Dispatcher.HasShutdownFinished)
+        {
+            return;
+        }
+
+        if (!Dispatcher.CheckAccess())
+        {
+            await Dispatcher.InvokeAsync(RequestShutdownAsync);
+            return;
+        }
+
+        // 0 → 1: claim. 1 → 1: duplicate Exit while StopAll is in flight.
+        // 2: already succeeded (Shutdown owns the rest).
+        if (System.Threading.Interlocked.CompareExchange(ref _shutdownGate, 1, 0) != 0)
+        {
+            return;
+        }
+
+        try
+        {
+            var failures = await (_coordinator?.StopAllAsync() ?? Task.FromResult<IReadOnlyList<string>>([]))
+                .ConfigureAwait(true);
+
+            if (failures.Count > 0)
+            {
+                System.Threading.Interlocked.Exchange(ref _shutdownGate, 0);
+                var message =
+                    "Exit cancelled — some modules failed to stop:\n"
+                    + string.Join("\n", failures);
+                Log.Main($"[App] {message}");
+                System.Windows.MessageBox.Show(message, "Citadel", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+
+            // Full success: latch resident (close Settings, stop tray/instance),
+            // then the single Application.Shutdown. No second exit path.
+            _resident?.CompleteExit();
+            System.Threading.Interlocked.Exchange(ref _shutdownGate, 2);
+            Shutdown();
+        }
+        catch (Exception exception)
+        {
+            System.Threading.Interlocked.Exchange(ref _shutdownGate, 0);
+            var message = $"Exit failed: {exception.GetBaseException().Message}";
+            Log.Main($"[App] {message}");
+            System.Windows.MessageBox.Show(message, "Citadel", MessageBoxButton.OK, MessageBoxImage.Error);
+        }
     }
 
     /// <summary>

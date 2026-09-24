@@ -1,9 +1,10 @@
 namespace Module.Mangareader.Features.Downloader.Catalog;
 
 /// <summary>
-/// Application-lifetime owner of Downloader browse execution. Screens issue
-/// commands and render <see cref="CatalogFeature.State"/>; they never own the
-/// cancellation source or browser process they control.
+/// Runtime-lifetime owner of Downloader browse execution (created with the
+/// Downloader background service on module Start). Screens issue commands and
+/// render <see cref="CatalogFeature.State"/>; they never own the cancellation
+/// source or browser process they control.
 /// </summary>
 public sealed class DownloaderOnlineProcess : IDisposable
 {

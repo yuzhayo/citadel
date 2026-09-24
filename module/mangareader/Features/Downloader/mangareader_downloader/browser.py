@@ -17,6 +17,7 @@ Batas yang dijaga di sini:
 
 import asyncio
 import hashlib
+import ipaddress
 import json
 import os
 import re
@@ -33,6 +34,7 @@ NAME_RE = re.compile(r"^[A-Za-z0-9._-]+$")
 # muat setelah dibungkus envelope JSON.
 MAX_API_TEXT = 1 * 1024 * 1024
 MAX_PAGE_BYTES = 25 * 1024 * 1024
+EGRESS_PROBE_URL = "https://api.ipify.org/"
 
 BRIDGE_ID = "citadel-downloader-bridge"
 API_PREFIX = "/api/v1"
@@ -627,3 +629,28 @@ async def cmd_close(host, msg):
         raise PyhostError("BROWSER_CLOSE_FAILED",
                           "close gagal; session dipertahankan untuk retry")
     return {"closed": True, "session": sid}
+
+
+async def cmd_egress(host, msg):
+    """Read the public IP through a short-lived page in this exact browser context."""
+    sess = host.get_session(msg.get("session"))
+    ctx = sess.get("ctx")
+    if ctx is None:
+        raise PyhostError("NO_CONTEXT", "session tidak punya browser context")
+
+    timeout_ms = _timeout_ms(msg, 15000)
+    page = await ctx.new_page()
+    try:
+        await page.goto(EGRESS_PROBE_URL, wait_until="domcontentloaded", timeout=timeout_ms)
+        text = (await page.locator("body").inner_text(timeout=timeout_ms)).strip()
+        try:
+            ip = str(ipaddress.ip_address(text))
+        except ValueError:
+            raise PyhostError("BAD_EGRESS_IP", "layanan egress tidak mengembalikan alamat IP")
+        return {"ip": ip}
+    except PyhostError:
+        raise
+    except Exception as error:  # noqa: BLE001 - expose one bounded probe failure
+        raise PyhostError("EGRESS_PROBE_FAILED", "%s: %s" % (type(error).__name__, error))
+    finally:
+        await page.close()

@@ -168,9 +168,20 @@ public class FluidLayoutTests
                 window.UpdateLayout();
                 var before = new Size(window.ActualWidth, window.ActualHeight);
 
+                // Gate 3: Navigate opens the host without CreateView.
                 window.Router.Navigate("fluid-document");
                 window.UpdateLayout();
-                Assert.Equal(1, createCount);
+                Assert.Equal(0, createCount);
+                Assert.IsType<ModuleRuntimeHost>(window.Router.CurrentView);
+                Assert.Equal(before, new Size(window.ActualWidth, window.ActualHeight));
+
+                TestAsync.Run(() => fixture.Coordinator.StartAsync("fluid-document")
+                    .ContinueWith(_ =>
+                    {
+                        Assert.Equal(1, createCount);
+                    }, TaskContinuationOptions.ExecuteSynchronously));
+
+                window.UpdateLayout();
                 Assert.Equal(before, new Size(window.ActualWidth, window.ActualHeight));
 
                 document.Children.Add(new Border { Height = 5_000 });

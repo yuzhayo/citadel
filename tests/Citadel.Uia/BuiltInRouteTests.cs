@@ -45,9 +45,11 @@ public class BuiltInRouteTests
             var gate = new ModuleGate(main.Queue, lifetime);
             MainWindow? owner = null;
             var host = new ShellSettingHost(gate, tokens, () => owner);
+            var coordinator = new ModuleRuntimeCoordinator(gate, tokens);
             owner = new MainWindow(
                 tokens,
                 gate,
+                coordinator,
                 animations,
                 lifetime,
                 App.BuiltInRoutes(host));

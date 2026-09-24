@@ -234,13 +234,12 @@ public partial class YuzvidBrowserView : UserControl
 
             Directory.CreateDirectory(UserDataFolder);
 
-            var env = await CoreWebView2Environment.CreateAsync(
-                browserExecutableFolder: null,
-                userDataFolder: UserDataFolder,
-                options: envOptions);
+            // Same-profile re-init after Stop can race the previous browser
+            // process exiting (0x8007139F). Retry only that transient state.
+            _environment = await CreateEnvironmentWithRetryAsync(envOptions);
             PopupTrace.Write("init", "env-ok");
 
-            await Browser.EnsureCoreWebView2Async(env);
+            await Browser.EnsureCoreWebView2Async(_environment);
             PopupTrace.Write("init", "core-ok");
         }
         catch (Exception ex)
@@ -612,13 +611,88 @@ public partial class YuzvidBrowserView : UserControl
 
     /// <summary>
     /// Synchronous. Blocking Invoke (never BeginInvoke): Dispose must not
-    /// return before every session is closed.
+    /// return before every session is closed and the main WebView2 has
+    /// released WebView2ProfileV2 (Stop → Start re-init fails with
+    /// 0x8007139F otherwise).
     /// </summary>
     internal void Shutdown()
     {
         if (Dispatcher.CheckAccess())
-            _popupManager?.Shutdown();
+            ShutdownCore();
         else
-            Dispatcher.Invoke(() => _popupManager?.Shutdown());
+            Dispatcher.Invoke(ShutdownCore);
+    }
+
+    private void ShutdownCore()
+    {
+        // Popups first (they share the environment), then the main control.
+        try { _popupManager?.Shutdown(); }
+        catch { /* best effort */ }
+        try { _popupManager?.Dispose(); }
+        catch { /* best effort */ }
+        _popupManager = null;
+
+        _initializationTask = null;
+        _pendingUrl = null;
+        _environment = null;
+
+        try
+        {
+            Browser.NavigationStarting -= Browser_NavigationStarting;
+            Browser.NavigationCompleted -= Browser_NavigationCompleted;
+            if (Browser.CoreWebView2 is not null)
+            {
+                Browser.CoreWebView2.WebResourceRequested -= OnAdBlockResourceRequested;
+                Browser.CoreWebView2.NewWindowRequested -= OnNewWindowRequested;
+            }
+        }
+        catch { /* control may never have initialized */ }
+
+        // Critical: WPF WebView2 must be disposed or msedgewebview2 keeps
+        // the user-data folder locked across Stop → Start.
+        try { Browser.Dispose(); }
+        catch { /* already dead */ }
+    }
+
+    /// <summary>
+    /// CreateAsync on a profile whose previous browser process is still
+    /// exiting throws 0x8007139F (ERROR_INVALID_STATE). Brief backoff and
+    /// retry only that case; all other failures surface immediately.
+    /// </summary>
+    private async Task<CoreWebView2Environment> CreateEnvironmentWithRetryAsync(
+        CoreWebView2EnvironmentOptions options)
+    {
+        const int maxAttempts = 4;
+        for (var attempt = 1; ; attempt++)
+        {
+            try
+            {
+                return await CoreWebView2Environment.CreateAsync(
+                    browserExecutableFolder: null,
+                    userDataFolder: UserDataFolder,
+                    options: options);
+            }
+            catch (Exception ex) when (
+                attempt < maxAttempts && IsTransientProfileBusy(ex))
+            {
+                PopupTrace.Write("init", $"profile-busy retry {attempt}: {ex.Message}");
+                await Task.Delay(100 * attempt);
+            }
+        }
+    }
+
+    private static bool IsTransientProfileBusy(Exception ex)
+    {
+        const int errorInvalidState = unchecked((int)0x8007139F);
+        for (var current = ex; current is not null; current = current.InnerException!)
+        {
+            if (current.HResult == errorInvalidState) return true;
+            if (current.Message.Contains(
+                    "correct state", StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+        }
+        return false;
     }
 }

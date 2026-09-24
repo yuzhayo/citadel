@@ -48,6 +48,13 @@ public sealed class DownloadQueueFeature : IDisposable
     private readonly QueueSharedSessionAdapter _shared;
     private readonly HashSet<string> _removing = new(StringComparer.Ordinal);
     private int _disposed;
+    // Quiescing: Stop barrier rejects Start/Resume admission until drain
+    // succeeds (then Dispose) or fails (cleared for retry).
+    private int _quiescing;
+    // Force terminal: normal pause/drain continuations and blocking shutdown
+    // waits are no-ops; persistence is best-effort background only.
+    private int _forceTerminal;
+    private long _forceGeneration = -1;
 
     public DownloadQueueFeature(
         LibraryRootContext root,
@@ -320,6 +327,11 @@ public sealed class DownloadQueueFeature : IDisposable
         lock (_gate) StopMany(_jobs.Select(job => job.JobId).ToArray(), reason);
     }
 
+    /// <summary>
+    /// User-facing Stop rewrite: every non-Completed row parks (Failed included).
+    /// Module Stop uses <see cref="ParkRunnableForBarrier"/> instead so
+    /// decision-required states survive the barrier.
+    /// </summary>
     private Task StopMany(IReadOnlyCollection<string> ids, string? reason)
     {
         var targets = ids.ToHashSet(StringComparer.Ordinal);
@@ -344,10 +356,48 @@ public sealed class DownloadQueueFeature : IDisposable
         }
     }
 
+    /// <summary>
+    /// Module Stop barrier rewrite (caller holds <c>_gate</c>). Parks runnable
+    /// and in-flight rows only; leaves Completed, Failed, and
+    /// AwaitingSourceFallback unchanged so a pending source decision and Retry
+    /// affordances survive Stop. Still cancels every active execution.
+    /// </summary>
+    private Task ParkRunnableForBarrier()
+    {
+        var targets = _jobs.Select(job => job.JobId).ToHashSet(StringComparer.Ordinal);
+        _manualDownloadsAfterManifest.ExceptWith(targets);
+        Commit(jobs =>
+        {
+            for (var i = 0; i < jobs.Count; i++)
+            {
+                var job = jobs[i];
+                if (job.State is DownloadJobState.Completed
+                    or DownloadJobState.Failed
+                    or DownloadJobState.AwaitingSourceFallback)
+                {
+                    continue;
+                }
+
+                if (job.State == DownloadJobState.Paused) continue;
+
+                jobs[i] = job with
+                {
+                    State = IsActive(job.JobId)
+                        ? DownloadJobState.Pausing
+                        : DownloadJobState.Paused,
+                    UpdatedUtc = DateTimeOffset.UtcNow,
+                };
+            }
+        });
+        return CancelActive(targets);
+    }
+
     public void Start(string jobId)
     {
         lock (_gate)
         {
+            // Quiescing rejects new Start admission (module Stop barrier).
+            if (Volatile.Read(ref _quiescing) != 0) return;
             if (_removing.Contains(jobId) || IsActive(jobId)) return;
             Transition(jobId, job => job.State is DownloadJobState.Paused or DownloadJobState.Failed or DownloadJobState.Queued
                 ? job with
@@ -378,6 +428,11 @@ public sealed class DownloadQueueFeature : IDisposable
 
     private void ResumeMatching(Func<DownloadJobRecord, bool> matches)
     {
+        lock (_gate)
+        {
+            // Quiescing rejects new Resume admission (module Stop barrier).
+            if (Volatile.Read(ref _quiescing) != 0) return;
+        }
         Commit(jobs =>
         {
             for (var i = 0; i < jobs.Count; i++)
@@ -499,9 +554,148 @@ public sealed class DownloadQueueFeature : IDisposable
     /// <summary>Starts the bounded chapter scheduler. Idempotent.</summary>
     public void Start() => EnsureStarted();
 
+    /// <summary>
+    /// Safe Stop barrier: quiesce admission, persist runnable/in-flight as
+    /// Pausing/Paused, cancel both schedulers, await every active execution's
+    /// settlement (ParkIfPausing runs in each runner's finally), then persist
+    /// the final Paused snapshot. Preserves Completed, Failed, and
+    /// decision-required (AwaitingSourceFallback) rows unchanged — same contract
+    /// as load recovery. Succeeds only when neither scheduler has active work.
+    /// Persistence or settlement failure leaves resources alive and clears
+    /// quiescing so a later Stop can retry.
+    /// </summary>
+    public async Task PauseAndDrainAsync(CancellationToken cancellationToken = default)
+    {
+        ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
+
+        Volatile.Write(ref _quiescing, 1);
+        try
+        {
+            if (Volatile.Read(ref _forceTerminal) != 0) return;
+
+            Task settled;
+            lock (_gate)
+            {
+                // Barrier-only rewrite: park runnable/active; never clobber
+                // Completed / Failed / AwaitingSourceFallback (PLAN Stop rules).
+                settled = ParkRunnableForBarrier();
+            }
+
+            await settled.WaitAsync(cancellationToken).ConfigureAwait(false);
+            cancellationToken.ThrowIfCancellationRequested();
+            if (Volatile.Read(ref _forceTerminal) != 0) return;
+
+            // Claim race backstop: Paused jobs are not claimable, but settle
+            // briefly if a runner is still in ParkIfPausing/finally.
+            for (var spin = 0; spin < 200 && HasActiveSchedulerWork(); spin++)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                if (Volatile.Read(ref _forceTerminal) != 0) return;
+                await Task.Delay(5, cancellationToken).ConfigureAwait(false);
+            }
+
+            if (HasActiveSchedulerWork())
+            {
+                throw new InvalidOperationException(
+                    "Downloader queue still has active work after pause-and-drain.");
+            }
+
+            // Final Paused snapshot after workers settle (ParkIfPausing should
+            // already have parked; this catches any residual Pausing).
+            Commit(jobs =>
+            {
+                for (var i = 0; i < jobs.Count; i++)
+                {
+                    if (jobs[i].State != DownloadJobState.Pausing) continue;
+                    jobs[i] = jobs[i] with
+                    {
+                        State = DownloadJobState.Paused,
+                        UpdatedUtc = DateTimeOffset.UtcNow,
+                    };
+                }
+            });
+        }
+        catch
+        {
+            // Stop failed: leave Running-with-error semantics to the coordinator;
+            // re-admit Start/Resume so the user can keep working or retry Stop.
+            Volatile.Write(ref _quiescing, 0);
+            throw;
+        }
+    }
+
+    /// <summary>
+    /// Force path: terminal quiescing generation, cancel schedulers without
+    /// waiting, schedule best-effort Paused persistence with a force-stop
+    /// warning. Never blocks the UI thread.
+    /// </summary>
+    public void ForceAbort(long generation)
+    {
+        if (Interlocked.Exchange(ref _forceTerminal, 1) != 0) return;
+        Volatile.Write(ref _forceGeneration, generation);
+        Volatile.Write(ref _quiescing, 1);
+
+        // Background: best-effort persist non-completed as Paused + warning.
+        // Failure is logged and remains visible on next Start load recovery.
+        _ = Task.Run(() =>
+        {
+            try
+            {
+                Commit(jobs =>
+                {
+                    for (var i = 0; i < jobs.Count; i++)
+                    {
+                        var job = jobs[i];
+                        if (job.State is DownloadJobState.Completed or DownloadJobState.Paused)
+                            continue;
+                        jobs[i] = job with
+                        {
+                            State = DownloadJobState.Paused,
+                            Warning = "Force stopped; resume manually if needed.",
+                            UpdatedUtc = DateTimeOffset.UtcNow,
+                        };
+                    }
+                });
+            }
+            catch (Exception exception)
+            {
+                Citadel.Core.Log.Main(
+                    $"[Queue] force-stop persistence failed: {exception.GetBaseException().Message}");
+            }
+        });
+
+        _manifestScheduler.CancelWithoutWait();
+        _downloadScheduler.CancelWithoutWait();
+    }
+
+    /// <summary>
+    /// Force-terminal dispose: cancel only — no ShutdownAsync, no GetResult,
+    /// no settlement wait. Idempotent with <see cref="Dispose"/>.
+    /// </summary>
+    public void DisposeAfterForceAbort()
+    {
+        if (Interlocked.Exchange(ref _disposed, 1) != 0) return;
+        Volatile.Write(ref _forceTerminal, 1);
+        Volatile.Write(ref _quiescing, 1);
+        _manifestScheduler.CancelWithoutWait();
+        _downloadScheduler.CancelWithoutWait();
+    }
+
+    private bool HasActiveSchedulerWork() =>
+        _manifestScheduler.HasActive || _downloadScheduler.HasActive;
+
     public void Dispose()
     {
         if (Interlocked.Exchange(ref _disposed, 1) != 0) return;
+
+        if (Volatile.Read(ref _forceTerminal) != 0)
+        {
+            // Force Stop: lifetime destroy must never wait on settlement.
+            _manifestScheduler.CancelWithoutWait();
+            _downloadScheduler.CancelWithoutWait();
+            return;
+        }
+
         try { StopAll(); }
         catch (QueuePersistenceException ex)
         {
@@ -509,7 +703,14 @@ public sealed class DownloadQueueFeature : IDisposable
             // Preserve the file; restart already parks any in-flight records.
             System.Diagnostics.Trace.TraceError("Queue shutdown persistence: {0}", ex.Message);
         }
-        finally { Task.WhenAll(_manifestScheduler.ShutdownAsync(), _downloadScheduler.ShutdownAsync()).GetAwaiter().GetResult(); }
+        finally
+        {
+            // Never block the caller (often the Shell UI thread). PauseAndDrain
+            // already settled work on the Stop path; cancel loops without
+            // GetResult so Force Stop cannot become a renamed normal Stop.
+            _manifestScheduler.CancelWithoutWait();
+            _downloadScheduler.CancelWithoutWait();
+        }
     }
 
     /// <summary>
@@ -1304,6 +1505,10 @@ public sealed class DownloadQueueFeature : IDisposable
     /// </summary>
     private void ParkIfPausing(string jobId)
     {
+        // After Force Stop the terminal generation owns persistence; a late
+        // normal park must not write.
+        if (Volatile.Read(ref _forceTerminal) != 0) return;
+
         lock (_gate)
         {
             var index = FindIndex(_jobs, jobId);

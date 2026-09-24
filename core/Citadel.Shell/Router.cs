@@ -48,11 +48,13 @@ public sealed class Router : IDisposable
     private readonly ContentControl _host;
     private readonly Grid _surface = new();
     private readonly ModuleGate _gate;
+    private readonly ModuleRuntimeCoordinator _coordinator;
     private readonly Tokens _tokens;
     private readonly AnimationManager _animations;
     private readonly Dictionary<string, BuiltInRoute> _builtIn;
     // A retained screen owns its view and its lifetime, never a transition
     // layer. Layers are one-navigation containers and are disposable.
+    // Citizens are ModuleRuntimeHost instances retained across navigation.
     private readonly Dictionary<string, RetainedView> _retainedCache = new(StringComparer.Ordinal);
     private Lifetime? _viewLifetime;
     private Lifetime? _transitionLifetime;
@@ -64,12 +66,14 @@ public sealed class Router : IDisposable
     internal Router(
         ContentControl host,
         ModuleGate gate,
+        ModuleRuntimeCoordinator coordinator,
         Tokens tokens,
         AnimationManager animations,
         IReadOnlyDictionary<string, BuiltInRoute> builtInRoutes)
     {
         _host = host ?? throw new ArgumentNullException(nameof(host));
         _gate = gate ?? throw new ArgumentNullException(nameof(gate));
+        _coordinator = coordinator ?? throw new ArgumentNullException(nameof(coordinator));
         _tokens = tokens ?? throw new ArgumentNullException(nameof(tokens));
         _animations = animations ?? throw new ArgumentNullException(nameof(animations));
         ArgumentNullException.ThrowIfNull(builtInRoutes);
@@ -78,10 +82,20 @@ public sealed class Router : IDisposable
             pair => pair.Value,
             StringComparer.Ordinal);
         _host.Content = _surface;
+        _coordinator.RuntimePresentationChanged += OnRuntimePresentationChanged;
     }
 
     /// <summary>Raised after the displayed route changed, including on fallback.</summary>
     public event Action<string>? Navigated;
+
+    /// <summary>
+    /// Coordinator runtime state changed; MainWindow re-reads the content header
+    /// (host is Router.CurrentView, so Stop/Start chrome stays fresh).
+    /// </summary>
+    public event Action? ContentHeaderActionInvalidated;
+
+    private void OnRuntimePresentationChanged(string route) =>
+        ContentHeaderActionInvalidated?.Invoke();
 
     public string? CurrentRoute { get; private set; }
 
@@ -114,6 +128,14 @@ public sealed class Router : IDisposable
         _navigating = true;
         try
         {
+            // Citizen same-route idempotence: the stable ModuleRuntimeHost stays
+            // put; re-navigating must not recreate host, runtime view, or
+            // runtime lifetime. Built-in Settings still rebuilds below.
+            if (CurrentView is ModuleRuntimeHost
+                && string.Equals(route, CurrentRoute, StringComparison.Ordinal))
+            {
+                return;
+            }
             NavigateCore(route);
         }
         finally
@@ -152,39 +174,9 @@ public sealed class Router : IDisposable
             return;
         }
 
-        // Check retained view cache — if the module was cached from a prior
-        // navigation, re-use its view and lifetime instead of recreating.
-        if (_retainedCache.TryGetValue(route, out var cached))
-        {
-            _retainedCache.Remove(route);
-            if (ReferenceEquals(cached.Module, descriptor.Instance) && cached.Lifetime.Alive)
-            {
-                try
-                {
-                    // Attach creates a fresh transition layer. The cached view
-                    // remains the same WebView2-owning instance.
-                    var cachedLayer = Attach(cached.View);
-                    if (cached.View is IRetainedViewModule retained)
-                        retained.OnViewAttached();
-
-                    Show(route, cached.View, cachedLayer, cached.Lifetime, oldLayer);
-                    return;
-                }
-                catch (Exception exception)
-                {
-                    cached.Lifetime.Destroy();
-                    _gate.RejectForFailedView(descriptor.Route, exception.Message);
-                    NavigateToFallback(oldLayer);
-                    return;
-                }
-            }
-
-            // The module was reloaded under the same route, or the prior view
-            // has already died. Its retained state must not cross that boundary.
-            cached.Lifetime.Destroy();
-        }
-
-        if (!TryCreateAndAttachCitizen(
+        // Gate 3: citizens are stable ModuleRuntimeHost shells. CreateView runs
+        // only inside ModuleRuntimeCoordinator.StartAsync, never on navigate.
+        if (!TryAttachCitizenHost(
             descriptor, out var citizenView, out var citizenLayer, out var citizenLifetime))
         {
             NavigateToFallback(oldLayer);
@@ -205,17 +197,24 @@ public sealed class Router : IDisposable
         // on the fallback, so acting here too would build Settings twice for one
         // failure.
         if (_navigating) return;
+
+        if (CurrentRoute is not null && !_builtIn.ContainsKey(CurrentRoute))
+        {
+            var stillThere = _gate.Snapshot()
+                .Any(d => string.Equals(d.Route, CurrentRoute, StringComparison.Ordinal));
+            if (stillThere)
+            {
+                EvictStaleRetainedCache();
+                return;
+            }
+
+            Log.Main($"[Router] displayed route '{CurrentRoute}' was unregistered; leaving");
+            Navigate(FallbackRoute);
+        }
+
+        // After leaving an unregistered citizen its host sits in the retained
+        // cache; evict now so disposal is not deferred to the next registry tick.
         EvictStaleRetainedCache();
-
-        if (CurrentRoute is null || _builtIn.ContainsKey(CurrentRoute)) return;
-
-        var stillThere = _gate.Snapshot()
-            .Any(d => string.Equals(d.Route, CurrentRoute, StringComparison.Ordinal));
-        if (stillThere) return;
-
-        Log.Main($"[Router] displayed route '{CurrentRoute}' was unregistered; leaving");
-
-        Navigate(FallbackRoute);
     }
 
     /// <summary>
@@ -242,7 +241,13 @@ public sealed class Router : IDisposable
             .ForEach(route => _retainedCache.Remove(route));
     }
 
-    private bool TryCreateAndAttachCitizen(
+    /// <summary>
+    /// Retained host from a prior navigation, or a fresh ModuleRuntimeHost.
+    /// Never calls CreateView — a stopped citizen opens the lightweight host.
+    /// Host-level failure (shell bug) logs and falls back without
+    /// RejectForFailedView: the citizen is not at fault.
+    /// </summary>
+    private bool TryAttachCitizenHost(
         ModuleDescriptor descriptor,
         out FrameworkElement view,
         out ContentPresenter layer,
@@ -250,29 +255,61 @@ public sealed class Router : IDisposable
     {
         view = null!;
         layer = null!;
+        lifetime = null!;
+
+        if (_retainedCache.TryGetValue(descriptor.Route, out var cached))
+        {
+            _retainedCache.Remove(descriptor.Route);
+            if (ReferenceEquals(cached.Module, descriptor.Instance)
+                && cached.Lifetime.Alive
+                && cached.View is ModuleRuntimeHost)
+            {
+                try
+                {
+                    var cachedLayer = Attach(cached.View);
+                    if (cached.View is IRetainedViewModule retained)
+                        retained.OnViewAttached();
+
+                    view = cached.View;
+                    layer = cachedLayer;
+                    lifetime = cached.Lifetime;
+                    return true;
+                }
+                catch (Exception exception)
+                {
+                    cached.Lifetime.Destroy();
+                    // Host attach failure is a shell bug, not a broken citizen.
+                    Log.Main(
+                        $"[Router] host reattach for '{descriptor.Route}' failed: {exception.Message}");
+                    return false;
+                }
+            }
+
+            // Module reloaded or prior host died — retained state must not cross.
+            cached.Lifetime.Destroy();
+        }
+
         lifetime = new Lifetime();
-        FrameworkElement? created = null;
         ContentPresenter? candidateLayer = null;
         try
         {
-            created = descriptor.Instance.CreateView(lifetime)
-                ?? throw new InvalidOperationException("CreateView returned null");
-            if (VisualTreeHelperParent(created) is not null)
-            {
-                throw new InvalidOperationException("CreateView returned a view that already has a parent");
-            }
-
-            LayoutApplier.Attach(created, descriptor.Route, descriptor.Layout, _tokens, lifetime);
-            candidateLayer = Attach(created);
-            view = created;
+            var host = new ModuleRuntimeHost(_coordinator, descriptor.Route);
+            lifetime.Add(host.DisposeHost);
+            candidateLayer = Attach(host);
+            view = host;
             layer = candidateLayer;
             return true;
         }
         catch (Exception exception)
         {
-            RemoveCandidate(candidateLayer);
+            if (candidateLayer is not null && _surface.Children.Contains(candidateLayer))
+            {
+                _surface.Children.Remove(candidateLayer);
+                candidateLayer.Content = null;
+            }
             lifetime.Destroy();
-            _gate.RejectForFailedView(descriptor.Route, exception.Message);
+            Log.Main(
+                $"[Router] host create for '{descriptor.Route}' failed: {exception.Message}");
             return false;
         }
     }
@@ -511,6 +548,7 @@ public sealed class Router : IDisposable
     {
         if (_disposed) return;
         _disposed = true;
+        _coordinator.RuntimePresentationChanged -= OnRuntimePresentationChanged;
         CancelTransition();
         _viewLifetime?.Destroy();
         _viewLifetime = null;

@@ -19,6 +19,7 @@ COMMANDS = {
     "downloader.api": browser.cmd_api,
     "downloader.fetch": browser.cmd_fetch,
     "downloader.close": browser.cmd_close,
+    "downloader.egress": browser.cmd_egress,
 }
 
 

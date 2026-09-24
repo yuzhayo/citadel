@@ -162,11 +162,11 @@ public class ModuleGateTests
     }
 
     [Fact]
-    public void ResidentModule_StopsOnlyWithApplicationLifetime()
+    public void ResidentModule_DoesNotAttachAtRegistration_ButStartDoes()
     {
         Sta.Run(() =>
         {
-            var shell = new ShellHarness();
+            using var shell = new ShellHarness();
             var module = new RecordingResidentModule("resident");
             shell.Gate.Register(new ModuleDescriptor(
                 module.Route,
@@ -177,28 +177,62 @@ public class ModuleGateTests
                 null));
             shell.Main.Pump();
 
+            // Gate 3: registration never attaches; every citizen boots Stopped.
+            Assert.Null(module.Attached);
+
             shell.Router.Navigate("resident");
             shell.Router.Navigate(Router.FallbackRoute);
-            Assert.False(module.Stopped);
+            Assert.Null(module.Attached);
 
             shell.Gate.Unregister("resident");
             shell.Main.Pump();
-            Assert.False(module.Stopped);
+            Assert.Null(module.Attached);
 
-            shell.Dispose();
-            Assert.True(module.Stopped);
+            // Re-register and Start through the coordinator — only attach path.
+            shell.Gate.Register(new ModuleDescriptor(
+                module.Route, "Resident", null, 10, module, null));
+            shell.Main.Pump();
+
+            Run(() => shell.Coordinator.StartAsync("resident").ContinueWith(_ =>
+            {
+                Assert.NotNull(module.Attached);
+                Assert.NotSame(shell.Lifetime, module.Attached);
+                Assert.True(module.Attached!.Alive);
+                Assert.False(module.Stopped);
+
+                // Unregister without a bound release handler removes immediately
+                // (legacy path). Gate 6 staged release is ModuleGateUnregisterTests.
+                shell.Gate.Unregister("resident");
+                shell.Main.Pump();
+                Assert.False(module.Stopped);
+
+                return shell.Coordinator.StopAsync("resident").ContinueWith(__ =>
+                {
+                    // Stop destroys the runtime lifetime → resident cleanup runs.
+                    Assert.True(module.Stopped);
+                    shell.Dispose();
+                }, TaskContinuationOptions.ExecuteSynchronously);
+            }, TaskContinuationOptions.ExecuteSynchronously).Unwrap());
         });
     }
+
+    private static void Run(Func<Task> body) =>
+        body().GetAwaiter().GetResult();
 
     private sealed class RecordingResidentModule(string route) : IModule, IResidentModule
     {
         public string Route { get; } = route;
 
+        public Lifetime? Attached { get; private set; }
+
         public bool Stopped { get; private set; }
 
         public FrameworkElement CreateView(Lifetime lifetime) => new Border();
 
-        public void AttachApplicationLifetime(Lifetime applicationLifetime) =>
+        public void AttachApplicationLifetime(Lifetime applicationLifetime)
+        {
+            Attached = applicationLifetime;
             applicationLifetime.Add(() => Stopped = true);
+        }
     }
 }

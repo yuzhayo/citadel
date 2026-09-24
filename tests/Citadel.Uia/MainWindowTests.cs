@@ -202,7 +202,7 @@ public class MainWindowTests : IDisposable
     }
 
     [Fact]
-    public void OptionalCitizenHeaderAction_AppearsAndClearsWithItsRoute()
+    public void OptionalCitizenHeaderAction_AppearsWhileRunning_AndClearsWhenStopped()
     {
         WithWindow((window, fixture) =>
         {
@@ -212,8 +212,25 @@ public class MainWindowTests : IDisposable
                 create: _ => new HeaderActionView(action)));
             fixture.Main.Pump();
 
+            // Gate 3: host is the CurrentView; header action only while Running.
             window.Router.Navigate("alpha");
-            Assert.Same(action, window.ContentHeaderActionElement.Content);
+            Assert.IsType<ModuleRuntimeHost>(window.Router.CurrentView);
+            Assert.Null(window.ContentHeaderActionElement.Content);
+
+            TestAsync.Run(() => fixture.Coordinator.StartAsync("alpha").ContinueWith(_ =>
+            {
+                window.Dispatcher.Invoke(() =>
+                {
+                    Assert.Equal(ModuleRuntimeState.Running,
+                        fixture.Coordinator.StateOf("alpha"));
+                    // Host composes inner action + Stop; inner action is present.
+                    var row = Assert.IsAssignableFrom<System.Windows.Controls.Panel>(
+                        window.ContentHeaderActionElement.Content);
+                    Assert.Contains(
+                        action,
+                        row.Children.Cast<System.Windows.UIElement>());
+                });
+            }, TaskContinuationOptions.ExecuteSynchronously));
 
             window.Router.Navigate(Router.FallbackRoute);
             Assert.Null(window.ContentHeaderActionElement.Content);
@@ -231,10 +248,21 @@ public class MainWindowTests : IDisposable
                 create: _ => throw new InvalidOperationException("boom")));
             fixture.Main.Pump();
 
+            // Gate 3: Navigate opens the host (Stopped) without CreateView.
             window.Router.Navigate("broken");
+            Assert.Equal("broken", window.Router.CurrentRoute);
+            Assert.Equal("Broken title", window.ContentHeaderElement.Text);
 
-            Assert.Equal(Router.FallbackRoute, window.Router.CurrentRoute);
-            Assert.Equal("Settings", window.ContentHeaderElement.Text);
+            // Start faults; citizen stays, header still shows its title (the
+            // module is registered — only the runtime failed).
+            TestAsync.Run(() => fixture.Coordinator.StartAsync("broken").ContinueWith(_ =>
+            {
+                Assert.Equal(ModuleRuntimeState.Faulted,
+                    fixture.Coordinator.StateOf("broken"));
+                Assert.Single(fixture.Gate.Snapshot());
+                Assert.Equal("broken", window.Router.CurrentRoute);
+                Assert.Equal("Broken title", window.ContentHeaderElement.Text);
+            }, TaskContinuationOptions.ExecuteSynchronously));
         });
     }
 
@@ -377,6 +405,7 @@ internal sealed class ShellFixture : IDisposable
         Main = new TestMain();
         Tokens = Fake.Store();
         Gate = new ModuleGate(Main.Queue, _lifetime);
+        Coordinator = new ModuleRuntimeCoordinator(Gate, Tokens);
         SettingHost = new StubSettingHost();
     }
 
@@ -385,6 +414,8 @@ internal sealed class ShellFixture : IDisposable
     public Tokens Tokens { get; }
 
     public ModuleGate Gate { get; }
+
+    public ModuleRuntimeCoordinator Coordinator { get; }
 
     public StubSettingHost SettingHost { get; }
 
@@ -395,6 +426,7 @@ internal sealed class ShellFixture : IDisposable
     public MainWindow CreateWindow() => new(
         Tokens,
         Gate,
+        Coordinator,
         _animations,
         _lifetime,
         App.BuiltInRoutes(SettingHost),
@@ -405,4 +437,10 @@ internal sealed class ShellFixture : IDisposable
         _lifetime.Destroy();
         _animations.Dispose();
     }
+}
+
+internal static class TestAsync
+{
+    public static void Run(Func<Task> body) =>
+        body().GetAwaiter().GetResult();
 }

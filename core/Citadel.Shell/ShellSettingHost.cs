@@ -39,7 +39,15 @@ internal sealed class ShellSettingHost : ISettingHost
             tokens,
             owner,
             new VelopackUpdateService(),
-            static () => System.Windows.Application.Current?.Shutdown(),
+            // Never Application.Shutdown past StopAll: route through the one
+            // async exit request when a real App is attached (tests may no-op).
+            static () =>
+            {
+                if (System.Windows.Application.Current is App app)
+                {
+                    _ = app.RequestShutdownAsync();
+                }
+            },
             new SidebarGroupingStore())
     {
     }

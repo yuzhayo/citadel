@@ -34,7 +34,7 @@ public class RouterTests
     }
 
     [Fact]
-    public void NavigateAway_DestroysTheViewLifetime_AndReplacesTheReference()
+    public void NavigateAway_RetainsTheHostLifetime_AndUnmountsRuntime()
     {
         Sta.Run(() =>
         {
@@ -42,17 +42,17 @@ public class RouterTests
             shell.Gate.Register(Fake.Descriptor("alpha"));
             shell.Main.Pump();
 
-            var destroyed = false;
             shell.Router.Navigate("alpha");
-            var citizenLifetime = shell.Router.ViewLifetime!;
-            citizenLifetime.Add(() => destroyed = true);
+            var hostLifetime = shell.Router.ViewLifetime!;
+            Assert.IsType<ModuleRuntimeHost>(shell.Router.CurrentView);
 
             shell.Router.Navigate(Router.FallbackRoute);
 
-            Assert.True(destroyed);
-            Assert.False(citizenLifetime.Alive);
-            Assert.NotSame(citizenLifetime, shell.Router.ViewLifetime);
+            // Gate 3: the stable host is retained across navigation, not destroyed.
+            Assert.True(hostLifetime.Alive);
             Assert.Equal(Router.FallbackRoute, shell.Router.CurrentRoute);
+            Assert.IsType<FakeSettingsView>(shell.Router.CurrentView);
+            Assert.NotSame(hostLifetime, shell.Router.ViewLifetime);
         });
     }
 
@@ -76,7 +76,7 @@ public class RouterTests
     }
 
     [Fact]
-    public void Unregister_DisplayedRoute_LandsOnSettings_AndKillsTheLifetime()
+    public void Unregister_DisplayedRoute_LandsOnSettings_AndDestroysTheHost()
     {
         Sta.Run(() =>
         {
@@ -84,21 +84,17 @@ public class RouterTests
             shell.Gate.Register(Fake.Descriptor("alpha"));
             shell.Main.Pump();
 
-            var destroyed = false;
             shell.Router.Navigate("alpha");
-            var citizenLifetime = shell.Router.ViewLifetime!;
-            citizenLifetime.Add(() => destroyed = true);
+            var hostLifetime = shell.Router.ViewLifetime!;
 
             shell.Gate.Unregister("alpha");
             shell.Main.Pump();
 
-            Assert.True(destroyed);
-            Assert.False(citizenLifetime.Alive);
+            // Host is destroyed when the route leaves the registry — not on
+            // mere navigation (that path retains).
+            Assert.False(hostLifetime.Alive);
             Assert.Equal(Router.FallbackRoute, shell.Router.CurrentRoute);
-
-            // Settings owns a lifetime of its own now, so ViewLifetime is not
-            // null — it is a different, live one.
-            Assert.NotSame(citizenLifetime, shell.Router.ViewLifetime);
+            Assert.NotSame(hostLifetime, shell.Router.ViewLifetime);
             Assert.True(shell.Router.ViewLifetime!.Alive);
         });
     }
@@ -142,16 +138,19 @@ public class RouterTests
         });
     }
 
-    /// <summary>
-    /// The searcher isolates load and construction; CreateView runs here,
-    /// later. Three shapes of failure, one requirement: the shell survives, the
-    /// route is dropped, and no half-created view is attached.
-    /// </summary>
-    [Theory]
-    [InlineData("throws")]
-    [InlineData("null")]
-    [InlineData("parented")]
-    public void CreateViewFailure_IsIsolated_AndDropsTheCitizen(string mode)
+    [Fact]
+    public void CreateViewFailure_OnlyOnStart_FaultsAndKeepsTheCitizen_Throws()
+        => CreateViewFailure_FaultsMode("throws");
+
+    [Fact]
+    public void CreateViewFailure_OnlyOnStart_FaultsAndKeepsTheCitizen_Null()
+        => CreateViewFailure_FaultsMode("null");
+
+    [Fact]
+    public void CreateViewFailure_OnlyOnStart_FaultsAndKeepsTheCitizen_Parented()
+        => CreateViewFailure_FaultsMode("parented");
+
+    private static void CreateViewFailure_FaultsMode(string mode)
     {
         Sta.Run(() =>
         {
@@ -175,23 +174,30 @@ public class RouterTests
             shell.Main.Pump();
 
             shell.Router.Navigate("broken");
-            shell.Main.Pump();
+            Assert.Equal("broken", shell.Router.CurrentRoute);
+            Assert.IsType<ModuleRuntimeHost>(shell.Router.CurrentView);
 
-            Assert.Equal(Router.FallbackRoute, shell.Router.CurrentRoute);
-            Assert.Empty(shell.Gate.Snapshot());
-            Assert.Equal(RegistrationRefusal.ViewFailed, shell.Gate.Failures().Single().Reason);
-            Assert.IsType<FakeSettingsView>(shell.Router.CurrentView); // never a half-created view
-            if (mode == "parented") Assert.True(lifetimeDied);
+            Run(() => shell.Coordinator.StartAsync("broken").ContinueWith(_ =>
+            {
+                Assert.Equal(ModuleRuntimeState.Faulted,
+                    shell.Coordinator.StateOf("broken"));
+                Assert.Single(shell.Gate.Snapshot());
+                Assert.Empty(shell.Gate.Failures());
+                Assert.IsType<ModuleRuntimeHost>(shell.Router.CurrentView);
+                if (mode == "parented") Assert.True(lifetimeDied);
+            }, TaskContinuationOptions.ExecuteSynchronously));
         });
     }
 
+    private static void Run(Func<Task> body) =>
+        body().GetAwaiter().GetResult();
+
     /// <summary>
-    /// v0 needed `_currentRoute = ""` to defeat its own early-return when
-    /// modules arrived late (MainWindow.xaml.cs:118). Re-navigating must work
-    /// without that trick, or a late citizen can never replace a placeholder.
+    /// Gate 3: re-navigating the same active citizen is idempotent — the stable
+    /// host stays put and CreateView is never re-entered (it only runs on Start).
     /// </summary>
     [Fact]
-    public void Navigate_ToTheSameRouteAgain_RebuildsWithoutAResetWorkaround()
+    public void Navigate_ToTheSameRouteAgain_IsIdempotent_WithoutRecreatingTheHost()
     {
         Sta.Run(() =>
         {
@@ -202,11 +208,13 @@ public class RouterTests
 
             shell.Router.Navigate("alpha");
             var first = shell.Router.ViewLifetime;
+            var firstView = shell.Router.CurrentView;
             shell.Router.Navigate("alpha");
 
-            Assert.NotSame(first, shell.Router.ViewLifetime);
-            Assert.False(first!.Alive);
-            Assert.Equal(2, ((FakeModule)descriptor.Instance).CreateCount);
+            Assert.Same(first, shell.Router.ViewLifetime);
+            Assert.Same(firstView, shell.Router.CurrentView);
+            Assert.True(first!.Alive);
+            Assert.Equal(0, ((FakeModule)descriptor.Instance).CreateCount);
         });
     }
 
@@ -253,14 +261,13 @@ public class RouterTests
         });
     }
 
-    /// <summary>
-    /// RejectForFailedView unregisters the citizen and fires RegistryChanged
-    /// synchronously, so the window forwards it to OnRegistryChanged while
-    /// Navigate is still unwinding. Both paths land on the fallback, so without
-    /// a reentrancy guard one failure builds Settings twice.
+/// <summary>
+    /// Gate 3: same-route citizen Navigate is idempotent (host stays). CreateView
+    /// only fails on Start, which never unregisters — so this pins that a
+    /// re-navigate does NOT fall through to Settings and does NOT re-enter create.
     /// </summary>
     [Fact]
-    public void FailedRebuildOfTheDisplayedRoute_ShowsTheFallbackOnce()
+    public void SameRouteRenavigate_DoesNotRebuildOrFallThrough()
     {
         Sta.Run(() =>
         {
@@ -278,8 +285,10 @@ public class RouterTests
             shell.Router.Navigate("alpha");
             shell.Main.Pump();
 
-            Assert.Equal([Router.FallbackRoute], navigations);
-            Assert.Equal(1, shell.SettingsShown);
+            // Idempotent: no second Navigated, still on alpha, Settings not built.
+            Assert.Empty(navigations);
+            Assert.Equal("alpha", shell.Router.CurrentRoute);
+            Assert.Equal(0, shell.SettingsShown); // ShellHarness does not auto-navigate
         });
     }
 
@@ -326,7 +335,7 @@ public class RouterTests
     }
 
     [Fact]
-    public void UnregisterDuringCrossfade_CancelsTheOldTransition_AndKillsTheCitizen()
+    public void UnregisterDuringCrossfade_LeavesTheRetainedHost_AndKillsItOnEvict()
     {
         Sta.Run(() =>
         {
@@ -336,19 +345,18 @@ public class RouterTests
             shell.Gate.Register(Fake.Descriptor("alpha"));
             shell.Main.Pump();
             shell.Router.Navigate("alpha");
-            var citizenLifetime = shell.Router.ViewLifetime!;
+            var hostLifetime = shell.Router.ViewLifetime!;
 
             shell.Gate.Unregister("alpha");
             shell.Main.Pump();
 
-            Assert.False(citizenLifetime.Alive);
+            // Host is retained off-screen first, then destroyed by stale-cache
+            // evict because the route left the registry — no crossfade from a
+            // retained host (its layer is already removed).
+            Assert.False(hostLifetime.Alive);
             Assert.Equal(Router.FallbackRoute, shell.Router.CurrentRoute);
             Assert.IsType<FakeSettingsView>(shell.Router.CurrentView);
-            Assert.True(shell.Router.TransitionActive);
-            Assert.Equal(2, Assert.IsType<Grid>(shell.Host.Content).Children.Count);
-
-            shell.FrameClock.Pulse(0);
-            shell.FrameClock.Pulse(180);
+            Assert.False(shell.Router.TransitionActive);
             Assert.Single(Assert.IsType<Grid>(shell.Host.Content).Children);
         });
     }
