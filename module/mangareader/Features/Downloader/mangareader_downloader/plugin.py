@@ -18,6 +18,7 @@ COMMANDS = {
     "downloader.open": browser.cmd_open,
     "downloader.api": browser.cmd_api,
     "downloader.fetch": browser.cmd_fetch,
+    "downloader.render": browser.cmd_render,
     "downloader.close": browser.cmd_close,
     "downloader.egress": browser.cmd_egress,
 }

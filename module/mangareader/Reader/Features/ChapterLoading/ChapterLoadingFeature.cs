@@ -304,7 +304,7 @@ public sealed class ChapterLoadingFeature :
         {
         }
 
-        _coordinator?.ClearSurfaces();
+        _coordinator?.ClearSurfacesForShutdown();
 
         var disposeResources = false;
         lock (_operationGate)

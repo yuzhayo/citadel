@@ -9,6 +9,12 @@ namespace Module.Mangareader;
 /// preparation, and reconfiguration when the viewport is resized. It never
 /// decides the active chapter; it reads that from the coordinator and writes
 /// surfaces back through it.
+/// <para>
+/// <see cref="PrepareNextAsync"/> and <see cref="PreparePreviousAsync"/> return the
+/// surface instead of inserting it, so the coordinator can batch a boundary
+/// crossing into one layout pass. The <c>Ensure*</c> wrappers are for callers with
+/// no pending mutations: the initial load and the overlay boundary step.
+/// </para>
 /// </summary>
 internal sealed class ChapterPreloader : IChapterNeighborPreloader
 {
@@ -27,6 +33,8 @@ internal sealed class ChapterPreloader : IChapterNeighborPreloader
 
     public ChapterRenderRequest FullRequest =>
         _fullRequest ?? throw new InvalidOperationException("Reader render size is not configured.");
+
+    private ChapterRenderRequest BackgroundRequest => FullRequest with { MaxDecodeParallelism = 1 };
 
     public bool TryConfigureRenderRequests()
     {
@@ -51,8 +59,22 @@ internal sealed class ChapterPreloader : IChapterNeighborPreloader
 
     public async Task EnsureNextFullAsync(int expectedActiveIndex, CancellationToken cancellationToken)
     {
+        var surface = await PrepareNextAsync(expectedActiveIndex, cancellationToken);
+        if (surface is not null) _coordinator.AddSurfaceOrdered(surface);
+    }
+
+    public async Task EnsurePreviousWarmAsync(int expectedActiveIndex, CancellationToken cancellationToken)
+    {
+        var surface = await PreparePreviousAsync(expectedActiveIndex, cancellationToken);
+        if (surface is not null) _coordinator.AddSurfaceOrdered(surface);
+    }
+
+    public async Task<ChapterSurfaceModel?> PrepareNextAsync(
+        int expectedActiveIndex,
+        CancellationToken cancellationToken)
+    {
         var nextIndex = expectedActiveIndex + 1;
-        if (_runtime.IsDisposed || nextIndex >= _runtime.Title.Chapters.Count) return;
+        if (_runtime.IsDisposed || nextIndex >= _runtime.Title.Chapters.Count) return null;
 
         var existing = _coordinator.SurfaceAt(nextIndex);
         if (existing is not null)
@@ -60,42 +82,38 @@ internal sealed class ChapterPreloader : IChapterNeighborPreloader
             // Never swap an existing surface's content in place: a quality swap
             // rebuilds its page images and reads as a sharpness pop mid-scroll.
             existing.SetRole(ChapterSurfaceRole.Next);
-            return;
+            return null;
         }
 
-        var content = await _runtime.LoadChapterAsync(nextIndex, FullRequest, null, cancellationToken);
+        var content = await _runtime.LoadChapterAsync(nextIndex, BackgroundRequest, null, cancellationToken);
         cancellationToken.ThrowIfCancellationRequested();
-        if (_runtime.IsDisposed || _coordinator.ActiveChapterIndex != expectedActiveIndex) return;
+        if (_runtime.IsDisposed || _coordinator.ActiveChapterIndex != expectedActiveIndex) return null;
 
-        _coordinator.AddSurfaceOrdered(new ChapterSurfaceModel(
-            nextIndex,
-            content,
-            ChapterSurfaceRole.Next));
+        return new ChapterSurfaceModel(nextIndex, content, ChapterSurfaceRole.Next);
     }
 
-    public async Task EnsurePreviousWarmAsync(int expectedActiveIndex, CancellationToken cancellationToken)
+    public async Task<ChapterSurfaceModel?> PreparePreviousAsync(
+        int expectedActiveIndex,
+        CancellationToken cancellationToken)
     {
         var previousIndex = expectedActiveIndex - 1;
-        if (_runtime.IsDisposed || previousIndex < 0) return;
+        if (_runtime.IsDisposed || previousIndex < 0) return null;
 
         var existing = _coordinator.SurfaceAt(previousIndex);
         if (existing is not null)
         {
             // Same no-swap rule as the next surface: keep whatever it already has.
             existing.SetRole(ChapterSurfaceRole.Previous);
-            return;
+            return null;
         }
 
         // Load the previous at full quality so the rolling window is uniformly
         // full-res and no preview<->full sharpness swap is ever needed.
-        var content = await _runtime.LoadChapterAsync(previousIndex, FullRequest, null, cancellationToken);
+        var content = await _runtime.LoadChapterAsync(previousIndex, BackgroundRequest, null, cancellationToken);
         cancellationToken.ThrowIfCancellationRequested();
-        if (_runtime.IsDisposed || _coordinator.ActiveChapterIndex != expectedActiveIndex) return;
+        if (_runtime.IsDisposed || _coordinator.ActiveChapterIndex != expectedActiveIndex) return null;
 
-        _coordinator.AddSurfaceOrdered(new ChapterSurfaceModel(
-            previousIndex,
-            content,
-            ChapterSurfaceRole.Previous));
+        return new ChapterSurfaceModel(previousIndex, content, ChapterSurfaceRole.Previous);
     }
 
     public Task PrepareBoundaryAsync(int direction, CancellationToken cancellationToken)

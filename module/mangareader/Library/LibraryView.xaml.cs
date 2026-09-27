@@ -1,10 +1,12 @@
 using System.Collections.ObjectModel;
 using System.ComponentModel;
+using System.Diagnostics;
 using System.IO;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Data;
 using System.Windows.Media.Imaging;
+using System.Windows.Threading;
 using Microsoft.Win32;
 using Module.Mangareader.Library;
 using Module.Mangareader.Library.Grouping;
@@ -35,6 +37,8 @@ public partial class LibraryView : UserControl, IDisposable
     private UpdateCheckerEntry? _updateChecker;
     private LibraryRootContext? _root;
     private CancellationTokenSource? _scanCancellation;
+    private CancellationTokenSource? _coverCancellation;
+    private readonly SemaphoreSlim _refreshGate = new(1, 1);
     private bool _autoRestored;
     private bool _disposed;
 
@@ -200,18 +204,36 @@ public partial class LibraryView : UserControl, IDisposable
         SetBusy(true);
         StatusText.Text = manual ? "Updating library index…" : "Loading indexed titles…";
 
+        var entered = false;
         try
         {
-            _coordinator.Reload(path);
+            await _refreshGate.WaitAsync(cancellation.Token);
+            entered = true;
+            var stage = Stopwatch.StartNew();
+            var entries = await Task.Run(() =>
+            {
+                cancellation.Token.ThrowIfCancellationRequested();
+                _coordinator.Reload(path);
+                return _coordinator.Entries;
+            }, cancellation.Token);
             if (_disposed || !ReferenceEquals(_scanCancellation, cancellation)) return;
+            Citadel.Core.Log.Main($"[Library] index read: {entries.Count} titles, {stage.ElapsedMilliseconds} ms");
 
-            FillCards(_coordinator.Entries);
-            NotifyTitlesChanged(_coordinator.Entries);
-            var painted = _coordinator.Entries.Count;
+            stage.Restart();
+            await FillCardsAsync(entries, cancellation.Token);
+            NotifyTitlesChanged(entries);
+            var painted = entries.Count;
             CompleteSuccessfulScan(cancellation, attempt, StatusForCount(painted));
-            UpdateGroupFilter();
+            UpdateGroupEmptyState();
             SetBusy(false);
-            _ = LoadCachedCoversAsync(_cards.ToArray(), cancellation.Token);
+            await Dispatcher.Yield(DispatcherPriority.Background);
+            cancellation.Token.ThrowIfCancellationRequested();
+            Citadel.Core.Log.Main($"[Library] cards presented: {stage.ElapsedMilliseconds} ms");
+
+            stage.Restart();
+            await LoadCachedCoversAsync(_cards.ToArray(), cancellation.Token);
+            cancellation.Token.ThrowIfCancellationRequested();
+            Citadel.Core.Log.Main($"[Library] cached covers: {stage.ElapsedMilliseconds} ms");
 
             if (painted == 0)
             {
@@ -222,20 +244,24 @@ public partial class LibraryView : UserControl, IDisposable
                 StatusText.Text = "Checking library changes…";
             }
 
+            stage.Restart();
             var reconcile = await Task.Run(
                 () => _coordinator.Reconcile(path, cancellation.Token),
                 cancellation.Token);
             if (_disposed || !ReferenceEquals(_scanCancellation, cancellation)) return;
+            Citadel.Core.Log.Main($"[Library] reconcile: {stage.ElapsedMilliseconds} ms, +{reconcile.Added} ~{reconcile.Updated} -{reconcile.Removed}");
+            entries = _coordinator.Entries;
 
             if (reconcile.Added > 0 || reconcile.Updated > 0 || reconcile.Removed > 0)
             {
-                FillCards(_coordinator.Entries);
-                NotifyTitlesChanged(_coordinator.Entries);
-                UpdateGroupFilter();
-                _ = LoadCachedCoversAsync(_cards.ToArray(), cancellation.Token);
+                await FillCardsAsync(entries, cancellation.Token);
+                NotifyTitlesChanged(entries);
+                UpdateGroupEmptyState();
+                await LoadCachedCoversAsync(_cards.ToArray(), cancellation.Token);
+                cancellation.Token.ThrowIfCancellationRequested();
             }
 
-            if (_coordinator.Entries.Count == 0)
+            if (entries.Count == 0)
             {
                 ShowEmpty(
                     "No CBZ titles found",
@@ -244,7 +270,7 @@ public partial class LibraryView : UserControl, IDisposable
                 return;
             }
 
-            StatusText.Text = reconcile.Warning ?? StatusForCount(_coordinator.Entries.Count);
+            StatusText.Text = reconcile.Warning ?? StatusForCount(entries.Count);
             RestartWatcher(path);
         }
         catch (OperationCanceledException) when (cancellation.IsCancellationRequested)
@@ -297,6 +323,7 @@ public partial class LibraryView : UserControl, IDisposable
             }
 
             cancellation.Dispose();
+            if (entered) _refreshGate.Release();
         }
     }
 
@@ -476,7 +503,7 @@ public partial class LibraryView : UserControl, IDisposable
         StatusText.Text = StatusForCount(_coordinator.Entries.Count);
     }
 
-    private void FillCards(IReadOnlyList<LibraryIndexEntry> entries)
+    private MangaTitleCardModel[] CreateCards(IReadOnlyList<LibraryIndexEntry> entries)
     {
         // Decoded covers ride along by folder path: a reconcile that changes
         // nothing visible must not blank every card and re-decode the world.
@@ -484,8 +511,7 @@ public partial class LibraryView : UserControl, IDisposable
             .Where(card => card.Cover is not null)
             .ToDictionary(card => card.FolderPath, card => card.Cover!, StringComparer.OrdinalIgnoreCase);
 
-        _cards.Clear();
-        foreach (var entry in entries)
+        return entries.Select(entry =>
         {
             var card = new MangaTitleCardModel(entry);
             if (covers.TryGetValue(card.FolderPath, out var cover))
@@ -493,61 +519,94 @@ public partial class LibraryView : UserControl, IDisposable
                 card.Cover = cover;
             }
 
-            _cards.Add(card);
-        }
+            return card;
+        }).ToArray();
+    }
+
+    private void FillCards(IReadOnlyList<LibraryIndexEntry> entries)
+    {
+        var cards = CreateCards(entries);
+        _coverCancellation?.Cancel();
+        System.Threading.Interlocked.Increment(ref _coverGeneration);
+        // DeferRefresh batches view settings, not source collection changes.
+        // A sorted/filtered ListCollectionView must process these notifications
+        // immediately, including when downloads trigger a watcher update.
+        _cards.Clear();
+        foreach (var card in cards) _cards.Add(card);
 
         EmptyPanel.Visibility = _cards.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+    }
+
+    private async Task FillCardsAsync(IReadOnlyList<LibraryIndexEntry> entries, CancellationToken token)
+    {
+        const int cardsPerBatch = 24;
+        var cards = CreateCards(entries);
+        _coverCancellation?.Cancel();
         System.Threading.Interlocked.Increment(ref _coverGeneration);
+        _cards.Clear();
+        EmptyPanel.Visibility = cards.Length == 0 ? Visibility.Visible : Visibility.Collapsed;
+        for (var start = 0; start < cards.Length; start += cardsPerBatch)
+        {
+            token.ThrowIfCancellationRequested();
+            for (var index = start; index < Math.Min(start + cardsPerBatch, cards.Length); index++)
+                _cards.Add(cards[index]);
+            // Keep incremental collection notifications. DeferRefresh per batch
+            // would reset the view and rebuild all previously rendered cards.
+            await Dispatcher.Yield(DispatcherPriority.Background);
+        }
+        token.ThrowIfCancellationRequested();
     }
 
     /// <summary>
     /// Fills coverless cards from the thumbnail cache — small local files,
     /// never archives. Best effort per card; a stale refresh generation
-    /// assigns nothing. Fire-and-forget: covers catch up behind the grid.
+    /// assigns nothing. Startup awaits this stage before reconciliation.
     /// </summary>
     private async Task LoadCachedCoversAsync(
         IReadOnlyList<MangaTitleCardModel> cards,
         CancellationToken cancellationToken)
     {
         var generation = Volatile.Read(ref _coverGeneration);
-        var options = new ParallelOptions
-        {
-            CancellationToken = cancellationToken,
-            MaxDegreeOfParallelism = 4,
-        };
+        _coverCancellation?.Cancel();
+        using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        _coverCancellation = cancellation;
+        var token = cancellation.Token;
 
         try
         {
-            await Parallel.ForEachAsync(cards, options, async (card, cancellation) =>
+            foreach (var card in cards)
             {
-                if (card.Cover is not null || card.Entry.CoverThumbnailPath.Length == 0) return;
+                token.ThrowIfCancellationRequested();
+                if (_disposed || generation != Volatile.Read(ref _coverGeneration)) return;
+                if (card.Cover is not null || card.Entry.CoverThumbnailPath.Length == 0) continue;
 
                 BitmapSource? cover;
                 try
                 {
                     cover = await Task.Run(
-                        () => LibraryCoverCache.DecodeFile(card.Entry.CoverThumbnailPath, cancellation),
-                        cancellation);
+                        () => LibraryCoverCache.DecodeFile(card.Entry.CoverThumbnailPath, token),
+                        token);
                 }
                 catch (Exception exception) when (exception is not OperationCanceledException)
                 {
-                    return;
+                    continue;
                 }
 
-                if (cover is null || _disposed
+                if (_disposed || token.IsCancellationRequested
                     || generation != Volatile.Read(ref _coverGeneration)) return;
+                if (cover is null) continue;
                 try
                 {
                     await Dispatcher.InvokeAsync(() =>
                     {
-                        if (!_disposed
+                        if (!_disposed && !token.IsCancellationRequested
                             && generation == Volatile.Read(ref _coverGeneration)
                             && _cards.Contains(card)
                             && card.Cover is null)
                         {
                             card.Cover = cover;
                         }
-                    });
+                    }, DispatcherPriority.Background, token);
                 }
                 catch (Exception exception) when (exception is not OperationCanceledException)
                 {
@@ -556,10 +615,14 @@ public partial class LibraryView : UserControl, IDisposable
                     // the process.
                     return;
                 }
-            });
+            }
         }
         catch (OperationCanceledException)
         {
+        }
+        finally
+        {
+            if (ReferenceEquals(_coverCancellation, cancellation)) _coverCancellation = null;
         }
     }
 
@@ -699,6 +762,11 @@ public partial class LibraryView : UserControl, IDisposable
         // otherwise the filter changes behind the still-visible detail overlay.
         ChapterSelector.Dismiss();
         _titlesView.Refresh();
+        UpdateGroupEmptyState();
+    }
+
+    private void UpdateGroupEmptyState()
+    {
         if (_cards.Count == 0) return;
 
         if (_titlesView.IsEmpty)
@@ -814,6 +882,7 @@ public partial class LibraryView : UserControl, IDisposable
         ViewModeSelector.ModeRequested -= ViewModeSelector_ModeRequested;
         _scanCancellation?.Cancel();
         _scanCancellation = null;
+        _coverCancellation?.Cancel();
         ChapterSelector.Dismiss();
         _cards.Clear();
     }

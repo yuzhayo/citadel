@@ -372,6 +372,20 @@ public sealed class ChapterDownloadPipeline
         Directory.CreateDirectory(Path.GetDirectoryName(basePath)!);
         var rawPath = basePath + ".raw";
         var rawRelative = Path.GetRelativePath(_stagingRoot, rawPath);
+        if (page.Transform?.Kind == "cucumber-rendered")
+        {
+            var rendered = await _transport.FetchRenderedAsync(page, cancellationToken).ConfigureAwait(false);
+            if (rendered.Succeeded && rendered.StoredPath is not null)
+            {
+                var staged = await FinalizeFetchedPageAsync(
+                    page, ordinal, jobRoot, basePath, rawPath, rendered, cancellationToken).ConfigureAwait(false);
+                if (staged.Record is not null) return staged;
+                return staged;
+            }
+            return new PageAttemptResult(null, new PageFailureEvidence(
+                ordinal, page.RemoteKey, rendered.Outcome,
+                rendered.Detail ?? rendered.Outcome.ToString()));
+        }
         if (_transport.HasIndependentSession)
         {
             var fetched = await _transport.FetchIndependentAsync(

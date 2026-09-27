@@ -6,6 +6,7 @@ using System.Security.Cryptography;
 using System.Text;
 using Module.Mangareader.Sources;
 using Module.Mangareader.ShareLogic;
+using Module.Mangareader.Features.Downloader;
 
 namespace Module.Mangareader.Features.Downloader.Sources.CucumberManga;
 
@@ -111,8 +112,9 @@ public static class CucumberMangaOptions
 }
 
 /// <summary>
-/// Native HTTP adapter for Cucumber Manga's observed WordPress routes. It does
-/// not share Comix signing, cipher, browser bootstrap, filters, or session state.
+/// Adapter for Cucumber Manga's observed WordPress routes. Native HTTP remains
+/// the first path; protected reader chapters use the Downloader-owned browser
+/// session only when the server HTML has no usable image URLs.
 /// </summary>
 public sealed class CucumberMangaSource : IMangaSource
 {
@@ -120,23 +122,34 @@ public sealed class CucumberMangaSource : IMangaSource
     private static readonly HttpClient SharedClient = CreateClient();
     private readonly HttpClient _client;
     private readonly ProxyHttpTransport? _transport;
+    private readonly DownloaderPyHostClient? _browser;
+    // Cucumber's protected reader is one persistent browser page. Its render
+    // command must own navigation and staging end-to-end; parallel chapter
+    // manifests would otherwise contend for that one page.
+    private readonly SemaphoreSlim _protectedRenderGate = new(1, 1);
 
-    public CucumberMangaSource() : this(SharedClient, null)
+    public CucumberMangaSource() : this(SharedClient, null, null)
     {
     }
 
-    internal CucumberMangaSource(HttpClient client) : this(client, null)
+    internal CucumberMangaSource(HttpClient client) : this(client, null, null)
     {
     }
 
-    internal CucumberMangaSource(ProxyHttpTransport transport) : this(SharedClient, transport)
+    internal CucumberMangaSource(ProxyHttpTransport transport) : this(SharedClient, transport, null)
     {
     }
 
-    private CucumberMangaSource(HttpClient client, ProxyHttpTransport? transport)
+    internal CucumberMangaSource(DownloaderPyHostClient browser, ProxyHttpTransport? transport = null)
+        : this(SharedClient, transport, browser)
+    {
+    }
+
+    private CucumberMangaSource(HttpClient client, ProxyHttpTransport? transport, DownloaderPyHostClient? browser)
     {
         _client = client ?? throw new ArgumentNullException(nameof(client));
         _transport = transport;
+        _browser = browser;
     }
 
     public static RemoteSourceGroup Group { get; } = new(
@@ -252,14 +265,33 @@ public sealed class CucumberMangaSource : IMangaSource
             + "/";
         using var message = NewRequest(HttpMethod.Get, chapterPath);
         var html = await SendHtmlAsync(message, cancellationToken).ConfigureAwait(false);
-        var urls = CucumberMangaHtmlParser.ParsePages(html);
+        IReadOnlyList<RemotePage> pages;
+        try
+        {
+            var urls = CucumberMangaHtmlParser.ParsePages(html);
+            pages = urls.Select((url, ordinal) => new RemotePage(
+                ordinal, url, url, null, null)).ToArray();
+        }
+        catch (CucumberMangaContractException) when (_browser is not null)
+        {
+            var key = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(
+                CucumberMangaContract.BaseUrl + chapterPath))).ToLowerInvariant();
+            var relativeDirectory = Path.Combine("cucumber-render", key);
+            var rendered = await RenderChapterAsync(
+                chapterPath, relativeDirectory, cancellationToken).ConfigureAwait(false);
+            pages = rendered.Select(page => new RemotePage(
+                page.Ordinal,
+                "cucumber-rendered-" + page.Ordinal.ToString(CultureInfo.InvariantCulture),
+                CucumberMangaContract.BaseUrl + chapterPath,
+                page.Bytes,
+                new RemotePageTransform("cucumber-rendered", new Dictionary<string, string>
+                {
+                    ["path"] = Path.GetRelativePath(_browser!.StagingRoot, page.Path),
+                    ["sha256"] = page.Sha256,
+                    ["content_type"] = page.ContentType,
+                }))).ToArray();
+        }
 
-        var pages = urls.Select((url, ordinal) => new RemotePage(
-            ordinal,
-            RemoteKey: url,
-            Url: url,
-            ExpectedBytes: null,
-            Transform: null)).ToArray();
         var headers = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
         {
             ["Referer"] = CucumberMangaContract.BaseUrl + chapterPath,
@@ -269,6 +301,28 @@ public sealed class CucumberMangaSource : IMangaSource
             pages,
             ManifestHash(chapter, pages),
             headers);
+    }
+
+    private async Task<IReadOnlyList<BrowserRenderedPage>> RenderChapterAsync(
+        string chapterPath,
+        string relativeDirectory,
+        CancellationToken cancellationToken)
+    {
+        await _protectedRenderGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            var chapterUrl = CucumberMangaContract.BaseUrl + chapterPath;
+            await _browser!.EnsureSessionAsync(
+                CucumberMangaContract.SourceId, chapterUrl, headless: true, cancellationToken).ConfigureAwait(false);
+            return await _browser.RenderChapterToStagingAsync(
+                chapterUrl, relativeDirectory,
+                requiredProxyMode: _transport?.IsProxyMode == true,
+                cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            _protectedRenderGate.Release();
+        }
     }
 
     public Task<RemotePageImage> TransformPageAsync(

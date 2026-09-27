@@ -100,6 +100,7 @@ internal sealed class ChapterNavigator
         if (_runtime.IsDisposed) return;
 
         var generation = Interlocked.Increment(ref _navigationGeneration);
+        _coordinator.InvalidatePreload();
 
         if (index == _coordinator.ActiveChapterIndex && _coordinator.SurfaceAt(index) is not null)
         {
@@ -136,18 +137,19 @@ internal sealed class ChapterNavigator
                     existing.Pages,
                     existing.SurfaceWidth,
                     existing.SurfaceHeight,
-                    0,
+                    existing.EstimatedBitmapBytes,
                     PageRenderQuality.Full)
                 : await _runtime.LoadChapterAsync(index, _preloader.FullRequest, progress, cancellation.Token);
 
             if (!IsCurrentNavigation(generation, token)) return;
 
-            _coordinator.ClearSurfaces();
+            var detached = _coordinator.DetachAllSurfaces();
             _coordinator.AddActiveSurface(index, content);
             _coordinator.SetActiveIndex(index);
             _coordinator.MarkReaderReady();
             _runtime.Viewport.UpdateLayout();
             _runtime.Viewport.ScrollToVerticalOffset(0, ReaderActivityOrigin.ChapterJump);
+            _coordinator.ReleaseDetachedAfterLayout(detached);
             _runtime.State.SetLoading(false);
             _runtime.State.SetTransitioning(false);
             _runtime.Status.Hide();

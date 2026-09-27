@@ -27,6 +27,7 @@ public partial class CoverBuilderView : UserControl, IDisposable
     {
         InitializeComponent();
         SourceField.TextChanged += SourceField_TextChanged;
+        IsVisibleChanged += CoverBuilderView_IsVisibleChanged;
     }
 
     public event EventHandler<CoverBakedEventArgs>? CoverBaked;
@@ -340,6 +341,7 @@ public partial class CoverBuilderView : UserControl, IDisposable
     /// </summary>
     private void LoadSelectedCover()
     {
+        if (_disposed || !IsVisible) return;
         var card = TitlePicker.SelectedItem as MangaTitleCardModel;
 
         var previous = _coverCancellation;
@@ -348,6 +350,13 @@ public partial class CoverBuilderView : UserControl, IDisposable
         previous?.Cancel();
 
         _ = LoadCoverAsync(card, cancellation);
+    }
+
+    private void CoverBuilderView_IsVisibleChanged(object sender, DependencyPropertyChangedEventArgs e)
+    {
+        if (_disposed) return;
+        if (IsVisible) LoadSelectedCover();
+        else _coverCancellation?.Cancel();
     }
 
     /// <summary>
@@ -361,7 +370,9 @@ public partial class CoverBuilderView : UserControl, IDisposable
     {
         if (card.IsFull) return card.FullTitle;
 
-        var title = await Task.Run(() => _titles.LoadTitle(card.FolderPath), cancellationToken);
+        var title = await Task.Run(
+            () => _titles.LoadTitle(card.FolderPath, cancellationToken: cancellationToken), cancellationToken);
+        cancellationToken.ThrowIfCancellationRequested();
         if (title is not null && !_disposed)
         {
             card.AttachFullTitle(title);
@@ -420,6 +431,7 @@ public partial class CoverBuilderView : UserControl, IDisposable
         if (_disposed) return;
         _disposed = true;
         SourceField.TextChanged -= SourceField_TextChanged;
+        IsVisibleChanged -= CoverBuilderView_IsVisibleChanged;
         _operationCancellation?.Cancel();
         _operationCancellation = null;
         _coverCancellation?.Cancel();

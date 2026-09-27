@@ -28,6 +28,9 @@ public partial class HistoryView : UserControl, IDisposable
     private ClearHistoryFeature? _clearHistory;
     private PinnedHistoryFeature? _pinnedHistory;
     private CancellationTokenSource? _coverCancellation;
+    private CancellationTokenSource? _refreshCancellation;
+    private readonly SemaphoreSlim _refreshGate = new(1, 1);
+    private bool _needsRefresh = true;
     private bool _restored;
     private bool _disposed;
 
@@ -47,6 +50,7 @@ public partial class HistoryView : UserControl, IDisposable
         UpdateActionBar();
 
         Loaded += HistoryView_Loaded;
+        IsVisibleChanged += HistoryView_IsVisibleChanged;
     }
 
     public event EventHandler<OpenChapterRequestedEventArgs>? OpenChapterRequested;
@@ -88,63 +92,91 @@ public partial class HistoryView : UserControl, IDisposable
 
     public void Refresh()
     {
-        var reusableCovers = SnapshotCovers();
-        _history.Clear();
-
-        if (_readingHistory is not null)
+        if (_disposed) return;
+        if (!Dispatcher.CheckAccess())
         {
-            foreach (var entry in _readingHistory.Read())
-            {
-                var indexed = _entries.FirstOrDefault(candidate => string.Equals(
-                    candidate.FolderPath,
-                    entry.TitleFolderPath,
-                    StringComparison.OrdinalIgnoreCase));
-                if (indexed is null) continue;
-
-                // Resolved titles are memoized per snapshot: a refresh
-                // re-reads only folders it has not resolved yet. Stale content
-                // cannot outlive the snapshot — SetLibrary clears the cache —
-                // which matches the old full-snapshot semantics exactly.
-                if (!_resolved.TryGetValue(indexed.FolderPath, out var title))
-                {
-                    try
-                    {
-                        title = _titles.LoadTitle(indexed.FolderPath);
-                    }
-                    catch (Exception exception) when (exception is IOException
-                        or UnauthorizedAccessException
-                        or ArgumentException)
-                    {
-                        continue;
-                    }
-
-                    if (title is null) continue;
-                    _resolved[indexed.FolderPath] = title;
-                }
-
-                var chapter = title.Chapters.FirstOrDefault(candidate => string.Equals(
-                    candidate.FilePath,
-                    entry.ChapterFilePath,
-                    StringComparison.OrdinalIgnoreCase));
-                if (chapter is null) continue;
-
-                var card = new HistoryCardModel(title, chapter, entry.LastOpenedUtc, entry.Pinned);
-                var coverKey = CoverKey(title);
-                if (coverKey is not null && reusableCovers.TryGetValue(coverKey, out var cover))
-                {
-                    card.Cover = cover;
-                }
-
-                _history.Add(card);
-            }
+            Dispatcher.BeginInvoke(Refresh);
+            return;
         }
+        _needsRefresh = true;
+        _refreshCancellation?.Cancel();
+        _coverCancellation?.Cancel();
+        if (!IsVisible) return;
+        var cancellation = new CancellationTokenSource();
+        _refreshCancellation = cancellation;
+        _ = RefreshAsync(cancellation);
+    }
 
-        EmptyPanel.Visibility = _history.Count == 0
-            ? Visibility.Visible
-            : Visibility.Collapsed;
+    private async Task RefreshAsync(CancellationTokenSource cancellation)
+    {
+        var token = cancellation.Token;
+        var owner = _readingHistory;
+        var entries = _entries.ToDictionary(entry => entry.FolderPath, StringComparer.OrdinalIgnoreCase);
+        var resolved = new Dictionary<string, MangaTitle>(_resolved, StringComparer.OrdinalIgnoreCase);
+        var oldCards = _history.ToArray();
+        var entered = false;
+        try
+        {
+            await _refreshGate.WaitAsync(token);
+            entered = true;
+            var cards = await Task.Run(() =>
+            {
+                var result = new List<HistoryCardModel>();
+                var reusableCovers = SnapshotCovers(oldCards);
+                foreach (var entry in owner?.Read() ?? [])
+                {
+                    token.ThrowIfCancellationRequested();
+                    if (!entries.TryGetValue(entry.TitleFolderPath, out var indexed)) continue;
+                    if (!resolved.TryGetValue(indexed.FolderPath, out var title))
+                    {
+                        try
+                        {
+                            title = _titles.LoadTitle(indexed.FolderPath, cancellationToken: token);
+                        }
+                        catch (Exception exception) when (exception is IOException
+                            or UnauthorizedAccessException or ArgumentException)
+                        {
+                            continue;
+                        }
+                        if (title is null) continue;
+                        resolved[indexed.FolderPath] = title;
+                    }
 
-        UpdateActionBar();
-        LoadMissingCovers();
+                    var chapter = title.Chapters.FirstOrDefault(candidate => string.Equals(
+                        candidate.FilePath, entry.ChapterFilePath, StringComparison.OrdinalIgnoreCase));
+                    if (chapter is null) continue;
+                    var card = new HistoryCardModel(title, chapter, entry.LastOpenedUtc, entry.Pinned);
+                    var coverKey = CoverKey(title);
+                    if (coverKey is not null && reusableCovers.TryGetValue(coverKey, out var cover))
+                        card.Cover = cover;
+                    result.Add(card);
+                }
+                return result;
+            }, token);
+
+            if (_disposed || !IsVisible || token.IsCancellationRequested
+                || !ReferenceEquals(_refreshCancellation, cancellation)) return;
+            _resolved.Clear();
+            foreach (var pair in resolved) _resolved[pair.Key] = pair.Value;
+            _history.Clear();
+            foreach (var card in cards) _history.Add(card);
+            _needsRefresh = false;
+            EmptyPanel.Visibility = _history.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+            UpdateActionBar();
+            LoadMissingCovers();
+        }
+        catch (OperationCanceledException) when (token.IsCancellationRequested) { }
+        catch (Exception exception)
+        {
+            if (!_disposed && IsVisible && ReferenceEquals(_refreshCancellation, cancellation))
+                SetStatus($"Could not load history: {exception.GetBaseException().Message}");
+        }
+        finally
+        {
+            if (ReferenceEquals(_refreshCancellation, cancellation)) _refreshCancellation = null;
+            cancellation.Dispose();
+            if (entered) _refreshGate.Release();
+        }
     }
 
     private void HistoryView_Loaded(object sender, RoutedEventArgs e)
@@ -152,6 +184,21 @@ public partial class HistoryView : UserControl, IDisposable
         if (_disposed || _restored) return;
         _restored = true;
         _viewMode.Restore();
+    }
+
+    private void HistoryView_IsVisibleChanged(object sender, DependencyPropertyChangedEventArgs e)
+    {
+        if (_disposed) return;
+        if (IsVisible)
+        {
+            if (_needsRefresh) Refresh();
+            else LoadMissingCovers();
+        }
+        else
+        {
+            _refreshCancellation?.Cancel();
+            _coverCancellation?.Cancel();
+        }
     }
 
     private void HistoryCard_Click(object sender, RoutedEventArgs e) => OpenCard(sender);
@@ -243,6 +290,7 @@ public partial class HistoryView : UserControl, IDisposable
         _disposed = true;
 
         Loaded -= HistoryView_Loaded;
+        IsVisibleChanged -= HistoryView_IsVisibleChanged;
         _viewMode.Changed -= ViewMode_Changed;
         ViewModeSelector.ModeRequested -= ViewModeSelector_ModeRequested;
 
@@ -252,6 +300,7 @@ public partial class HistoryView : UserControl, IDisposable
         }
 
         _coverCancellation?.Cancel();
+        _refreshCancellation?.Cancel();
         _history.Clear();
     }
 
@@ -261,10 +310,10 @@ public partial class HistoryView : UserControl, IDisposable
         Refresh();
     }
 
-    private Dictionary<string, BitmapSource> SnapshotCovers()
+    private Dictionary<string, BitmapSource> SnapshotCovers(IReadOnlyList<HistoryCardModel> cards)
     {
         var covers = new Dictionary<string, BitmapSource>(StringComparer.Ordinal);
-        foreach (var card in _history)
+        foreach (var card in cards)
         {
             if (card.Cover is null) continue;
             var key = CoverKey(card.Manga);
@@ -328,12 +377,13 @@ public partial class HistoryView : UserControl, IDisposable
                     return;
                 }
 
-                if (cover is null || _disposed
+                if (cover is null || _disposed || token.IsCancellationRequested
                     || !ReferenceEquals(_coverCancellation, cancellation)) return;
 
                 await Dispatcher.InvokeAsync(() =>
                 {
-                    if (!_disposed && ReferenceEquals(_coverCancellation, cancellation))
+                    if (!_disposed && !token.IsCancellationRequested && IsVisible
+                        && ReferenceEquals(_coverCancellation, cancellation))
                     {
                         card.Cover = cover;
                     }

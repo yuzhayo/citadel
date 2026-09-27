@@ -89,6 +89,7 @@ internal sealed class TestViewport : IReaderViewport
     public double ScrollableWidth { get; set; }
     public double DpiScale { get; set; } = 1;
     public double ContentWidth { get; private set; }
+    public int UpdateLayoutCount { get; private set; }
     public bool RaiseLayoutChangedReentrantly { get; set; }
     public Point PointerPosition { get; set; } = new(400, 300);
     public List<(double Offset, ReaderActivityOrigin Origin)> VerticalScrolls { get; } = [];
@@ -97,6 +98,7 @@ internal sealed class TestViewport : IReaderViewport
     public void SetContentWidth(double width) => ContentWidth = width;
     public void UpdateLayout()
     {
+        UpdateLayoutCount++;
         if (!RaiseLayoutChangedReentrantly) return;
         Changed?.Invoke(
             this,

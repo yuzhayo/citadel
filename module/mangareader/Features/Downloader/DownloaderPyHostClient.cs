@@ -18,6 +18,15 @@ public sealed record BrowserFetchEvidence(
     string? Path,
     IReadOnlyDictionary<string, string>? ResponseHeaders);
 
+public sealed record BrowserRenderedPage(
+    int Ordinal,
+    string Path,
+    long Bytes,
+    string Sha256,
+    string ContentType,
+    int Width,
+    int Height);
+
 /// <summary>Outcome of an operator-requested browser proxy rotation.</summary>
 public sealed record ProxyRotationResult(
     bool Changed,
@@ -44,6 +53,12 @@ public sealed class DownloaderPyHostClient : IDisposable
 
     /// <summary>Catalog, detail, lookup, manifest, and browser fallback.</summary>
     public static readonly TimeSpan ApiTimeout = TimeSpan.FromSeconds(45);
+
+    /// <summary>
+    /// One protected reader chapter: navigation, lazy-page materialization,
+    /// composition, and staging all belong to this single browser operation.
+    /// </summary>
+    public static readonly TimeSpan ProtectedRenderTimeout = TimeSpan.FromSeconds(120);
 
     /// <summary>Each single page attempt.</summary>
     public static readonly TimeSpan PageTimeout = TimeSpan.FromSeconds(30);
@@ -472,6 +487,44 @@ public sealed class DownloaderPyHostClient : IDisposable
             response["content_type"]?.GetValue<string>() ?? string.Empty,
             response["path"]?.GetValue<string>(),
             ReadHeaders(response["response_headers"] as JsonObject));
+    }
+
+    public async Task<IReadOnlyList<BrowserRenderedPage>> RenderChapterToStagingAsync(
+        string url,
+        string relativeDirectory,
+        bool requiredProxyMode,
+        CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(url);
+        ArgumentException.ThrowIfNullOrWhiteSpace(relativeDirectory);
+        var directory = ResolveContained(relativeDirectory);
+        var response = await SendOnSessionAsync(
+            "downloader.render",
+            payload =>
+            {
+                payload["url"] = url;
+                payload["root"] = StagingRoot;
+                payload["directory"] = directory;
+                payload["timeout_ms"] = (int)ProtectedRenderTimeout.TotalMilliseconds;
+            },
+            null,
+            ProtectedRenderTimeout,
+            cancellationToken,
+            requiredProxyMode).ConfigureAwait(false);
+        var pages = response["pages"] as JsonArray
+            ?? throw new InvalidOperationException("browser render returned no pages");
+        return pages.Select(node =>
+        {
+            var item = node?.AsObject() ?? throw new InvalidOperationException("invalid rendered page");
+            return new BrowserRenderedPage(
+                item["ordinal"]?.GetValue<int>() ?? throw new InvalidOperationException("rendered page ordinal missing"),
+                item["path"]?.GetValue<string>() ?? throw new InvalidOperationException("rendered page path missing"),
+                item["bytes"]?.GetValue<long>() ?? 0,
+                item["sha256"]?.GetValue<string>() ?? throw new InvalidOperationException("rendered page hash missing"),
+                item["content_type"]?.GetValue<string>() ?? "image/jpeg",
+                item["width"]?.GetValue<int>() ?? 0,
+                item["height"]?.GetValue<int>() ?? 0);
+        }).OrderBy(page => page.Ordinal).ToArray();
     }
 
     private static IReadOnlyDictionary<string, string>? ReadHeaders(JsonObject? value)

@@ -50,7 +50,8 @@ public sealed class CbzChapterLoader
         var options = new ParallelOptions
         {
             CancellationToken = cancellationToken,
-            MaxDegreeOfParallelism = Math.Clamp(Environment.ProcessorCount / 2, 1, 4),
+            MaxDegreeOfParallelism = request.MaxDecodeParallelism
+                ?? Math.Clamp(Environment.ProcessorCount / 2, 1, 4),
         };
 
         try
@@ -76,19 +77,17 @@ public sealed class CbzChapterLoader
                         exception);
                 }
 
-                var displayPixelWidth = Math.Min(
+                var (displayWidth, displayHeight) = request.DisplayBoxFor(
                     page.Metadata.NaturalPixelWidth,
-                    request.DisplayMaximumPixelWidth);
-                var displayScale = (double)displayPixelWidth / page.Metadata.NaturalPixelWidth;
-                var displayPixelHeight = page.Metadata.NaturalPixelHeight * displayScale;
+                    page.Metadata.NaturalPixelHeight);
 
                 pages[index] = new LoadedPage(
                     page.Metadata.Name,
                     bitmap,
                     page.Metadata.NaturalPixelWidth,
                     page.Metadata.NaturalPixelHeight,
-                    displayPixelWidth / request.DpiScale,
-                    displayPixelHeight / request.DpiScale,
+                    displayWidth,
+                    displayHeight,
                     request.Quality);
 
                 Interlocked.Add(

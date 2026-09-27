@@ -22,6 +22,7 @@ import json
 import os
 import re
 import uuid
+import base64
 from urllib.parse import parse_qsl, urlparse
 
 from proxy_launch import proxy_launch_options
@@ -616,6 +617,106 @@ async def cmd_fetch(host, msg):
             "content_type": response.headers.get("content-type", ""),
             "response_headers": dict(response.headers),
             "path": target}
+
+
+async def cmd_render(host, msg):
+    """Render a protected chapter and stage its complete reader images."""
+    sess = host.get_session(msg.get("session"))
+    page = sess.get("page")
+    if page is None:
+        raise PyhostError("NO_PAGE", "session tidak punya page aktif")
+    url = _require_http_url(msg.get("url"), "url")
+    root = msg.get("root")
+    directory = msg.get("directory")
+    target_dir = _contained_target(directory, root)
+    timeout_ms = _timeout_ms(msg, 45000)
+    os.makedirs(target_dir, exist_ok=True)
+    await page.goto(url, wait_until="domcontentloaded", timeout=timeout_ms)
+    await page.evaluate(
+        """async () => {
+            const slots = [...document.querySelectorAll('div.reading-content .page-break')];
+            for (const slot of slots) {
+                slot.scrollIntoView({block: 'center'});
+                await new Promise(resolve => setTimeout(resolve, 150));
+            }
+            window.scrollTo(0, 0);
+        }"""
+    )
+    await page.wait_for_function(
+        """() => {
+            const slots = [...document.querySelectorAll('div.reading-content .page-break')];
+            if (slots.length === 0) return false;
+            return slots.every(slot => {
+                const images = [...slot.querySelectorAll('img')];
+                return images.length > 0 && images.every(image => image
+                    && image.complete
+                    && image.naturalWidth > 0
+                    && image.naturalHeight > 0);
+            });
+        }""",
+        timeout=timeout_ms,
+    )
+    images = await page.locator("div.reading-content .page-break").evaluate_all(
+        """slots => slots.map(slot => {
+            const images = [...slot.querySelectorAll('img')];
+            const parts = images.filter(image => /(^|\\s)pos-[1-4](?:\\s|$)/.test(image.className));
+            if (parts.length === 4) {
+                const partWidth = Math.max(...parts.map(image => image.naturalWidth));
+                const partHeight = Math.max(...parts.map(image => image.naturalHeight));
+                const canvas = document.createElement('canvas');
+                canvas.width = partWidth * 2;
+                canvas.height = partHeight * 2;
+                const context = canvas.getContext('2d');
+                const positions = {'pos-1': [0, 0], 'pos-2': [partWidth, 0],
+                    'pos-3': [0, partHeight], 'pos-4': [partWidth, partHeight]};
+                for (const image of parts) {
+                    const key = [...image.classList].find(value => /^pos-[1-4]$/.test(value));
+                    const position = positions[key];
+                    if (!position) return null;
+                    context.drawImage(image, position[0], position[1]);
+                }
+                return {src: canvas.toDataURL('image/jpeg', 0.95), width: canvas.width,
+                    height: canvas.height};
+            }
+            if (images.length !== 1) return null;
+            const image = images[0];
+            return {src: image.currentSrc || image.src, width: image.naturalWidth,
+                height: image.naturalHeight};
+        })""")
+    if not images:
+        raise PyhostError("CHAPTER_EMPTY", "reader tidak menghasilkan halaman gambar")
+    if any(image is None for image in images):
+        raise PyhostError("CHAPTER_IMAGE_INVALID", "reader menghasilkan susunan halaman yang tidak lengkap")
+
+    staged = []
+    for ordinal, image in enumerate(images):
+        source = image.get("src") if isinstance(image, dict) else None
+        if not isinstance(source, str) or not source:
+            raise PyhostError("CHAPTER_IMAGE_INVALID", "reader menghasilkan URL gambar kosong")
+        if source.startswith("data:"):
+            header, encoded = source.split(",", 1)
+            if ";base64" not in header:
+                raise PyhostError("CHAPTER_IMAGE_INVALID", "reader menghasilkan data image non-base64")
+            content_type = header[5:].split(";", 1)[0] or "image/jpeg"
+            body = base64.b64decode(encoded, validate=True)
+        else:
+            response = await sess["ctx"].request.get(source, timeout=timeout_ms,
+                                                       headers={"Referer": url})
+            if response.status < 200 or response.status >= 300:
+                raise PyhostError("CHAPTER_IMAGE_FETCH", "gambar reader HTTP %d" % response.status)
+            content_type = response.headers.get("content-type", "image/jpeg").split(";", 1)[0]
+            body = await response.body()
+        if not body:
+            raise PyhostError("CHAPTER_IMAGE_INVALID", "reader menghasilkan halaman kosong")
+        extension = ".png" if "png" in content_type else ".webp" if "webp" in content_type else ".jpg"
+        target = os.path.join(target_dir, "%05d%s" % (ordinal, extension))
+        with open(target, "wb") as handle:
+            handle.write(body)
+        staged.append({"ordinal": ordinal, "path": target, "bytes": len(body),
+                       "sha256": hashlib.sha256(body).hexdigest(),
+                       "content_type": content_type,
+                       "width": image.get("width"), "height": image.get("height")})
+    return {"status": 200, "url": page.url, "pages": staged}
 
 
 async def cmd_close(host, msg):

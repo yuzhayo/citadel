@@ -104,6 +104,46 @@ public sealed class PageTransport : IDisposable
             (lease, ct) => FetchNativeAsync(page, path, referer, headers, ct, lease),
             ct => FetchBrowserFallbackAsync(page, path, referer, ct), token);
 
+    internal async Task<PageFetchResult> FetchRenderedAsync(RemotePage page, CancellationToken cancellationToken)
+    {
+        if (page.Transform?.Kind != "cucumber-rendered"
+            || !page.Transform.Parameters.TryGetValue("path", out var relativePath))
+        {
+            return Failure(PageFetchOutcome.NetworkFailed, "rendered page descriptor is incomplete");
+        }
+
+        string path;
+        try { path = _browser.ResolveContained(relativePath); }
+        catch (InvalidOperationException exception)
+        {
+            return Failure(PageFetchOutcome.NetworkFailed, exception.Message);
+        }
+
+        if (!File.Exists(path))
+            return Failure(PageFetchOutcome.NetworkFailed, "rendered page is no longer in staging");
+        try
+        {
+            var bytes = await File.ReadAllBytesAsync(path, cancellationToken).ConfigureAwait(false);
+            var format = DetectImageFormat(bytes);
+            var hash = Convert.ToHexString(SHA256.HashData(bytes));
+            if (page.Transform.Parameters.TryGetValue("sha256", out var expected)
+                && !string.Equals(expected, hash, StringComparison.OrdinalIgnoreCase))
+            {
+                return Failure(PageFetchOutcome.Challenge, "rendered page hash changed in staging");
+            }
+            return new PageFetchResult(PageFetchOutcome.Stored, path, bytes.Length, hash,
+                format, null, UsedBrowserFallback: true);
+        }
+        catch (InvalidDataException exception)
+        {
+            return Failure(PageFetchOutcome.Challenge, exception.Message);
+        }
+        catch (IOException exception)
+        {
+            return Failure(PageFetchOutcome.NetworkFailed, exception.Message);
+        }
+    }
+
     internal async Task<PageFetchResult> FetchNativeAsync(
         RemotePage page,
         string relativePath,

@@ -117,8 +117,8 @@ public sealed class MangaSourceRegistry : IMangaSourceDirectory
         ArgumentNullException.ThrowIfNull(client);
         var comix = new Comix.ComixSource(client);
         var cucumberManga = transport is null
-            ? new CucumberManga.CucumberMangaSource()
-            : new CucumberManga.CucumberMangaSource(transport);
+            ? new CucumberManga.CucumberMangaSource(client)
+            : new CucumberManga.CucumberMangaSource(client, transport);
         var drakeScans = transport is null
             ? new DrakeScans.DrakeScansSource()
             : new DrakeScans.DrakeScansSource(transport);
