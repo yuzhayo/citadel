@@ -42,3 +42,4 @@ jobs:
           dotnet build module/blank/Module.Blank.csproj -v q --nologo
           dotnet build module/camoprof/Module.Camoprof.csproj -v q --nologo
           dotnet build module/mangareader/Module.Mangareader.csproj -v q --nologo
+          dotnet build module/agentrouter/Module.Agentrouter.csproj -v q --nologo

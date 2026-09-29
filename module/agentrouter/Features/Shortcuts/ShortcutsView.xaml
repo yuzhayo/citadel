@@ -1,0 +1,113 @@
+<UserControl x:Class="Module.Agentrouter.Features.Shortcuts.ShortcutsView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:setting="clr-namespace:Citadel.Setting.Components;assembly=Citadel.Setting"
+             Background="{DynamicResource Bg}"
+             Foreground="{DynamicResource Fg}"
+             UseLayoutRounding="True"
+             SnapsToDevicePixels="True">
+    <setting:SettingViewport Mode="Contained">
+        <Grid>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="*" />
+            </Grid.RowDefinitions>
+
+            <setting:SettingActionCard>
+                <setting:SettingActionCard.Content>
+                    <StackPanel>
+                        <TextBlock x:Name="SummaryText"
+                                   FontWeight="SemiBold"
+                                   Text="No profiles added." />
+                        <TextBlock Margin="0,4,0,0"
+                                   Foreground="{DynamicResource Body}"
+                                   TextWrapping="Wrap"
+                                   Text="Agentrouter only stores a pointer to an existing CamoProf profile — it never creates or deletes one. Open Select profiles… to check or uncheck profiles; they appear here once added." />
+                        <TextBlock x:Name="StatusText"
+                                   Margin="0,4,0,0"
+                                   Foreground="{DynamicResource Body}"
+                                   TextWrapping="Wrap"
+                                   Visibility="Collapsed"
+                                   AutomationProperties.LiveSetting="Polite" />
+                    </StackPanel>
+                </setting:SettingActionCard.Content>
+                <setting:SettingActionCard.ActionContent>
+                    <StackPanel Orientation="Horizontal">
+                        <setting:SettingButton x:Name="SelectProfilesButton"
+                                               Content="Select profiles…"
+                                               Click="SelectProfilesButton_Click"
+                                               AutomationProperties.Name="Select CamoProf profiles to add" />
+                        <setting:SettingButton x:Name="RefreshButton"
+                                               Content="Refresh"
+                                               Click="RefreshButton_Click"
+                                               AutomationProperties.Name="Refresh Agentrouter shortcuts" />
+                    </StackPanel>
+                </setting:SettingActionCard.ActionContent>
+            </setting:SettingActionCard>
+
+            <Border Grid.Row="1"
+                    Padding="0"
+                    Style="{DynamicResource SettingCardStyle}">
+                <Grid>
+                    <setting:SettingTable x:Name="ShortcutTable"
+                                          setting:UiPreference.Key="agentrouter.shortcuts.table"
+                                          CanUserSortColumns="True"
+                                          AutomationProperties.Name="Agentrouter profile shortcuts">
+                        <setting:SettingTable.InteractiveColumns>
+                            <DataGridTemplateColumn Header="Profile"
+                                                    CanUserSort="True"
+                                                    SortMemberPath="Account"
+                                                    SortDirection="Ascending"
+                                                    MinWidth="180">
+                                <DataGridTemplateColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <TextBlock Text="{Binding Account}"
+                                                   FontWeight="SemiBold"
+                                                   TextTrimming="CharacterEllipsis"
+                                                   ToolTip="{Binding Account}" />
+                                    </DataTemplate>
+                                </DataGridTemplateColumn.CellTemplate>
+                            </DataGridTemplateColumn>
+
+                            <DataGridTextColumn Header="Status"
+                                                Binding="{Binding Status}"
+                                                SortMemberPath="Status"
+                                                Width="110" />
+
+                            <DataGridTextColumn Header="Added"
+                                                Binding="{Binding Added}"
+                                                SortMemberPath="AddedSort"
+                                                Width="150" />
+
+                            <DataGridTemplateColumn Header="Action"
+                                                    CanUserSort="False"
+                                                    MinWidth="110">
+                                <DataGridTemplateColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <setting:SettingTableActions>
+                                            <setting:SettingTableActions.PrimaryContent>
+                                                <setting:SettingButton Content="Remove"
+                                                                      Tag="{Binding}"
+                                                                      Click="ActionButton_Click"
+                                                                      AutomationProperties.Name="Remove this shortcut" />
+                                            </setting:SettingTableActions.PrimaryContent>
+                                        </setting:SettingTableActions>
+                                    </DataTemplate>
+                                </DataGridTemplateColumn.CellTemplate>
+                            </DataGridTemplateColumn>
+                        </setting:SettingTable.InteractiveColumns>
+                    </setting:SettingTable>
+
+                    <TextBlock x:Name="EmptyText"
+                               HorizontalAlignment="Center"
+                               VerticalAlignment="Center"
+                               FontSize="16"
+                               FontWeight="SemiBold"
+                               IsHitTestVisible="False"
+                               Text="No profiles added yet. Use Select profiles…"
+                               Visibility="Collapsed" />
+                </Grid>
+            </Border>
+        </Grid>
+    </setting:SettingViewport>
+</UserControl>

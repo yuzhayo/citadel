@@ -1,0 +1,6 @@
+{
+  "slots": {
+    "LauncherPanel": { "kind": "visibility", "visible": true },
+    "ProxyPanel": { "kind": "visibility", "visible": true }
+  }
+}

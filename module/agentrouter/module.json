@@ -1,0 +1,7 @@
+{
+  "title": "Agent Router",
+  "route": "agentrouter",
+  "order": 60,
+  "entry": "Module.Agentrouter.dll",
+  "type": "Module.Agentrouter.AgentrouterModule"
+}
