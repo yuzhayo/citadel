@@ -23,6 +23,7 @@ interaction behavior.
 | `SettingTable` | auto-sized, user-resizable columns by default; configurable default cell/header horizontal alignment; vertically centered compact cells; distinct centered headers; optional interactive-column sorting with direction indicator; grid lines, virtualization and scrolling |
 | `SettingTableActions` | one action centered; two actions balanced against the cell edges |
 | `SettingDialog` | modal chrome, owner centering and reusable confirmation behavior |
+| `SettingColorPickerDialog` | opaque RGB slider selection with live swatch; Apply returns `#RRGGBB`, Cancel leaves the owner unchanged |
 | `SettingCardStyle` | ordinary shared card background, border, radius, padding and row spacing |
 | `SettingScrollBar` | **auto-fade scrollbar with reveal/hide behavior, vertical/horizontal orientation support** |
 

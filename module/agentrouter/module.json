@@ -1,5 +1,6 @@
 {
   "title": "Agent Router",
+  "icon": "\uE716",
   "route": "agentrouter",
   "order": 60,
   "entry": "Module.Agentrouter.dll",

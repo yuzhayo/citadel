@@ -21,6 +21,20 @@ namespace Citadel.Uia;
 /// </summary>
 public class SettingScreensTests
 {
+    [Fact]
+    public void ColorPicker_TracksRgbChannelsAsOpaqueHex()
+    {
+        Sta.Run(() =>
+        {
+            var picker = new SettingColorPickerDialog("#123456");
+            Assert.Equal("#123456", picker.SelectedHex);
+
+            var red = Assert.IsType<SettingSlider>(picker.FindName("RedSlider"));
+            red.Value = 255;
+            Assert.Equal("#FF3456", picker.SelectedHex);
+        });
+    }
+
     private static string NewStorePath() => System.IO.Path.Combine(
         System.IO.Path.GetTempPath(),
         "citadel-setting-" + Guid.NewGuid().ToString("N"),

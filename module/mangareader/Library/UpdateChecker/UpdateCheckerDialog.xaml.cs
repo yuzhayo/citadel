@@ -169,17 +169,14 @@ public partial class UpdateCheckerDialog : SettingDialog
             .ToList();
 
         var result = _feature.EnqueueSelected(selected);
-        ResultText.Text = result.Succeeded
-            ? result.Skipped > 0
-                ? $"{result.Queued} chapter di-queue; {result.Skipped} sudah pernah dipublikasikan."
-                : $"{result.Queued} chapter di-queue ke Download List."
-            : "Error: " + result.Blocked;
+        if (result.Succeeded)
+        {
+            // The queue owns the selection now; closing also detaches the check.
+            Close();
+            return;
+        }
 
-        if (!result.Succeeded) return;
-
-        // The queue now owns those chapters; the dialog keeps no selection state.
-        foreach (var row in _rows) row.IsSelected = false;
-        UpdateSelectionUi();
+        ResultText.Text = "Error: " + result.Blocked;
     }
 
     private void CloseButton_Click(object sender, RoutedEventArgs e) => Close();

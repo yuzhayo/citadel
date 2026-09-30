@@ -95,9 +95,8 @@ try {
         '--configuration', 'Release',
         '--no-restore',
         '--nologo')
-    foreach ($citizen in @('ftf', 'proxy', 'blank', 'camoprof', 'mangareader')) {
+    foreach ($citizen in @('proxy', 'blank', 'camoprof', 'mangareader')) {
         $projectName = switch ($citizen) {
-            'ftf' { 'Module.FTF.csproj' }
             'proxy' { 'Module.Proxy.csproj' }
             'blank' { 'Module.Blank.csproj' }
             'camoprof' { 'Module.Camoprof.csproj' }

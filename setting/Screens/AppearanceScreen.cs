@@ -50,6 +50,7 @@ public sealed class AppearanceScreen : SettingScreen
     private readonly Dictionary<string, SettingField> _windowFields = new(StringComparer.Ordinal);
     private readonly Dictionary<string, TextBlock> _windowHints = new(StringComparer.Ordinal);
     private readonly Dictionary<string, SettingField> _colorFields = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, Border> _colorSwatches = new(StringComparer.Ordinal);
     private readonly List<GuardIssue> _lastIssues = [];
     private string? _dragToken;
     private double _dragStart;
@@ -389,7 +390,36 @@ public sealed class AppearanceScreen : SettingScreen
                 if (!_syncing) CommitColor(captured, text);
             };
 
-            var row = Row(label, field, ResetButton(token));
+            var swatch = new Border
+            {
+                Width = 18,
+                Height = 18,
+                BorderThickness = new Thickness(1),
+                CornerRadius = new CornerRadius(2),
+            };
+            swatch.SetResourceReference(Border.BorderBrushProperty, "Border");
+            _colorSwatches[token] = swatch;
+            SetSwatchColor(token, _tokens.Resolve(token));
+
+            var picker = new SettingButton
+            {
+                Content = swatch,
+                Width = 36,
+                Height = 30,
+                Padding = new Thickness(0),
+                Margin = new Thickness(0, 0, 8, 0),
+                ToolTip = $"Pick {token} colour",
+            };
+            AutomationProperties.SetName(picker, $"Pick {token} colour");
+            AutomationProperties.SetAutomationId(picker, $"PickColour:{token}");
+            picker.Click += (_, _) =>
+            {
+                var picked = SettingColorPickerDialog.Pick(
+                    Window.GetWindow(this), _tokens.Resolve(captured).Format());
+                if (picked is not null) CommitColor(captured, picked);
+            };
+
+            var row = Row(label, field, picker, ResetButton(token));
             row.Margin = new Thickness(0, 0, 0, 6);
             panel.Children.Add(row);
         }
@@ -487,14 +517,22 @@ public sealed class AppearanceScreen : SettingScreen
             }
             foreach (var (token, field) in _colorFields)
             {
-                var value = _tokens.Resolve(token).Format();
+                var resolved = _tokens.Resolve(token);
+                var value = resolved.Format();
                 if (!string.Equals(field.Text, value, StringComparison.Ordinal)) field.Text = value;
+                SetSwatchColor(token, resolved);
             }
         }
         finally
         {
             _syncing = false;
         }
+    }
+
+    private void SetSwatchColor(string token, TokenValue value)
+    {
+        _colorSwatches[token].Background = new System.Windows.Media.SolidColorBrush(
+            System.Windows.Media.Color.FromRgb(value.R, value.G, value.B));
     }
 
     private void ActivateThemeCore(string name)

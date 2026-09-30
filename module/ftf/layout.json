@@ -1,7 +1,0 @@
-{
-  "slots": {
-    "LauncherPanel": { "kind": "visibility", "visible": true },
-    "EditorPanel": { "kind": "visibility", "visible": true },
-    "RuntimePanel": { "kind": "visibility", "visible": true }
-  }
-}
