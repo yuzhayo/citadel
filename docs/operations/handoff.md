@@ -1,86 +1,251 @@
-# Citadel handoff
+# Citadel — handoff teknis
 
-Snapshot: 2026-09-12, after release `v2.3.0`.
+Snapshot source: 2026-09-30, `main` commit `bd7cf44`, `version.props` 3.1.7. Ini peta **as-built**, bukan jaminan bahwa branch, release, provider web, atau state lokal masih sama saat dibaca nanti. Periksa ulang `git status`, HEAD, `version.props`, dan file target sebelum bertindak. Source dan kontrak yang berlaku menang atas dokumen historis; `docs/work/` adalah rencana tugas, bukan bukti implementasi.
 
-## Verified release state
+## Orientasi dan konsep global
 
-- Active checkout: `C:\VSCODE\citadel`.
-- Branch: `main`; snapshot commit: `ced5501` (`chore: bump version to 2.3.0`).
-- Latest published release: [`v2.3.0`](https://github.com/yuzhayo/citadel/releases/tag/v2.3.0), targeting `ced5501`.
-- Published assets: installer, portable ZIP, full package, delta package, and
-  Velopack release indexes.
-- The GitHub CI and release workflows completed successfully for that commit.
-- Local working version moves independently after this snapshot; check
-  `version.props` and `git status` before treating this release as current.
+Citadel adalah aplikasi desktop .NET 10/WPF yang berjalan sebagai Shell resident di tray. Shell menemukan citizen dari folder `module/` **di samping executable**, bukan langsung dari source repo. Tiap citizen adalah assembly WPF terpisah dengan `module.json` (identitas) dan opsional `layout.json` (presentasi). Registry/route dan runtime adalah dua hal berbeda: citizen dapat muncul di sidebar tetapi belum berjalan.
 
-## Repository shape
+```
+App (composition root)
+  ├─ Searcher: temukan folder, baca manifest, load assembly
+  ├─ ModuleGate: registry descriptor, route, failure, unregister
+  ├─ RuntimeCoordinator: Start / Stop / Force Stop per route
+  ├─ Router + ModuleRuntimeHost: navigasi dan tempat view
+  └─ ShellSettingHost → ISettingHost → Settings
 
-`docs/` is the only versioned documentation tree:
+citizen → Contract/Core/Setting; sharedLogic adalah source/kontrak bersama
+```
 
-- `architecture/` — as-built structure, inventory, dependency flows.
-- `contracts/` — current behavior contracts shared across screens.
-- `governance/` — architecture review, violations, remediation records.
-- `operations/` — release, smoke, and this handoff.
-- `work/` — active scoped work; currently the CamoProf Add Profile plan/todo.
-- `history/2026/` — dated plans, research, audits, reports, and imported Hermes
-  material. Treat this as evidence/history, not an authority over source.
+Urutan startup ada di [`App.xaml.cs`](../../core/Citadel.Shell/App.xaml.cs): log, main queue/CRL, token, gate/coordinator, window, baru Searcher setelah window tampil. [`Watcher`](../../core/Citadel.Searcher/Watcher.cs) memakai satu jalur reconcile untuk initial scan, perubahan folder, dan tombol *Update modules*; pekerjaan folder diserialkan. [`Reader`](../../core/Citadel.Searcher/Reader.cs) memperlakukan `module.json` invalid sebagai failure, `layout.json` invalid secara fail-soft, dan folder tanpa manifest bukan citizen. [`Loader`](../../core/Citadel.Searcher/Loader.cs) memuat assembly. [`ModuleGate`](../../core/Citadel.Shell/ModuleGate.cs) menjaga route unik/reserved dan registry pada main queue. Settings menampilkan failure Searcher maupun Gate.
 
-There is no tracked `.docs/`, `tasks/`, or `.hermes/plans/` directory anymore.
-The root tool directories remain intentional:
+### Lifecycle yang berlaku
 
-- `.agents/` — two Citadel policy skills and two boundary hooks.
-- `.config/` — `dotnet` local-tool manifest for Velopack.
-- `.github/workflows/` — CI and release automation; GitHub requires this path.
-- `.vscode/` — workspace editor settings.
+| Peristiwa | Hasil |
+|---|---|
+| Folder citizen ditemukan | Descriptor/route terdaftar dan sidebar muncul; service/view **belum** dibuat. |
+| User buka route yang berhenti | `ModuleRuntimeHost` ringan menampilkan Start/Retry; tidak memanggil `CreateView`. |
+| Start | [`ModuleRuntimeCoordinator`](../../core/Citadel.Shell/Runtime/ModuleRuntimeCoordinator.cs) membuat session/generation dan runtime lifetime, menjalankan `IRuntimeModuleLifecycle` atau jembatan `IResidentModule`, kemudian `CreateView` dan mount. |
+| Pindah route | Host dan runtime view dilepas dari visual tree; runtime/lifetime tetap hidup. View yang mendukung `IRetainedViewModule` menerima detach/attach. Ini **bukan Stop**. |
+| Stop normal | Shell memanggil hook drain **hanya bila** citizen mengimplementasikan `IRuntimeModuleLifecycle`, lalu unmount dan menghancurkan runtime/view lifetime. Citizen tanpa hook hanya mendapat disposal yang didaftarkan pada lifetime; field pada instance modul tidak otomatis dibuang. Bila hook gagal, resource ditahan dan Stop dapat dicoba lagi. |
+| Force Stop | Aksi eksplisit operator saat perlu; memutus runtime tanpa menjanjikan drain normal. Bukan fallback otomatis tiap navigasi. |
+| Folder dihapus/unregister | Gate meminta release runtime dahulu. Bila gagal, route tetap `RemovalPending` dengan Retry removal; tidak hilang diam-diam. |
+| Exit aplikasi | Satu jalur `StopAllAsync` sebelum shutdown; kegagalan Stop membatalkan Exit agar dapat dicoba lagi. Close window ke tray bukan Exit bila tray tersedia. |
 
-## Application model
+Kontrak kodenya: [`IModule`](../../core/Citadel.Contract/IModule.cs), [`IRuntimeModuleLifecycle`](../../core/Citadel.Contract/IRuntimeModuleLifecycle.cs), [`IRetainedViewModule`](../../core/Citadel.Contract/IRetainedViewModule.cs), [`IResidentModule`](../../core/Citadel.Contract/IResidentModule.cs), [`Router`](../../core/Citadel.Shell/Router.cs), dan [`ModuleRuntimeHost`](../../core/Citadel.Shell/Runtime/ModuleRuntimeHost.xaml.cs). `IResidentModule` hanya jembatan kompatibilitas pada Start, bukan eager attach saat register. Bedakan view lifetime milik runtime citizen dari route/navigation host. Jangan membuat Start/Stop implisit dari tab, filter, atau navigasi.
 
-- Citadel is a .NET 10/WPF, tray-resident shell. Module navigation and closing
-  the main window must not dispose resident work.
-- Only **tray Exit** terminates the application-wide resident runtime. A module
-  Stop button only stops that module's owned operation; it must not stop another
-  module or the shell.
-- `core/` owns shell/runtime/contracts; `setting/` owns reusable UI components;
-  `module/` owns independently deployable citizen screens; `tests/` owns test
-  projects. Citizens may not reference the Shell, UI assembly, or another citizen.
+### Tiga identitas dan tiga lifetime
 
-## Delivered functional baseline
+1. **Source** `module/<nama>/` adalah yang diedit. **Build output** `module/<nama>/bin/<Config>/net10.0-windows/` bukan yang diawasi Shell. **Deployment** `<folder executable>/module/<nama>/` adalah yang dibaca Searcher. `core/Citizen.targets` menyalin payload citizen ke deployment pada build; menyalin source saja ke instalasi tidak sama dengan deploy assembly yang cocok.
+2. **Application lifetime** hidup sampai Exit nyata dan memiliki Watcher/log/sumber Shell. **Runtime lifetime** baru untuk setiap Start route, memiliki view serta resource yang citizen daftarkan. **Visual attachment** hanya posisi view pada tree; detach saat navigasi tidak boleh dianggap lifetime selesai.
+3. `RuntimeSession.Generation` mengidentifikasi satu Start (termasuk attempt gagal) untuk mem-fence continuation citizen yang terlambat. Epoch di coordinator mem-fence continuation Shell setelah Force Stop/restart. `ModuleRuntimeSlot` menyimpan state, view dan error. Detailnya di [`ModuleRuntimeSlot.cs`](../../core/Citadel.Shell/Runtime/ModuleRuntimeSlot.cs) dan [`ModuleRuntimeCoordinator.cs`](../../core/Citadel.Shell/Runtime/ModuleRuntimeCoordinator.cs).
 
-- MangaReader has Library, History, Cover Builder, Downloader, Catalog, and Queue.
-  Its Downloader Queue now has independent proxy-aware sessions, grouped rows,
-  bounded automatic admission, explicit manual actions, checkpoint-aware Stop,
-  and shared-session fallback only after independent transport exhaustion.
-- Proxy is now a functional citizen with Pool, Sync, and Settings tabs. Its
-  published pool is consumed through adapters by MangaReader and CamoProf.
-- CamoProf and MangaReader use their own ownership lanes; no cross-module global
-  proxy exclusivity claim is made.
-- Existing Downloader provider behavior is preserved as the baseline. Do not
-  remove explicit user-triggered Start/Stop safety boundaries or turn a view open,
-  filter edit, or tab navigation into a provider request.
+| Citizen | Kontrak runtime | Apa yang terjadi pada Stop (as-built) |
+|---|---|---|
+| MangaReader | `IRuntimeModuleLifecycle` | `PauseAndDrainAsync` menunggu dua scheduler aman, lalu lifetime membuang downloader. Job persisten yang belum selesai dipulihkan sebagai Paused pada Start berikutnya. Force Stop memberi terminal generation dan abort work/process miliknya tanpa menunggu drain. |
+| CamoProf | `IModule` default | Lifetime view memanggil `DisposeView`: launcher dan network monitor dibuang; disposal browser session coordinator/PyHost dijadwalkan di background agar UI tidak menunggu ladder shutdown. Tidak ada hook `StopRuntimeAsync` terpisah. |
+| Yuzvid | `IModule` default | Lifetime membuang QueueEngine dan browser controller; controller shutdown WebView2/popup host dahulu, baru local proxy. Saat **navigasi**, hanya transient popup hosts ditutup dan sesi browser utama tetap hidup. |
+| Agent Router | `IModule` default | Lifetime membuang kedua feature view. Pointer profile yang tersimpan tidak dihapus. |
+| Blank | `IModule` default | Lifetime view selesai; tidak ada background service bisnis. |
+| Proxy | `IModule` default **dengan koordinator di instance modul** | Stop membuang `ProxyView`/subscription tetapi **tidak** memanggil `ProxySyncCoordinator.Stop` atau membuang instance modul. Sync/Webshare yang sudah dimulai dapat terus berjalan setelah tampilan Stop. Jangan menjanjikan “Stop Proxy = sync berhenti” tanpa perubahan kontrak/implementasi tersendiri. Tombol Stop pada tab Sync/Webshare adalah operasi berbeda. |
 
-## Known limits and verification boundary
+`ModuleRuntimeHost` menampilkan `Stopped`, `Starting`, `Running`, `Stopping`, `ForceStopping`, `Faulted`, dan keadaan `RemovalPending`/Stop gagal. Gagal Start memungkinkan Retry; gagal Stop mempertahankan runtime dan menampilkan Retry Stop/Force Stop; Force Stop butuh konfirmasi operator. Stop saat Starting dicatat sebagai pending, bukan dua operasi bersamaan. Folder yang di-unregister menunggu release; kegagalan release mempertahankan route untuk Retry removal. Jangan menyebut semua state ini sebagai sekadar “on/off”.
 
-- The Queue implementation has fixture/targeted coverage and release-build
-  evidence. It deliberately does not claim a current live Comix download or live
-  proxy-pool performance result.
-- Provider access, blocks, terms, and source markup are time-dependent. Recheck
-  live access and authorization before provider work. Do not bypass challenges,
-  blocks, paywalls, or access controls.
-- Documentation under `history/` can describe superseded plans. Confirm actual
-  behavior in source and the architecture/contract documents.
-- No credentials, browser profiles, pool runtime state, or generated release
-  artifacts are versioned. Keep it that way.
+## Peta repo dan boundary
 
-## Next-agent checklist
+| Lokasi | Pemilik / batas |
+|---|---|
+| `core/Citadel.Contract` | Interface module, runtime, view, descriptor; tidak tahu citizen konkret. |
+| `core/Citadel.Core` | Lifetime, CRL/main queue, token, log, mekanisme core tanpa WPF Shell. |
+| `core/Citadel.Searcher` | Discovery, manifest, load, watcher; tidak menaruh logika bisnis citizen di sini. |
+| `core/Citadel.Ui` | Mekanisme UI/animasi Shell; **bukan** dependency citizen. |
+| `core/Citadel.Shell` | Composition root, tray/single-instance, router, gate, runtime, update, Setting host. Hanya Shell yang boleh menggabungkan semua sisi. |
+| `setting/` | Screens Settings, resources/tokens, kontrak `ISettingHost`, dan reusable UI di `setting/Components/`. Settings tidak reference Shell/Searcher. |
+| `module/<citizen>/` | Satu citizen per folder. Parent `*Module`/`*View` mengomposisikan feature; feature memiliki perilaku/state sendiri. |
+| `module/sharedLogic/cs` | Kontrak/mekanisme C# lintas citizen yang dikompilasi sebagai source, termasuk ProxyPool, Credenz, PyHost. Bukan service global dan bukan citizen. |
+| `module/sharedLogic/pyhost` | Host Python NDJSON bersama; payload dideploy di samping `module/`, runtime/venv tersimpan terpisah. |
+| `tests/` | Test project terarah. `docs/architecture`, `contracts`, `operations`, `work`, `history` berturut-turut peta, kontrak, operasi, rencana aktif, dan bukti historis. |
 
-1. Read `AGENTS.md`, then the relevant maintained Yuzskill and local Citadel
-   policy skill before editing.
-2. Inspect `git status`, `version.props`, current release/tag, and the target
-   feature owner before acting. Preserve unrelated worktree changes.
-3. Reuse `setting/Components` for shared UI; do not create duplicate primitives.
-4. Keep feature logic inside its feature owner and parent modules composition-only.
-5. For any change, bump `version.props` as required by the operator. Before a
-   local Release build, close the running Citadel instance through tray Exit.
-6. Build/test only the scope needed to prove the change. Commit, push, installer,
-   and GitHub release require explicit operator instruction.
+[`core/Citizen.targets`](../../core/Citizen.targets) adalah build/deploy contract citizen: reference hanya Core, Contract, Setting; **bukan** Shell, Ui, atau citizen lain. Shared assembly tidak disalin ke folder citizen (mencegah identitas `IModule`/WPF resource pecah). Folder source adalah identitas deployment/assembly; citizen dibangun tersendiri, tidak perlu masuk `Citadel.slnx`. Komunikasi antarf fitur lewat kontrak/context/event milik boundary-nya; jangan mengakses private class citizen lain. Data bersama harus punya pemilik dan kontrak eksplisit, bukan menyatukan folder modul.
 
+Enam manifest saat snapshot ini: `mangareader` → `manga-reader` (10), `camoprof` → `camoprof` (20), `proxy` → `proxy` (40), `yuzvid` → `yuzvid` (50), `agentrouter` → `agentrouter` (60), `blank` → `blank` (999). FTF **bukan** citizen aktif. Shell juga memiliki route `settings` dan subroute yang reserved. Referensi folder: [`module/`](../../module/) dan [`BuiltInRoute.cs`](../../core/Citadel.Shell/BuiltInRoute.cs).
+
+### Kontrak satu citizen baru
+
+Satu folder langsung di bawah `module/` berisi satu `Module.*.csproj`, `module.json`, entry class `IModule`, view WPF dan opsional `layout.json`. Manifest wajib menyebut `title`, `route`, `entry` DLL dan `type` class yang benar; `icon`/`order` opsional. `IModule.Route` harus sama dengan manifest dan tidak boleh memakai route reserved. `module.json` rusak menolak folder; `layout.json` rusak tidak menolak identitas citizen, hanya kehilangan deklarasi layout. Nama folder menentukan nama assembly default dan URI resource WPF; jangan menyalin DLL `Module.Blank` mentah sebagai citizen baru. `Citizen.targets` membawa referensi shared dengan `Private=false` dan mencegah DLL Citadel shared terduplikasi di deployment citizen. Source C# sharedLogic dikompilasi ke consumer; payload PyHost dideploy sebagai saudara `module/`, bukan citizen tambahan.
+
+Urutan aman: salin [`module/blank`](../../module/blank/) dalam scope tugas → beri folder/project/namespace/manifest/route unik → implement feature dan guard boundary → `dotnet build` project citizen langsung → periksa folder deployment serta Settings/Start secara visual jika UI diubah. Menambah citizen tidak mensyaratkan edit `Citadel.slnx`; release packaging menemukannya lewat project file. Jangan menambah fitur dengan menaruh seluruh aturan bisnis pada `*Module.cs` atau parent `*View.xaml.cs`.
+
+## Per citizen
+
+### MangaReader — `module/mangareader`
+
+[`MangaReaderModule`](../../module/mangareader/MangaReaderModule.cs) adalah `IRuntimeModuleLifecycle`: Start membuat `DownloaderBackgroundService`; Stop melakukan `PauseAndDrainAsync` sebelum lifetime dibuang; Force Stop meng-abort pekerjaan miliknya. Tab parent: [`Library`](../../module/mangareader/Library/LibraryView.xaml.cs), [`History`](../../module/mangareader/History/HistoryView.xaml.cs), [`Downloader`](../../module/mangareader/Features/Downloader/DownloaderView.xaml.cs), [`Queue`](../../module/mangareader/Features/Downloader/Queue/DownloadListScreen.xaml.cs); pembaca chapter memakai [`ReaderWindow`](../../module/mangareader/Reader/ReaderWindow.xaml.cs). Parent [`MangaReaderView`](../../module/mangareader/MangaReaderView.xaml.cs) menghubungkan context/handoff, bukan tempat memindahkan semua algoritme.
+
+- Library membaca indeks per root untuk daftar title/cover; chapter nyata dibaca saat title dipilih. Pemiliknya `LibraryIndexCoordinator`, `LibraryIndexStore`, `LibraryTitleLoader`, dan `ChapterSelectorView`. Index ada di `%LocalAppData%\Citadel\MangaReader\index\`; folder manga pilihan user tetap sumber data chapter. Scan/index dan UI tidak boleh membuat boot membaca seluruh chapter semua title.
+- Reader memiliki `ReaderCore` dan feature kecil di `Reader/Features`; gambar/CBZ, chapter handoff, input/scroll, dan preference milik Reader. History punya store sendiri. Jangan mencampur jalur decode Reader dengan downloader transport.
+- Downloader memiliki katalog/source registry, source-specific parser/transport (Comix, CucumberManga, DrakeScans, AsuraScans, ThunderScans) serta jalur dynamic manual URL, queue scheduler, manifest, transfer dan publisher CBZ. [`MangaSourceRegistry`](../../module/mangareader/Features/Downloader/Sources/MangaSourceRegistry.cs) adalah titik daftar provider. Katalog Comix dan CatalogMirror memiliki jalur terpisah; jangan menyimpulkan satu provider mewakili seluruh flow. Queue persisted di `%LocalAppData%\Citadel\MangaReader\downloads\queue.json`. Jangan mengubah request provider, concurrency, atau fallback berdasarkan tebakan; cek hasil dan source HTML/API nyata saat tugas menyentuhnya.
+- Proxy hanya dipakai saat mode pool aktif. Adapter MangaReader membaca pool aktif dari kontrak bersama, memilih kandidat berdasar dukungan/health, dan mengakuisisi untuk operasi berikutnya; mengganti proxy UI tidak otomatis memindahkan sesi jaringan yang sudah berjalan. Kontraknya [`ProxyPoolAdapter`](../../module/mangareader/shareLogic/ProxyPoolAdapter.cs) dan registry lease per runtime.
+
+Alur pengguna dan owner MangaReader, dari kiri ke kanan:
+
+| Masuk dari | Owner kerja | Handoff/efek dan batas |
+|---|---|---|
+| Library root | [`LibraryRootContext`](../../module/mangareader/Library/LibraryRootContext.cs), [`LibraryIndexCoordinator`](../../module/mangareader/Library/LibraryIndexCoordinator.cs), [`LibraryIndexWatcher`](../../module/mangareader/Library/LibraryIndexWatcher.cs) | Restore path → load index kecil → shallow reconcile folder title → kartu/cover. Folder yang baru/berubah diindeks per title; membuka detail baru membaca chapter nyata. Cache rusak dapat dibangun ulang tanpa menghapus folder manga. |
+| Kartu/detail Library | [`ChapterSelectorView`](../../module/mangareader/Library/ChapterSelectorView.xaml.cs) dan [`MangaReaderView`](../../module/mangareader/MangaReaderView.xaml.cs) | Pilih chapter → Reader window; Resume mengambil [`ReadingPositionStore`](../../module/mangareader/shareLogic/ReadingPositionStore.cs); pembukaan/rotasi chapter dicatat ke History dari parent agar tidak bergantung tab History sedang terbuka. |
+| Reader window | `Reader/ReaderCore`, `Reader/Features/ChapterLoading`, `ChapterNavigation`, `ManualScroll`, `AutoScroll`, `Zoom`, `Dim`, `Drawer`, `Fullscreen`, `Diagnostics` | Reader owns decode/render/scroll dan preference, bukan Queue/transport. Baca [`ReaderWindow.xaml.cs`](../../module/mangareader/Reader/ReaderWindow.xaml.cs) dan feature target untuk perubahan performa; jangan memakai asumsi dari `TASKLIST.md` lama sebagai representasi implementasi sekarang. |
+| History | [`ReadingHistoryStore`](../../module/mangareader/History/ReadingHistoryStore.cs) | Recent dan pinned history persisten; pinned tidak ikut batas recent biasa. Reader window dibuka kembali melalui event, bukan membaca state downloader. |
+| Detail Library → Check updates | [`UpdateCheckerFeature`](../../module/mangareader/Library/UpdateChecker/UpdateCheckerFeature.cs) | Manual-only: bind identitas provider/title/group → bandingkan chapter lokal vs remote → user pilih missing chapter → immutable request diterjemahkan parent ke Queue. Tidak otomatis fetch saat boot/scan atau langsung mengunduh tanpa Queue. |
+| Downloader Catalog / Manual URL | [`DownloaderView`](../../module/mangareader/Features/Downloader/DownloaderView.xaml.cs), `Features/Downloader/Catalog`, `ManualUrl`, `Sources`, `FilterSearch` | Search/filter/detail provider atau probe URL manual → pilih group/chapter → Queue. `DownloaderView` hanya meneruskan event tab/cover, bukan menginterpretasi HTML/API provider. |
+| Queue | [`DownloadQueueFeature`](../../module/mangareader/Features/Downloader/Queue/DownloadQueueFeature.cs), `QueueScheduler`, `QueueManifestStore`, `ChapterDownloadPipeline`, `CbzChapterPublisher` | Persist transisi job **sebelum** efek; dua jalur manifest dan download; otomatis dibatasi 8 manifest / 4 download pada snapshot ini. Seleksi manual dan resume adalah aksi eksplisit. Output chapter CBZ diterbitkan ke library target dengan aturan target/duplikasi Queue. |
+| Cover Builder / Auto Cover | `CoverBuilderView`, `Features/Downloader/AutoCover` | Cover Builder adalah tab internal tersembunyi yang dibuka dari detail Library; Auto Cover menerima kandidat dari Catalog tetapi kegagalannya tidak boleh mengubah status job chapter. |
+
+Source registry saat snapshot: Comix, CucumberManga, DrakeScans, AsuraScans, ThunderScans; `DynamicManualSource` hanya jalur URL manual. Filter provider tidak seragam: Comix/Cucumber/Drake punya contribution, Asura/Thunder memakai `NoFilterContribution`. Browser/PyHost, HTTP transport, proxy lease dan queue dibentuk di [`DownloaderBackgroundService`](../../module/mangareader/Features/Downloader/DownloaderBackgroundService.cs). `CatalogMirror` adalah snapshot/SQLite/enrichment milik feature tersendiri, bukan nama lain untuk provider Catalog. Bila tugas menyentuh sebuah provider, mulai dari registrasi → adapter/parser provider itu → transport → manifest/queue, bukan mengganti parser global.
+
+### CamoProf — `module/camoprof`
+
+[`CamoprofModule`](../../module/camoprof/CamoprofModule.cs) membuat view yang mengomposisikan `Launcher`, `Runtime`, `Network`, `Features/AddProfile`, dan `Features/ProfileActions`. [`BrowserSessionCoordinator`](../../module/camoprof/sharedLogic/BrowserSessionCoordinator.cs) menjaga sesi browser miliknya; PyHost/browser automation mengikuti boundary CamoProf, bukan milik Agent Router. Identitas/profile vault menggunakan [`CredenzPath`](../../module/sharedLogic/cs/CredenzPath.cs): default `%LocalAppData%\Citadel\Credenz`, override absolut `CITADEL_CREDENZ`; jangan memasukkan data akun atau profile ke repo/release. Adapter proxy CamoProf berada di [`sharedLogic/ProxyPoolAdapter.cs`](../../module/camoprof/sharedLogic/ProxyPoolAdapter.cs).
+
+| Permukaan | Pemilik dan alur aktual |
+|---|---|
+| Launcher | [`LauncherView`](../../module/camoprof/Launcher/LauncherView.xaml.cs) membaca [`ProfileCatalog`](../../module/camoprof/sharedLogic/ProfileCatalog.cs), menampilkan profile, membuka/menutup sesi, navigasi, dan meneruskan command ke fitur. Bukan Agent Router yang meluncurkan profile. |
+| Add Profile | `Features/AddProfile` mengatur enrollment melalui PyHost; `Providers/Google/GoogleCredentialStore` menyimpan identitas dan password yang terlindungi untuk akun terkait. Jangan menyalin password ke view/log/handoff. |
+| Profile Actions | [`ProfileActionsFeature`](../../module/camoprof/Features/ProfileActions/ProfileActionsFeature.cs) mengurus live Google check dan keputusan pairing/repair. Delete profile menutup sesi dahulu, lalu menghapus profile dan credential milik profile itu; Agent Router hanya menyimpan pointer dan tidak ikut menghapus. |
+| Browser runtime | [`BrowserSessionCoordinator`](../../module/camoprof/sharedLogic/BrowserSessionCoordinator.cs) memiliki satu PyHost dan registry profile→session; mutation diserialkan agar launch/check/delete tidak race. Proxy pool dipilih ketika membuka sesi; failover terbatas pada jalur open. Sesi yang sudah berjalan tidak otomatis berpindah IP karena pool berubah. |
+| Network / tabs | [`NetworkMonitor`](../../module/camoprof/Network/NetworkMonitor.cs) mulai saat view Loaded dan sampling berkala; `Launcher` dan `Runtime` adalah tab nyata. Tab `Editor` dalam [`CamoprofView.xaml`](../../module/camoprof/CamoprofView.xaml) saat snapshot hanya viewport kosong—jangan mengklaim editor profile sudah ada. |
+
+Vault default memisahkan `google/profiles/<id>` (profile browser) dari `google/accounts/<id>` (identitas/password). `CredenzPath` melakukan migrasi satu arah dari vault development lama tanpa menimpa file primary yang sudah ada. File `password.dat` dienkripsi untuk user Windows saat disimpan; ini tidak berarti semua metadata identitas bersifat rahasia/terenkripsi. Saat Stop, disposal PyHost dijadwalkan background seperti tabel lifecycle—jangan menyebut Stop itu synchronous drain penuh.
+
+### Proxy — `module/proxy`
+
+[`ProxyModule`](../../module/proxy/ProxyModule.cs) memiliki `HttpClient`, pool/settings store dan koordinator Sync/PoolHealth/Webshare pada **module instance**, agar rebuild view tidak mematikan sync. View mengomposisikan tab Pool, Sync, Webshare, Settings. [`ProxyPoolStore`](../../module/proxy/sharedLogic/ProxyPoolStore.cs) menyimpan kontribusi `sync-proxies.txt` dan `webshare-proxies.txt`, lalu menerbitkan gabungannya sebagai `%LocalAppData%\Citadel\Proxy\proxy.txt`, beserta health/origin sidecar. Sync yang dihentikan dapat menyimpan hasil parsial yang sudah terverifikasi; kandidat yang belum lolos bukan hasil pool. Produsen/pengelola pool adalah Proxy; consumer hanya membaca melalui adapter. Jangan mengubah file pool secara manual untuk mensimulasikan sinkronisasi tanpa mengerti sidecar dan commit contract.
+
+Alur commit: [`ProxySyncCoordinator`](../../module/proxy/Features/Sync/ProxySyncCoordinator.cs) mengambil source publik dan probe kandidat; [`WebshareCoordinator`](../../module/proxy/Features/Webshare/WebshareCoordinator.cs) membaca key Webshare sendiri dan probe; keduanya menyerahkan hasil yang reachable ke `ProxyPoolStore`. Store mempertahankan kontribusi sumber lain, mengecualikan banned, deduplikasi, lalu menerbitkan `proxy.txt` gabungan dan sidecar health/origin. Stop pada tab Sync membatalkan job; jika ada hasil reachable terverifikasi, `CommitSyncPartial` menambahnya ke kontribusi Sync; bila belum ada, pool lama tetap. Webshare key disimpan terpisah di `%LocalAppData%\Citadel\Credenz\webshare\api-keys.dat` memakai DPAPI CurrentUser ([`WebshareCredentialStore`](../../module/proxy/Features/Webshare/WebshareCredentialStore.cs)); tidak dimasukkan ke pool. `Proxy/Settings` mengatur kebijakan/probe milik produsen, bukan saklar global yang memaksa semua consumer memakai proxy.
+
+Pembaca pool menggunakan `ProxyPoolContract.ReadSnapshot`, lalu health/provenance sidecar bila relevan. Mereka tidak memanggil `Commit`, `Ban`, atau `RemoveFromActive` milik produsen. Pilihan proxy di satu consumer tidak mengubah pilihan consumer lain. Pada operator Stop modul Proxy, koordinator yang hidup pada instance modul **bisa tetap bekerja**; untuk menghentikan sync berjalan, gunakan Stop operasi pada tab sebelum Stop modul, atau ubah lifecycle lewat tugas tersendiri jika kontrak produk menghendaki hal lain.
+
+`ProxyModule` pada snapshot ini tidak mengimplementasikan `IRuntimeModuleLifecycle`/`IDisposable` dan tidak mendaftarkan `_coordinator`, `_webshareCoordinator` atau `_http` ke runtime lifetime. Ini batas nyata dari arti Stop/Unregister untuk pekerjaan background Proxy, bukan sekadar detail UI. Jangan menyatakan pekerjaan itu telah ter-drain hanya karena host berubah menjadi Stopped.
+
+### Yuzvid — `module/yuzvid`
+
+[`YuzvidModule`](../../module/yuzvid/YuzvidModule.cs) membuat satu `YuzvidBrowserController` per runtime view, mengaktifkan local proxy sebelum WebView2, lalu menghubungkan Browser, Settings, Extraction dan Queue. Browser view retained menjaga sesi saat navigasi; Stop runtime yang menghancurkan lifetime menutupnya. `Features/Browser` mengurus WebView2, popup, redirect, secure DNS, serta [`YuzvidProxyPoolAdapter`](../../module/yuzvid/Features/Browser/YuzvidProxyPoolAdapter.cs). `Features/Extraction` membaca link dari browser; [`QueueEngine`](../../module/yuzvid/Features/Queue/QueueEngine.cs) mengunduh melalui proxy yang disediakan controller, ke `%LocalAppData%\Citadel\Yuzvid\Downloads`. WebView2 memakai alamat **local proxy listener** yang dipin saat init; pilihan upstream/direct diganti pada local proxy server tanpa perlu restart WebView2. Bila listener awal gagal, browser fallback direct. Routing popup tidak seragam: lihat detail kebijakan aktual di bawah, jangan menyederhanakannya menjadi “semua popup tersembunyi”.
+
+| Masukan/peristiwa | Pemilik dan hasil saat snapshot |
+|---|---|
+| Address bar | [`YuzvidBrowserView`](../../module/yuzvid/Features/Browser/YuzvidBrowserView.xaml.cs) menerima URL HTTP(S), domain tanpa skema, atau keyword yang diubah ke Google search. Toolbar hanya meneruskan command lewat controller; bookmark dan riwayat URL disimpan oleh [`YuzvidView`](../../module/yuzvid/YuzvidView.xaml.cs). |
+| Proxy/DNS | [`YuzvidBrowserController`](../../module/yuzvid/Features/Browser/YuzvidBrowserController.cs) memulai local listener sebelum WebView2; toggle pool meminta endpoint dari adapter lalu mengubah upstream local server. Saat gagal, fallback direct dan notice. DNS mode (System/Cloudflare/Google) adalah setting pada local proxy, bukan setting Chrome sistem. Queue download memakai proxy local yang sama bila listener aktif. |
+| Popup/new window | [`SilentPopupHostManager`](../../module/yuzvid/Features/Browser/SilentPopupHostManager.cs) menerima event WebView2. **Kode saat ini** mengarahkan URI host yang dianggap content (daftar host video atau host sama dengan tab utama) ke **tab utama**; popup lain mendapat sesi WebView2 tersembunyi masing-masing, concurrent, lalu ditutup. Cabang content itu tidak mengecek `IsUserInitiated` sebelum `NavigateMain`, walaupun komentarnya menyebut gesture. Jangan laporkan ini sebagai “semua popup headless”, “semua user popup floating”, atau diam-diam mengubahnya tanpa requirement baru. |
+| Same-tab redirect | `YuzvidBrowserView.ShouldCancelDocumentNav` membiarkan navigasi milik address bar, gesture user, dan host sama; non-gesture hop ke host yang ada di [`RedirectBlockList`](../../module/yuzvid/Features/Browser/RedirectBlockList.cs) dibatalkan. Ini berbeda dari event new window. |
+| Extract → Queue | [`ExtractionFeature`](../../module/yuzvid/Features/Extraction/ExtractionFeature.cs) mengambil link dari browser, drawer menampilkan hasil; pilihan user masuk [`QueueEngine`](../../module/yuzvid/Features/Queue/QueueEngine.cs). Tidak ada alasan memindahkan logika extraction ke parent view. |
+| Navigasi antar-citizen / Stop | `IRetainedViewModule` mempertahankan main WebView2. Saat detach, popup transient ditutup dan permintaan baru ditahan; attach membuka gate lagi. Stop memanggil browser shutdown (popup + main WebView2) sebelum local proxy. |
+
+State lokal Yuzvid default di `%LocalAppData%\Citadel\Yuzvid\`: `WebView2ProfileV2/` (profile browser terisolasi dari Chrome), `bookmarks.json`, `url-history.json`, dan `Downloads/`. Berbeda dengan Chrome harian, cookies/setting/profile-nya tidak otomatis sama. Jangan menghapus profile atau mengganti DNS untuk “memperbaiki” hasil Google tanpa diagnosis terukur. `YuzvidView` mengandung komentar lama bahwa Queue/Settings adalah placeholder; cek `QueueEngine` dan view aktual, bukan komentar itu, untuk status fitur.
+
+### Agent Router — `module/agentrouter`
+
+[`AgentrouterModule`](../../module/agentrouter/AgentrouterModule.cs) menampilkan `Shortcuts`/Launcher dan Proxy. [`ShortcutCatalog`](../../module/agentrouter/sharedLogic/ShortcutCatalog.cs) menyimpan **pointer** ke profile CamoProf pada `%LocalAppData%\Citadel\agentrouter\shortcuts.json`; memilih/menghapus shortcut tidak membuat/menghapus profile. Ini bukan dependency langsung pada assembly CamoProf: pembacaan folder memakai kontrak `CredenzPath`. Tab Proxy dan dropdown per profile membaca pool gabungan yang committed. **Batas implementasi saat ini:** pilihan Proxy per baris adalah *view state saja*, tidak merutekan traffic/launch; KEY, copy KEY, Balance, dan Check balance adalah placeholder UI. Jangan laporkan seolah-olah sudah terhubung ke API/key maupun browser profile.
+
+Alurnya: [`AgentrouterView`](../../module/agentrouter/AgentrouterView.xaml.cs) membuat `ShortcutCatalog` dan [`AgentProxyPool`](../../module/agentrouter/sharedLogic/AgentProxyPool.cs), lalu memasang `ShortcutsView` dan `ProxyView`. Dialog Select profiles menulis daftar pointer; refresh men-scan vault CamoProf secara read-only untuk menandai Ready/Missing. Tab Proxy dan dropdown pada Shortcut me-reload `proxy.txt` gabungan serta sidecar; `Random` adalah opsi display default. Seleksi dropdown dipertahankan selama row view direfresh bila endpoint masih tersedia, tetapi tidak tersimpan sebagai routing policy dan tidak mengubah launch CamoProf. `Remove` pada tabel hanya menghapus pointer Agent Router. Perubahan profile nyata milik CamoProf, perubahan pool nyata milik Proxy.
+
+### Blank — `module/blank`
+
+Citizen template/minimal untuk bentuk manifest, assembly dan view; bukan runtime bisnis. Salin sebagai awal citizen baru bila diminta, lalu beri identitas/folder unik sesuai `Citizen.targets`.
+
+## Setting, shared UI, dan data bersama
+
+[`ISettingHost`](../../setting/ISettingHost.cs) dideklarasikan di Setting dan diimplementasikan oleh [`ShellSettingHost`](../../core/Citadel.Shell/ShellSettingHost.cs); Settings tidak memanggil Searcher/Shell langsung. Daftar Screens/Problems dan rediscovery membaca registry/failure lewat seam itu. Subscreen Customize dibuka pada window Settings terpisah; `settings` dan subroute-nya reserved milik Shell.
+
+| Area Settings | Owner dan dampak |
+|---|---|
+| Appearance | [`AppearanceScreen`](../../setting/Screens/AppearanceScreen.cs) mengedit token metrik/warna melalui Core Tokens; [`SettingResources`](../../setting/SettingResources.xaml) mendefinisikan resource visual. Color picker adalah kontrol shared, bukan fitur per modul. |
+| Module layout | [`ModuleLayoutScreen`](../../setting/Screens/ModuleLayoutScreen.cs) membaca deklarasi slot dari descriptor (`layout.json` saat discovery), lalu menyimpan **override layout melalui Core Tokens**, bukan menulis ulang `layout.json`; tidak mengubah identitas `module.json` atau lifecycle runtime. |
+| Sidebar groups | [`SidebarGroupsScreen`](../../setting/Screens/SidebarGroupsScreen.cs) mengatur pengelompokan/tampilan route, bukan menghidupkan atau menghapus citizen. [`SidebarGroupingStore`](../../core/Citadel.Shell/SidebarGroupingStore.cs) menyimpan state di `%AppData%\Citadel\sidebar-groups.json`, atau di samping executable bila portable marker ada. |
+| Gallery | [`GalleryScreen`](../../setting/Screens/GalleryScreen.cs) mengedit preset shared component yang memang memiliki `.presets.json`; jangan mengasumsikan semua composite punya preset. |
+| Updates | Settings meminta Shell memeriksa/memasang rilis lewat `ISettingHost`; bukan job otomatis pada boot. Installer update perlu jalur Exit/StopAll yang aman. |
+
+Kontrol reusable (`SettingButton`, Field, Table, Tabs, Toggle, Dialog, ColorPicker, Viewport, ScrollBar, dan lainnya) berada di [`setting/Components`](../../setting/Components/) dan perilakunya dicatat di [`shared-ui-behavior.md`](../contracts/shared-ui-behavior.md). Reuse dulu; jangan mengkloning template/behavior di view citizen. Preference UI nonsensitif terpisah di `%LocalAppData%\Citadel\ui-preferences.json`; posisi window Shell di `%LocalAppData%\Citadel\shell-window.json`. Preset Gallery berada di payload `Components/` dekat executable; perubahan manual pada instalasi bisa tertimpa update.
+
+Kontrak pool lintas citizen adalah [`ProxyPoolContract`](../../module/sharedLogic/cs/ProxyPoolContract.cs), [`ProxyPoolHealthContract`](../../module/sharedLogic/cs/ProxyPoolHealthContract.cs), dan [`ProxyPoolOriginContract`](../../module/sharedLogic/cs/ProxyPoolOriginContract.cs). Arusnya: Proxy Sync/Webshare → kontribusi+health → pool aktif gabungan → adapter MangaReader/CamoProf/Yuzvid dan daftar Agent Router. Pool tidak berarti semua operasi otomatis memakai proxy: tiap consumer punya switch, lease, batas protokol dan lifecycle koneksi sendiri. Jangan menaruh kredensial endpoint, API key, isi vault, atau file runtime dalam handoff/log/commit. [`module/sharedLogic/README.md`](../../module/sharedLogic/README.md) dan [`pyhost/README.md`](../../module/sharedLogic/pyhost/README.md) menjelaskan host Python/venv; venv default di `%LocalAppData%\Citadel\runtime\.venv` (dapat dioverride `CITADEL_RUNTIME`), bukan dalam source tree.
+
+### Kontrak lintas boundary yang sering disalahartikan
+
+| Hubungan | Jalur yang diizinkan | Bukan berarti |
+|---|---|---|
+| Shell ↔ citizen | Searcher membaca manifest, Gate menyimpan `ModuleDescriptor`, coordinator memanggil `IModule`/lifecycle, Router memasang host. | Citizen boleh reference `Citadel.Shell` atau membuat route/Start sendiri. |
+| Settings ↔ Shell | `ISettingHost` dideklarasikan Setting, diisi Shell; perubahan appearance/layout masuk Core Tokens. | Settings membaca folder module atau memanggil Searcher langsung. |
+| Proxy → consumer | Producer menulis file kontrak; consumer `ReadSnapshot` dan menerapkan kebijakan lokal. | Satu toggle proxy mengganti koneksi semua modul atau pool selalu auto-rotate koneksi yang telah dibuka. |
+| CamoProf ↔ Agent Router | `CredenzPath` dan folder profile dibaca Agent Router untuk pointer; Launcher CamoProf memiliki sesi. | Agent Router memiliki/men-delete profile, atau dropdown proxy Agent Router otomatis mengatur sesi CamoProf. |
+| Library → Downloader Queue | Update Checker menghasilkan request immutable; parent menerjemahkan ke Queue. | Library boleh mengambil `DownloadQueueFeature` mutable langsung atau update check berjalan otomatis. |
+| C# ↔ Python | [`PyHost`](../../module/sharedLogic/cs/PyHost.cs) berbicara NDJSON ke `sharedLogic/pyhost`; citizen menyusun command sesuai feature. | Menyalin runtime venv/profile ke folder modul atau membuat protokol Python alternatif per tombol. |
+
+Health sidecar memakai hash endpoint sebagai key, bukan menyalin URL proxy ke JSON; origin sidecar mengikat fingerprint pool sehingga provenance lama tidak dianggap cocok setelah pool berubah. `proxy.txt` sendiri dapat memuat kredensial endpoint dan **bukan** data yang aman dipaste ke issue/log. CamoProf dan Yuzvid menerima HTTP/HTTPS/SOCKS5 yang kompatibel dengan browser; MangaReader punya jalur HTTP/browser sendiri dan tidak semua scheme dipakai pada tiap transport. Untuk diagnosis rotasi IP, identifikasi **operasi yang membuat koneksi baru** dan adapter/lease yang dipakai, bukan menyamakan perubahan pilihan UI dengan IP efektif sesi lama.
+
+### Peta penyimpanan dan survivability
+
+Lokasi berikut adalah default Windows user saat snapshot. `AppData`/`LocalAppData` adalah state runtime, bukan payload Git/installer. Jangan menghapus folder ini saat memperbaiki build atau mengganti versi tanpa permintaan eksplisit dan backup yang jelas.
+
+| Pemilik | State penting | Dampak Start/Stop/update |
+|---|---|---|
+| Shell/Core | `%AppData%\Citadel\ui.json` untuk tema/token/layout override; `%AppData%\Citadel\sidebar-groups.json`; `%AppData%\Citadel\log.txt`; `%LocalAppData%\Citadel\shell-window.json` dan `ui-preferences.json`. `ui.json`/sidebar groups pindah ke sisi executable bila `portable.txt` ada. | Persist lintas restart; mengubah `layout.json` deployment bukan cara mengedit override user. Log adalah titik pertama diagnosis startup/registrasi. |
+| MangaReader Library/Reader | `%LocalAppData%\Citadel\MangaReader\library-path.txt`, `index/`, `history.json`, `reading-positions.json`, `reader-preferences.json`, `library-groups.json`, `update-bindings.json`, dan cache render. | Index/cache dapat dibangun ulang; folder CBZ yang user pilih adalah data utama. History, posisi baca, preference dan binding bukan cache sementara. |
+| MangaReader Downloader | `%LocalAppData%\Citadel\MangaReader\downloads\queue.json`, `source-index.json`, snapshot/manifest kerja; chapter hasil ke root library pilihan. | Start memulihkan job persisten yang belum selesai sebagai Paused; tidak memicu download otomatis dari restore saja. Jangan menyebut queue.json disposable. |
+| Proxy | `%LocalAppData%\Citadel\Proxy\`: `proxy.txt`, `sync-proxies.txt`, `webshare-proxies.txt`, `proxy-health.json`, `proxy-origins.json`, `banned-proxies.txt`, `settings.json`. | Dua kontribusi menjadi pool aktif gabungan; consumer memuat snapshot saat operasi/refresh masing-masing. Stop view Proxy tidak menghapus file maupun otomatis membatalkan sync instance. |
+| CamoProf / kredensial | `%LocalAppData%\Citadel\Credenz\google\profiles\`, `google\accounts\`, `webshare\api-keys.dat`; root dapat diubah dengan `CITADEL_CREDENZ` absolut. | Ini data profile/akun, bukan cache build. Password/key disimpan terlindungi untuk user Windows; identitas metadata tetap perlu diperlakukan privat. |
+| Agent Router | `%LocalAppData%\Citadel\agentrouter\shortcuts.json`. | Pointer tetap ada setelah Stop/restart; folder profile yang hilang tampil Missing, tidak otomatis diciptakan ulang. Pilihan proxy per row belum durable. |
+| Yuzvid | `%LocalAppData%\Citadel\Yuzvid\WebView2ProfileV2\`, `bookmarks.json`, `url-history.json`, `Downloads\`. | WebView2 profile/cookies terpisah dari Chrome; Stop menutup runtime, tidak menghapus profile. |
+| Shared Python | `%LocalAppData%\Citadel\runtime\.venv` secara default, override `CITADEL_RUNTIME`; kode PyHost dideploy read-only di `<executable>/sharedLogic/`. | Venv bukan bagian source/installer. Menghapus venv berarti setup ulang dependency, bukan reset semua state citizen. |
+
+### Setting dan shared UI: aturan pengembangan
+
+`setting/Components` adalah gudang primitive universal; `SettingResources.xaml` mengikat token/stylesheet; `setting/Screens` berisi screen Settings. Untuk fitur baru, cari komponen berdasarkan **perilaku** (misalnya scroll ownership, table resize, modal, focus) sebelum menambah XAML. `SettingViewport` `Contained` berarti feature/table memiliki scroll sendiri; `Document` berarti dokumen tunggal memakai fallback scroll utama. Gallery hanya mengedit preset primitive yang memiliki file `.presets.json`; pada instalasi read-only, preset yang dikirim tetap dapat dipakai tetapi tidak bisa disimpan ulang. Layout editor membaca slot yang dideklarasikan dan menyimpan override per route dalam `ui.json`; route `settings` dapat punya layout sendiri meski tidak boleh dipakai manifest citizen.
+
+Skill `citadel-shared-ui` mengharuskan persetujuan user sebelum membuat **primitive/style/template baru** atau pengganti lokal paralel. Pengecualian: combo component yang hanya menyusun primitive yang sudah ada, tanpa perilaku rendering universal baru, dengan owner/kontrak jelas. Skill `citadel-feature-modularity` memisahkan **Level A** (project boundary citizen, dicegah hook/MSBuild) dan **Level B** (parent↔feature serta feature↔feature, perlu guard test per citizen). Parent boleh komposisi dan routing event; algoritme provider, queue, reader, browser, proxy policy tetap milik feature masing-masing. Jika aturan skill tampak bertentangan dengan source lama atau kebutuhan tugas, tandai konflik dan minta keputusan, jangan diam-diam membuat jalur kedua.
+
+## Operasi, diagnosis, dan bukti
+
+### Jalur build/run/release yang berbeda
+
+| Aksi | Perintah/owner | Efek yang perlu diketahui |
+|---|---|---|
+| Cek code terarah | `dotnet test Citadel.slnx` untuk proyek yang masuk solution; `dotnet build module/<citizen>/Module.<Citizen>.csproj` untuk citizen terkait. | Citizen tidak ada di `Citadel.slnx`. Test solution hijau saja tidak membuktikan citizen terkompilasi atau UI tampil. Pilih subset sesuai risiko, jangan menjalankan seluruh matrix untuk edit dokumen. |
+| Local packaging tanpa bump/run | [`tools/Build-Release.ps1`](../../tools/Build-Release.ps1) | Publish Shell self-contained `win-x64`, menemukan semua `Module.*.csproj` di subfolder langsung `module/`, deploy tiap citizen, validasi payload/ikon, lalu paketkan Velopack. Mengganti isi `artifacts/publish/win-x64`; menulis `Releases/`. Jangan bagikan `Citadel.Shell.exe` sendirian. |
+| Bump + build + run lokal | [`bump-build-run.bat`](../../bump-build-run.bat) → [`Bump-Build-Run.ps1`](../../tools/Bump-Build-Run.ps1) | Menghentikan **semua** proses `Citadel.Shell` dengan `Stop-Process -Force`, memilih patch berikut dari `version.props`, tag dan paket lokal, membangun rilis, memvalidasi artefak, menulis versi lokal, menjalankan EXE publish. Ini **bukan** graceful tray Exit dan dapat menginterupsi kerja aktif; peringatkan operator jika Queue/Sync berjalan. Tidak commit/push. |
+| Release GitHub | [`bump-release.bat`](../../bump-release.bat) → [`Release-PushedMain.ps1`](../../tools/Release-PushedMain.ps1) | Memerlukan branch `main`, auth `gh`, tracked diff bersih dan HEAD=origin/main; fetch, bump version.props, commit/push release bump, tunggu CI hijau untuk commit itu, dispatch workflow release, tunggu dan verifikasi tag/target. Script tidak memasukkan perubahan fitur yang belum di-commit dan pemeriksaan awalnya tidak menyatakan file **untracked** bersih: cek `git status --short` sendiri sebelum menganggap semua perubahan ikut rilis. Jalankan hanya jika user meminta. |
+| CI/release workflow | [`.github/workflows/ci.yml`](../../.github/workflows/ci.yml), [`release.yml`](../../.github/workflows/release.yml) | CI melakukan restore/test solution dan explicit citizen builds; release workflow mensyaratkan check `build` hijau pada commit yang sama lalu paket/upload. Pada snapshot ini daftar explicit CI **tidak memuat Yuzvid** meski `Build-Release.ps1` menemukannya otomatis. Jadi “CI hijau” bukan bukti Yuzvid dikompilasi pada tahap CI; package release tetap membangun Yuzvid. |
+
+Versi lokal, commit `main`, tag, dan published GitHub Release bukan sinonim. `version.props` hanya versi source lokal saat diperiksa; untuk menyebut rilis berhasil, cocokkan commit, CI run, tag, target commit dan asset release live. Smoke visual tetap perlu untuk perubahan browser, reader, popup, sidebar, Window/installer icon, atau lifetime. [`release.md`](release.md) menjelaskan paket/update, tetapi bila teksnya bertentangan dengan script terbaru, script menjadi sumber perilaku. Jangan menghapus `Releases/`, `artifacts/`, installer, cache user, atau profile hanya karena build bermasalah; identifikasi target terlebih dahulu.
+
+### Titik diagnosis, tanpa mengubah state
+
+| Gejala | Periksa urutannya |
+|---|---|
+| Citizen tidak muncul | Apakah deployment `<exe>/module/<name>/` berisi manifest, entry DLL, deps; lalu Settings → Problems dan `%AppData%\Citadel\log.txt`; cek route reserved/duplikat, manifest dan `Core/Citizen.targets`. Jangan scan source folder seolah runtime membacanya. |
+| Route muncul tetapi view kosong/Start gagal | State dan error pada `ModuleRuntimeHost`, log, lalu `CreateView`/lifetime citizen. Retry Start hanya setelah penyebab jelas; Force Stop adalah aksi operator untuk runtime yang tidak bisa berhenti, bukan tes rutin. |
+| Stop tidak mematikan pekerjaan | Tentukan apakah citizen punya `IRuntimeModuleLifecycle` atau hanya disposal view. Untuk Proxy, periksa Sync/Webshare coordinator di module instance; untuk MangaReader, periksa `PauseAndDrainAsync` dan queue state. Pindah tab/route bukan Stop. |
+| Proxy tidak muncul/berubah IP | Cek kontribusi `sync-proxies.txt`/`webshare-proxies.txt`, pool committed `proxy.txt`, health/origin, toggle/adaptor consumer, lalu **koneksi baru** yang benar-benar memakai endpoint. Jangan menyimpulkan dari dropdown Agent Router karena belum wired ke launch. |
+| MangaReader lambat/error | Pisahkan index/cover Library, pembukaan detail title, provider Catalog, manifest Queue, transfer, dan decode Reader; tiap jalur punya owner berbeda. Jangan menambah paralelisme/request provider sebelum tahu tahap yang lambat. Queue row detail dan log memberi batas pertama. |
+| Yuzvid popup/redirect/Google berbeda dari Chrome | Cek event `NewWindowRequested` vs `NavigationStarting`, kebijakan `SilentPopupHostManager`/`RedirectBlockList`, toggle proxy, DNS local server, dan profile WebView2 tersendiri. Jangan mengasumsikan IP/akun/cookie sama hanya karena app berjalan di PC yang sama. |
+
+### Dokumen yang sudah drift pada snapshot ini
+
+- [`module/README.md`](../../module/README.md) masih menunjukkan `module/Citizen.targets` dan Searcher di `module/`, serta mengesankan citizen baru langsung membuka view. Source aktual memakai `core/Citizen.targets`, `core/Citadel.Searcher`, dan host Start/Stop. Pakai README untuk ide folder/manifest, bukan lokasi runtime terkini.
+- [`docs/operations/smoke-checklist.md`](smoke-checklist.md) masih menyebut lima citizen dan bukti ke rencana refactor lama. Ini bukan laporan smoke terbaru untuk keenam citizen.
+- [`docs/operations/mangareader-handoff.md`](mangareader-handoff.md) adalah snapshot lama v3.0.17. Provider/Reader/runtime telah berubah; baca source fitur dan handoff ini dahulu.
+- `docs/work/` saat snapshot berisi plan untuk `camoprof-add-profile`, `downloader-generic`, `library-index`, `module-runtime-start-stop`, `reader-smooth-scroll`, dan `yuzvid-phase23`. Kehadiran file di sana **tidak** berarti task masih pending atau sudah selesai; cocokkan checklist/commit/source untuk task spesifik sebelum membuat plan baru.
+- Komentar lama dalam beberapa file (misalnya `YuzvidView` menyebut Queue/Settings placeholder) tidak selalu mencerminkan jalur kode yang aktif. Bedakan komentar historis, rencana di `docs/work`, dan implementasi yang terhubung saat ini.
+
+### Batas verifikasi handoff ini
+
+Peta ini diaudit terhadap source dan file manifest pada commit snapshot, **bukan** smoke run aplikasi, probe website/provider, pengukuran RAM/IP, ataupun verifikasi installer/GitHub Release live. Saat audit, satu-satunya perubahan worktree adalah file handoff ini; belum di-commit. Masalah yang memerlukan UI visual, jaringan provider atau perilaku proses nyata harus diuji tersendiri saat tugas terkait. Perbedaan kebijakan popup Yuzvid (content-host masuk main tab dan cabang itu tidak memeriksa gesture), kelanjutan sync setelah Stop Proxy, serta omission Yuzvid dari explicit CI build dicatat sebagai fakta implementasi/gap bukti; dokumen ini tidak diam-diam mengubah perilaku tersebut.
+
+## Mandatory workflow untuk agent berikutnya
+
+1. Baca [`AGENTS.md`](../../AGENTS.md) dan skill relevan **sebelum** plan/review/perubahan code. Baseline maintained ada di `yuzskill`: `engineering-quality`, `modular-architecture`, `planning-and-delivery`, `architecture-and-contracts`, `verification-and-review`, `git-and-release`, `shared-ui`, `stack-guidance`, `citadel-project`. Deltas repo: [`.agents/skills/citadel-feature-modularity/SKILL.md`](../../.agents/skills/citadel-feature-modularity/SKILL.md) dan [`.agents/skills/citadel-shared-ui/SKILL.md`](../../.agents/skills/citadel-shared-ui/SKILL.md). Muat sumber maintained, baca penuh skill yang diwajibkan untuk scope, lalu nyatakan skill yang digunakan. Delta Citadel menang atas aturan umum bila bertentangan. Skill lokal historis *source-only*—termasuk `mengquality`, `test-driven-development`, dan `incremental-implementation` lokal—tidak dimuat ulang di samping yuzskill walaupun masih tercantum di tabel lama AGENTS. Untuk UI, baca shared-UI delta **sebelum** code planning/review/edit; untuk fitur/parent, baca feature-modularity delta. Ikuti trigger/matrix AGENTS yang berlaku, bukan hanya mengutip nama skill.
+2. Tentukan owner dulu: Shell/Setting/shared contract/feature citizen. Pertahankan public contract dan lifecycle; jangan meletakkan logic feature ke parent atau membuat citizen saling reference. Sebelum menambah logic ke parent atau membuat cross-feature coupling, ikuti stop-and-ask boundary pada skill modularity; routing event sederhana adalah pengecualian. Bila perlu primitive UI baru, ikuti approval boundary di skill shared UI. Jangan menambah framework generik jika kontrak sekarang cukup.
+3. Periksa worktree dan perubahan user; tugas baca/review tetap read-only. Buat perubahan sekecil scope, uji sesuai risiko (targeted, tidak overtesting), dan verifikasi visual bila klaimnya visual. Build/test hijau tidak membuktikan popup, window, sidebar, atau browser tampil benar.
+4. Bedakan `docs/operations` (cara kerja), `docs/contracts` (perilaku), `docs/work` (rencana aktif), dan `docs/history` (arsip). Banyak dokumen lama masih menggambarkan versi sebelumnya: contoh handoff MangaReader v3.0.17 dan peta arsitektur yang masih menyebut FTF/Start-Stop sebagai rencana. Cek source sebelum menyalin klaim lama.
+5. Jangan commit/push/release kecuali diminta. Untuk `bump-build-run.bat` (versi lokal, build release, run) dan `bump-release.bat` (clean pushed main, version bump/commit/push, CI, release), baca script aktual sebelum menjalankan; keduanya **mengubah state**. [`Build-Release.ps1`](../../tools/Build-Release.ps1) menghasilkan `artifacts/publish/win-x64` dan `Releases/`; CI/release berada di [`.github/workflows`](../../.github/workflows/). Saat melaporkan release, cek branch, CI dan GitHub release live; jangan menyamakan local build dengan published release. Lihat [`release.md`](release.md) untuk packaging, tetapi source script adalah otoritas terakhir.
+
+## Mulai dari mana bila ada tugas baru
+
+Untuk perubahan lifecycle: `App` → Gate → RuntimeCoordinator → Host/Router → kontrak citizen terkait. Untuk fitur module: manifest → `*Module`/parent view → feature owner → data/kontrak → test terarah. Untuk masalah proxy: `ProxyPoolStore` dan file kontribusi → kontrak snapshot/health → adapter consumer → lifecycle koneksi aktual. Untuk UI: `setting/Components` dan kontrak shared UI → view feature, lalu QA visual. Ini urutan investigasi, **bukan** izin mengubah semua lapisan.

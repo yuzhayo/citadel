@@ -353,7 +353,7 @@
                                                     Header="Chapter"
                                                     MinWidth="240"
                                                     Width="*"
-                                                    SortMemberPath="DisplayName">
+                                                    SortMemberPath="ChapterSortKey">
                                 <DataGridTemplateColumn.CellTemplate>
                                     <DataTemplate>
                                         <TextBlock Opacity="{Binding AvailabilityOpacity}"

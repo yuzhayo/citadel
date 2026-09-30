@@ -128,6 +128,9 @@ public sealed class MangaSourceRegistry : IMangaSourceDirectory
         var thunderScans = transport is null
             ? new ThunderScans.ThunderScansSource()
             : new ThunderScans.ThunderScansSource(transport);
+        var weebCentral = transport is null
+            ? new WeebCentral.WeebCentralSource()
+            : new WeebCentral.WeebCentralSource(transport);
         var dynamicManual = transport is null
             ? new global::Module.Mangareader.Features.Downloader.ManualUrl.DynamicManualSource()
             : new global::Module.Mangareader.Features.Downloader.ManualUrl.DynamicManualSource(transport);
@@ -145,6 +148,9 @@ public sealed class MangaSourceRegistry : IMangaSourceDirectory
                 () => new global::Module.Mangareader.Features.Downloader.FilterSearch.DrakeScans.DrakeScansFilterContribution()),
             new MangaSourceRegistration(asuraScans, () => new NoFilterContribution()),
             new MangaSourceRegistration(thunderScans, () => new NoFilterContribution()),
+            new MangaSourceRegistration(
+                weebCentral,
+                () => new global::Module.Mangareader.Features.Downloader.FilterSearch.WeebCentral.WeebCentralFilterContribution()),
         ],
         [dynamicManual]);
     }

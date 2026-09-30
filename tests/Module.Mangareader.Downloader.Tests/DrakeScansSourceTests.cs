@@ -213,7 +213,7 @@ public sealed class DrakeScansSourceTests
         var registry = MangaSourceRegistry.CreateDefault(browser);
 
         Assert.Equal(
-            ["comix", "cucumber-manga", "drake-scans", "asura-scans", "thunder-scans"],
+            ["comix", "cucumber-manga", "drake-scans", "asura-scans", "thunder-scans", "weebcentral"],
             registry.Sources.Select(source => source.Id));
         var drake = registry.Require("drake-scans");
         var state = RunSta(() =>

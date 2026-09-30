@@ -4,6 +4,7 @@ using Module.Mangareader.Features.Downloader.Sources.CucumberManga;
 using Module.Mangareader.Features.Downloader.Sources.DrakeScans;
 using Module.Mangareader.Features.Downloader.Sources.AsuraScans;
 using Module.Mangareader.Features.Downloader.Sources.ThunderScans;
+using Module.Mangareader.Features.Downloader.Sources.WeebCentral;
 
 namespace Module.Mangareader.Features.Downloader.ManualUrl;
 
@@ -21,6 +22,10 @@ public static class ManualUrlProbeRegistry
         if (sources.Find(ThunderScansContract.SourceId)?.Source is ThunderScansSource thunder)
         {
             probes.Add(new ThunderScansManualUrlProbe(thunder));
+        }
+        if (sources.Find(WeebCentralContract.SourceId)?.Source is WeebCentralSource weebcentral)
+        {
+            probes.Add(new WeebCentralManualUrlProbe(weebcentral));
         }
         if (sources.Find(DrakeScansContract.SourceId)?.Source is DrakeScansSource drake)
         {
