@@ -70,16 +70,27 @@ internal sealed class ProxySyncCoordinator(
             {
                 terminal = new ProxySyncState(
                     false,
-                    "No usable proxies; existing pool was preserved.",
+                    result.WasCancelled
+                        ? "Cancelled before any proxy was verified; existing pool was preserved."
+                        : "No usable proxies; existing pool was preserved.",
                     Result: result);
             }
             else
             {
-                _poolStore.Commit(result.Reachable, result.Health);
+                if (result.WasCancelled)
+                {
+                    _poolStore.CommitSyncPartial(result.Reachable, result.Health);
+                }
+                else
+                {
+                    _poolStore.CommitSync(result.Reachable, result.Health);
+                }
                 PoolCommitted?.Invoke(this, EventArgs.Empty);
                 terminal = new ProxySyncState(
                     false,
-                    $"Sync complete: {result.Reachable.Count} reachable from {result.Tested} checked.",
+                    result.WasCancelled
+                        ? $"Cancelled: saved {result.Reachable.Count} verified proxies from {result.Tested} checked."
+                        : $"Sync complete: {result.Reachable.Count} reachable from {result.Tested} checked.",
                     Result: result);
             }
         }

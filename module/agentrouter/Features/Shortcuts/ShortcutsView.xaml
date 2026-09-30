@@ -69,6 +69,59 @@
                                 </DataGridTemplateColumn.CellTemplate>
                             </DataGridTemplateColumn>
 
+                            <DataGridTemplateColumn Header="KEY"
+                                                    CanUserSort="False"
+                                                    Width="180">
+                                <DataGridTemplateColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="Auto" />
+                                            </Grid.ColumnDefinitions>
+                                            <TextBlock Text="—"
+                                                       VerticalAlignment="Center" />
+                                            <setting:SettingButton Grid.Column="1"
+                                                                   Content="⧉"
+                                                                   IsEnabled="False"
+                                                                   ToolTip="Copy key (placeholder)"
+                                                                   ToolTipService.ShowOnDisabled="True"
+                                                                   AutomationProperties.Name="Copy key (placeholder)" />
+                                        </Grid>
+                                    </DataTemplate>
+                                </DataGridTemplateColumn.CellTemplate>
+                            </DataGridTemplateColumn>
+
+                            <DataGridTextColumn Header="Balance"
+                                                CanUserSort="False"
+                                                Width="130" />
+
+                            <DataGridTemplateColumn Header="Check balance"
+                                                    CanUserSort="False"
+                                                    Width="150">
+                                <DataGridTemplateColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <setting:SettingButton Content="Check balance"
+                                                               IsEnabled="False"
+                                                               AutomationProperties.Name="Check balance (placeholder)" />
+                                    </DataTemplate>
+                                </DataGridTemplateColumn.CellTemplate>
+                            </DataGridTemplateColumn>
+
+                            <DataGridTemplateColumn Header="Proxy"
+                                                    CanUserSort="False"
+                                                    Width="220">
+                                <DataGridTemplateColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <ComboBox ItemsSource="{Binding ProxyChoices}"
+                                                  SelectedItem="{Binding SelectedProxy, Mode=TwoWay}"
+                                                  ToolTip="{Binding SelectedProxy}"
+                                                  Style="{DynamicResource SettingComboBoxStyle}"
+                                                  AutomationProperties.Name="Proxy selection" />
+                                    </DataTemplate>
+                                </DataGridTemplateColumn.CellTemplate>
+                            </DataGridTemplateColumn>
+
                             <DataGridTextColumn Header="Status"
                                                 Binding="{Binding Status}"
                                                 SortMemberPath="Status"

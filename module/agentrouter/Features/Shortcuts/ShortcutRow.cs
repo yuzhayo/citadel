@@ -11,12 +11,15 @@ namespace Module.Agentrouter.Features.Shortcuts;
 /// </summary>
 internal sealed class ShortcutRow
 {
-    public ShortcutRow(string profileId, bool exists, DateTimeOffset? addedAtUtc)
+    public ShortcutRow(string profileId, bool exists, DateTimeOffset? addedAtUtc,
+        IReadOnlyList<string> proxyChoices, string selectedProxy)
     {
         ProfileId = profileId;
         Exists = exists;
         AddedAtUtc = addedAtUtc;
         Account = ProfileIdentity.DisplayName(profileId);
+        ProxyChoices = proxyChoices;
+        SelectedProxy = selectedProxy;
     }
 
     public string ProfileId { get; }
@@ -28,6 +31,10 @@ internal sealed class ShortcutRow
 
     /// <summary>Gmail address, or the profile folder name when none is saved.</summary>
     public string Account { get; }
+
+    public IReadOnlyList<string> ProxyChoices { get; }
+
+    public string SelectedProxy { get; set; }
 
     /// <summary>Ready · Missing</summary>
     public string Status => Exists ? "Ready" : "Missing";

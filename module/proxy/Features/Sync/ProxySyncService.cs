@@ -24,7 +24,8 @@ internal sealed record ProxySyncResult(
     int Skipped,
     int Banned,
     int Tested,
-    TimeSpan Elapsed);
+    TimeSpan Elapsed,
+    bool WasCancelled = false);
 
 internal interface IProxySourceFetcher
 {
@@ -143,10 +144,6 @@ internal sealed class ProxySyncService(
         {
             while (!cancellationToken.IsCancellationRequested)
             {
-                lock (resultGate)
-                {
-                }
-
                 var index = Interlocked.Increment(ref next);
                 if (index >= orderedCandidates.Length)
                 {
@@ -189,8 +186,18 @@ internal sealed class ProxySyncService(
             }
         }).ToArray();
 
-        await Task.WhenAll(workers).ConfigureAwait(false);
-        cancellationToken.ThrowIfCancellationRequested();
+        var wasCancelled = false;
+        try
+        {
+            await Task.WhenAll(workers).ConfigureAwait(false);
+            cancellationToken.ThrowIfCancellationRequested();
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            // Task.WhenAll has joined every worker. Keep only probes that
+            // completed successfully before Stop, never unverified candidates.
+            wasCancelled = true;
+        }
         stopwatch.Stop();
         return new ProxySyncResult(
             reachable.OrderBy(item => item.Canonical, StringComparer.Ordinal).ToArray(),
@@ -199,7 +206,8 @@ internal sealed class ProxySyncService(
             skipped,
             bannedCount,
             tested,
-            stopwatch.Elapsed);
+            stopwatch.Elapsed,
+            wasCancelled);
     }
 
     private static string SafeError(Exception error) =>

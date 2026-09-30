@@ -9,23 +9,26 @@ namespace Module.Agentrouter.Features.Shortcuts;
 /// The Launcher tab: lists the CamoProf profiles Agentrouter already points at,
 /// keyed by profile folder but shown by Gmail address. Selecting which ones
 /// are pointed at happens in the Select profiles… floating screen; this view
-/// only renders the result and can drop a pointer.
+/// renders the result, offers the committed proxy pool as choices, and can
+/// drop a pointer. Proxy choice is view state only; it does not route traffic.
 /// </summary>
 public partial class ShortcutsView : UserControl, IDisposable
 {
     private readonly ShortcutCatalog _catalog;
+    private readonly AgentProxyPool _pool;
     private readonly ObservableCollection<ShortcutRow> _rows = [];
     private bool _disposed;
 
-    internal ShortcutsView(ShortcutCatalog catalog)
+    internal ShortcutsView(ShortcutCatalog catalog, AgentProxyPool pool)
     {
         _catalog = catalog ?? throw new ArgumentNullException(nameof(catalog));
+        _pool = pool ?? throw new ArgumentNullException(nameof(pool));
         InitializeComponent();
         ShortcutTable.ItemsSource = _rows;
         Refresh();
     }
 
-    /// <summary>Rebuilds the table from the stored shortcuts only.</summary>
+    /// <summary>Rebuilds shortcuts and choices from the committed combined pool.</summary>
     internal void Refresh()
     {
         if (_disposed)
@@ -38,6 +41,13 @@ public partial class ShortcutsView : UserControl, IDisposable
             var available = _catalog.ScanAvailable()
                 .ToHashSet(StringComparer.OrdinalIgnoreCase);
             var shortcuts = _catalog.Load();
+            var selections = _rows.ToDictionary(row => row.ProfileId,
+                row => row.SelectedProxy, StringComparer.OrdinalIgnoreCase);
+            _pool.Reload();
+            var proxyChoices = new[] { "Random" }
+                .Concat(_pool.Rows.Select(row => row.Endpoint.Canonical))
+                .Distinct(StringComparer.Ordinal)
+                .ToArray();
 
             _rows.Clear();
             foreach (var entry in shortcuts)
@@ -45,7 +55,11 @@ public partial class ShortcutsView : UserControl, IDisposable
                 _rows.Add(new ShortcutRow(
                     entry.ProfileId,
                     available.Contains(entry.ProfileId),
-                    entry.AddedAtUtc));
+                    entry.AddedAtUtc,
+                    proxyChoices,
+                    selections.TryGetValue(entry.ProfileId, out var selected)
+                        && proxyChoices.Contains(selected, StringComparer.Ordinal)
+                            ? selected : "Random"));
             }
 
             var count = _rows.Count;

@@ -76,7 +76,7 @@ public sealed class ProxySyncServiceTests
     }
 
     [Fact]
-    public async Task RunAsync_ObservesCancellation()
+    public async Task RunAsync_ReturnsOnlyValidatedResultsWhenCancelled()
     {
         var source = new ProxySource("one", new Uri("https://source.test/list"), "http");
         using var cancellation = new CancellationTokenSource();
@@ -85,11 +85,15 @@ public sealed class ProxySyncServiceTests
             new CancellingProbe(cancellation),
             [source]);
 
-        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => service.RunAsync(
+        var result = await service.RunAsync(
             new ProxySettings(ParallelTcpChecks: 1),
             new HashSet<string>(),
             null,
-            cancellation.Token));
+            cancellation.Token);
+
+        Assert.True(result.WasCancelled);
+        Assert.Empty(result.Reachable);
+        Assert.Equal(0, result.Tested);
     }
 
     private static ProxyEndpoint Parse(string value)

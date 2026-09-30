@@ -16,7 +16,7 @@ public sealed class PoolHealthCoordinatorTests : IDisposable
         var store = new ProxyPoolStore(_root);
         var fast = Parse("http://fast.test:80");
         var failed = Parse("http://failed.test:81");
-        store.Commit([fast, failed]);
+        store.CommitSync([fast, failed]);
         var settings = new ProxySettingsStore(Path.Combine(_root, "settings.json"));
         settings.Save(new ProxySettings(ParallelTcpChecks: 1));
         using var coordinator = new PoolHealthCoordinator(store, settings, new FakeProbe());

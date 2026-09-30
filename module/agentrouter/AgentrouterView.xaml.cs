@@ -29,7 +29,7 @@ public partial class AgentrouterView : UserControl
 
         // Each feature view loads its own data, so the parent never has to
         // know what "ready" means for either of them.
-        _shortcutsView = new ShortcutsView(shortcuts);
+        _shortcutsView = new ShortcutsView(shortcuts, pool);
         _proxyView = new ProxyView(pool);
 
         ShortcutsHost.Content = _shortcutsView;
@@ -40,7 +40,8 @@ public partial class AgentrouterView : UserControl
 
     private void WorkspaceTabs_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
-        if (_disposed || !ReferenceEquals(e.Source, WorkspaceTabs))
+        if (_disposed || _shortcutsView is null || _proxyView is null
+            || !ReferenceEquals(e.Source, WorkspaceTabs))
         {
             return;
         }
@@ -50,6 +51,10 @@ public partial class AgentrouterView : UserControl
         if (ReferenceEquals(WorkspaceTabs.SelectedItem, ProxyPanel))
         {
             _proxyView.Reload();
+        }
+        else if (ReferenceEquals(WorkspaceTabs.SelectedItem, LauncherPanel))
+        {
+            _shortcutsView.Refresh();
         }
     }
 

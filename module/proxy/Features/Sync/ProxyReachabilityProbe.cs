@@ -73,6 +73,10 @@ internal sealed class ProxyReachabilityProbe : IProxyReachabilityProbe
         {
             return new ProxyProbeResult(false, null, "Timeout");
         }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
         catch (HttpRequestException)
         {
             return new ProxyProbeResult(false, null, "Transport failure");
