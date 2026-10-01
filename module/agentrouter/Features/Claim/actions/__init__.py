@@ -13,7 +13,6 @@ flow with its pluggable strategy):
                  github_signin.py   GitHub sign-in (--probe read-only / --click)
                  grab_api_key.py    API Token menu -> Copy icon -> save api_key
                  grab_pat.py        Personal Settings -> Generate Token -> pat
-                 grab_pat_quit.py   PAT then Quit, both in one browser
     flow.py    the Claim flow: InlineStrategy (one browser, inline steps) and
                SubprocessStrategy (one script + browser per step)
 
@@ -29,5 +28,4 @@ STEP_MODULES = (
     "github_signin",
     "grab_api_key",
     "grab_pat",
-    "grab_pat_quit",
 )

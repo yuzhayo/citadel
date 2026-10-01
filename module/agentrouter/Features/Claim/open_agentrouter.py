@@ -32,13 +32,14 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 # The shared primitives now live in the `_lib` package; re-export them here so
 # existing `from open_agentrouter import ...` callers keep working unchanged.
 from _lib import (  # noqa: F401
-    ACCOUNTS_ROOT, CHIPS_JS, CITADEL, CONSOLE_URL, HOME_URL, LOG_FILE,
-    LOGIN_URL, OUT_DIR, PERSONAL_PATH, PROFILES_ROOT, RUNTIME_PY, SAFE_ID,
-    SHORTCUTS_JSON, TARGET_URL, TOKEN_URL, T_FILL_S, T_GOTO, T_IDLE,
-    T_MENU_MS, T_ROUTE_MS, classify, display_name, free_lock, launch,
-    load_profile_json, log, mask_secret, print_table, profile_json_path,
-    read_chips, read_status, read_table, safe_id, save_profile_json,
-    status_path, visible_first, visible_texts, wait_for, write_status,
+    ACCOUNTS_ROOT, CHIPS_JS, CITADEL, CONSOLE_URL, HOME_URL, LOGGED_OUT,
+    LOG_FILE, LOGIN_URL, OUT_DIR, PERSONAL_PATH, PROFILES_ROOT, RUNTIME_PY,
+    SAFE_ID, SESSION_JS, SESSION_LIVE, SESSION_UNKNOWN, SHORTCUTS_JSON,
+    TARGET_URL, TOKEN_URL, T_FILL_S, T_GOTO, T_IDLE, T_MENU_MS, T_ROUTE_MS,
+    classify, display_name, free_lock, launch, load_profile_json, log,
+    mask_secret, print_table, profile_json_path, read_chips, read_status,
+    read_table, safe_id, save_profile_json, session_state, status_path,
+    visible_first, visible_texts, wait_for, write_status,
 )
 
 

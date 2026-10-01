@@ -3,7 +3,7 @@
 
 Frozen from ``open_agentrouter.py``: the shared log file keeps its original name
 so any tooling that tails it keeps working. ``mask_secret`` is the single copy
-of the masker that grab_pat / grab_pat_quit / check_balance_api each defined.
+of the masker that each Claim script used to define for itself.
 """
 
 from __future__ import annotations

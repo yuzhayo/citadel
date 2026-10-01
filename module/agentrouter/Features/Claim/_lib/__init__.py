@@ -28,18 +28,21 @@ from .status import read_status, write_status
 from .table import display_name, print_table, read_table
 from .creds import load_profile_json, save_profile_json
 from .browser import (
-    CHIPS_JS, classify, free_lock, launch, read_chips, visible_first,
+    CHIPS_JS, LOGGED_OUT, SESSION_JS, SESSION_LIVE, SESSION_UNKNOWN,
+    classify, free_lock, launch, read_chips, session_state, visible_first,
     visible_texts, wait_for,
 )
 from .timeouts import T_FILL_S, T_GOTO, T_IDLE, T_MENU_MS, T_ROUTE_MS
 
 __all__ = [
     "ACCOUNTS_ROOT", "CHIPS_JS", "CITADEL", "CONSOLE_URL", "HOME_URL",
-    "LOG_FILE", "LOGIN_URL", "OUT_DIR", "PERSONAL_PATH", "PROFILES_ROOT",
-    "RUNTIME_PY", "SAFE_ID", "SHORTCUTS_JSON", "TARGET_URL", "TOKEN_URL",
+    "LOGGED_OUT", "LOG_FILE", "LOGIN_URL", "OUT_DIR", "PERSONAL_PATH",
+    "PROFILES_ROOT", "RUNTIME_PY", "SAFE_ID", "SESSION_JS", "SESSION_LIVE",
+    "SESSION_UNKNOWN", "SHORTCUTS_JSON", "TARGET_URL", "TOKEN_URL",
     "T_FILL_S", "T_GOTO", "T_IDLE", "T_MENU_MS", "T_ROUTE_MS",
     "classify", "display_name", "free_lock", "launch", "load_profile_json",
     "log", "mask_secret", "print_table", "profile_json_path", "read_chips",
-    "read_status", "read_table", "safe_id", "save_profile_json", "status_path",
-    "visible_first", "visible_texts", "wait_for", "write_status",
+    "read_status", "read_table", "safe_id", "save_profile_json",
+    "session_state", "status_path", "visible_first", "visible_texts",
+    "wait_for", "write_status",
 ]

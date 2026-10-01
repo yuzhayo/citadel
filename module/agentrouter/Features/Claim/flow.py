@@ -3,9 +3,9 @@ r"""Combined 1x daily flow, ONE browser lifecycle (owner ordered: combine,
 do NOT touch the finished piece files).
 
 Same 7 steps as flow_1x.py, same proven selectors copied from the green
-pieces (read_github_id / grab_api_key / grab_pat / quit_session /
-github_signin --click). The piece files stay byte-identical and remain the
-standalone proofs; this file is the fast path.
+pieces (grab_api_key / grab_pat / quit_session / github_signin --click). Those
+pieces now live in actions/ with a thin CLI shim over each; this file is the
+fast path.
 
   1. goto /login -> chip?
   2. chip PRESENT  -> quit-inline (max 3 tries, 2.5s settle between)
@@ -31,8 +31,8 @@ Two strategies share this file, chosen on the CLI (--inline / --subprocess):
                           fail-fast, diagnosable path; budget 1500s).
 
 The state-changing steps live in actions/ (quit_session, github_signin,
-grab_api_key, grab_pat, grab_pat_quit) and the top-level file of each name is a
-thin CLI shim onto actions.<name>.main. Shared primitives live in _lib/.
+grab_api_key, grab_pat) and the top-level file of each name is a thin CLI shim
+onto actions.<name>.main. Shared primitives live in _lib/.
 
 Timeouts: goto 60s | idle 15s best-effort | chip 15s | menu item 10s |
           route 15s | fill 20s | scroll 5s | popup settle 30s |
@@ -43,7 +43,6 @@ Runtime: Citadel venv python only.
 
 from __future__ import annotations
 
-import json
 import re
 import subprocess
 import sys
@@ -52,9 +51,9 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from _lib import (
-    OUT_DIR, RUNTIME_PY, free_lock, load_profile_json, log, mask_secret,
-    read_status, read_table, safe_id, save_profile_json, visible_first,
-    visible_texts, wait_for, write_status,
+    OUT_DIR, RUNTIME_PY, SESSION_LIVE, free_lock, load_profile_json, log,
+    mask_secret, read_status, read_table, safe_id, save_profile_json,
+    session_state, visible_first, visible_texts, wait_for, write_status,
 )
 
 HOME_URL = "https://agentrouter.org"
@@ -195,19 +194,23 @@ class InlineStrategy:
 
     # -- shared primitives (copied logic, single page) --------------------
 
-    def read_chips(self, timeout_s: float = T_CHIP_S) -> list[str]:
-        return wait_for(self.page, lambda: self.page.evaluate(_CHIPS),
-                        timeout_s) or []
+    def session(self, timeout_s: float = T_CHIP_S,
+                confirm_out: int = 3) -> tuple[str, dict]:
+        """Conditional verifier -- see _lib.browser.session_state.
 
-    def open_menu(self) -> None:
+        "live" on the first poll that sees the chip; "out" only after
+        ``confirm_out`` polls agree, so a chip still rendering on /login
+        cannot be mistaken for a logout.
+        """
+        return session_state(self.page, timeout_s, confirm_out=confirm_out)
+
+    def open_menu(self, chip: str) -> None:
         """Click the visible account-menu trigger; prove open by Quit text."""
-        chips = self.read_chips(5)
-        if not chips:
+        if not chip:
             raise StepFailed("open_menu: chip absent, session dead")
         trig = visible_first(
             self.page,
-            self.page.locator('button[aria-haspopup="true"]',
-                              has_text=chips[0]))
+            self.page.locator('button[aria-haspopup="true"]', has_text=chip))
         if trig is None:
             raise StepFailed("open_menu: no visible account-menu trigger")
         trig.click()
@@ -262,6 +265,23 @@ class InlineStrategy:
 # with ensure_profile=True to keep the original "profile" key backfill.
 
 
+def _popup_landed(popup) -> bool:
+    """True once the OAuth popup has landed back on the app (or is gone).
+
+    Live observation, twice: the popup reaches agentrouter.org and then just
+    sits there -- it never self-closes. Waiting on ``is_closed()`` therefore
+    burns the whole T_POPUP_S budget every single run. The URL arriving back
+    on the app is the real completion signal.
+    """
+    try:
+        if popup.is_closed():
+            return True
+        url = (popup.url or "").lower()
+    except Exception:
+        return True
+    return "agentrouter.org" in url and "/login" not in url
+
+
 def run_inline(row: dict) -> int:
     """InlineStrategy: ONE browser, seven steps, one evidence trail."""
     profile_id = row["profileId"]
@@ -287,51 +307,47 @@ def run_inline(row: dict) -> int:
             flow.page = pages[0] if pages else context.new_page()
             page = flow.page
 
-            # --- steps 1-3: reset loop ----------------------------------
+            # --- steps 1-3: ONE entry navigation + the verifier ---------
             flow.check("check-login")
             page.goto(LOGIN_URL, wait_until="domcontentloaded", timeout=T_GOTO)
             try:
                 page.wait_for_load_state("networkidle", timeout=T_IDLE)
             except Exception:
                 pass
-            chips = flow.read_chips()
+            # A signed-in session can still be mid-render, so the entry check is
+            # the one place that insists on a longer "out" streak.
+            state, info = flow.session(T_CHIP_S, confirm_out=6)
+            chip = info["chip"]
             flow.record("check-login", True,
-                        f"chip={chips[0] if chips else 'absent'} url={page.url}")
+                        f"chip={chip or 'absent'} url={info['url']}")
 
             tries = 0
-            while chips and tries < RESET_TRIES:
+            while state == SESSION_LIVE and tries < RESET_TRIES:
                 tries += 1
                 flow.check(f"reset-quit-{tries}")
-                flow.open_menu()
+                flow.open_menu(chip)
                 flow.quit_inline()
                 flow.record(f"reset-quit-{tries}", True, "logged_out")
                 time.sleep(SETTLE_S)
-                page.goto(LOGIN_URL, wait_until="domcontentloaded",
-                          timeout=T_GOTO)
-                page.wait_for_timeout(1500)
-                chips = flow.read_chips()
+                # No navigation and no blind sleep: the Quit click lands on
+                # /login, and the verifier answers "out" on its FIRST poll.
+                state, info = flow.session()
+                chip = info["chip"]
                 flow.record("recheck-login", True,
-                            f"chip={chips[0] if chips else 'absent'}")
-            if chips:
+                            f"chip={chip or 'absent'}")
+            if state == SESSION_LIVE:
                 flow.record("reset-loop", False,
                             f"chip still present after {RESET_TRIES} quits")
             flow.record("reset-loop", True, "logout confirmed")
 
             # --- step 4: fresh login ------------------------------------
+            # We are ALREADY on /login (the entry navigation, or the Quit
+            # click), so the old HOME tour and the second /login navigation are
+            # gone. Navigate ONLY if we actually drifted somewhere else.
             flow.check("login-probe")
-            page.goto(HOME_URL, wait_until="domcontentloaded", timeout=T_GOTO)
-            try:
-                page.wait_for_load_state("networkidle", timeout=T_IDLE)
-            except Exception:
-                pass
-            if flow.read_chips(5):
-                flow.record("login-probe", False, "chip already present?!")
-            signin_cands = page.evaluate(_SIGNIN_CANDS)
-            page.goto(LOGIN_URL, wait_until="domcontentloaded", timeout=T_GOTO)
-            try:
-                page.wait_for_load_state("networkidle", timeout=T_IDLE)
-            except Exception:
-                pass
+            if "/login" not in (info["url"] or page.url or "").lower():
+                page.goto(LOGIN_URL, wait_until="domcontentloaded",
+                          timeout=T_GOTO)
             page.screenshot(path=flow.shots("login.png"), full_page=False)
             gh_cands = page.evaluate(_GHBTN_CANDS)
             gh_visible = [c for c in gh_cands
@@ -341,24 +357,24 @@ def run_inline(row: dict) -> int:
             target = gh_visible[0]
             log(f"github button: [{target['tag']}] {target['text']!r}")
 
+            # The provider list sits behind a "Sign in" trigger. Live proof
+            # (22:07): clicking Continue with GitHub WITHOUT opening it first
+            # produced no popup at all -- expect_popup timed out after 5s and
+            # the login gate correctly failed. The old code enumerated this
+            # list on HOME and then clicked it here; the CLICK is the part that
+            # matters, so it stays and only the HOME round trip is dropped.
             flow.check("signin-click")
-            clicked_signin = False
-            for cand in [c for c in signin_cands
+            for cand in [c for c in page.evaluate(_SIGNIN_CANDS)
                          if c["visible"]
                          and re.search(r"sign.?in|log.?in", c["text"], re.I)]:
                 try:
                     page.locator(
                         f"{cand['tag'].lower()}:has-text(\"{cand['text']}\")"
                     ).first.click(timeout=T_MENU_MS)
-                    clicked_signin = True
                     log(f"signin clicked: {cand['text']!r}")
                     break
                 except Exception as exc:
                     log(f"signin candidate failed: {type(exc).__name__}")
-            try:
-                page.wait_for_url(f"**/login**", timeout=T_ROUTE_MS)
-            except Exception:
-                pass
 
             flow.check("github-click")
             events: dict = {"github_requests": [], "popup": None,
@@ -388,45 +404,45 @@ def run_inline(row: dict) -> int:
                 events["popup"] = popup_url.split("?")[0]
                 events["has_code"] = "code=" in popup_url
                 log(f"popup: {events['popup']} has_code={events['has_code']}")
-                completed = wait_for(
-                    page,
-                    lambda: popup.is_closed() or bool(page.evaluate(_CHIPS)),
-                    T_POPUP_S)
+                completed = wait_for(page, lambda: _popup_landed(popup),
+                                     T_POPUP_S)
                 if not completed:
-                    log("popup did not finish in 30s; closing it")
-                    try:
-                        popup.close()
-                    except Exception:
-                        pass
+                    log("popup did not reach the app in 30s; closing it")
+                try:
+                    popup.close()
+                except Exception:
+                    pass
                 events["completed"] = bool(completed)
             except Exception as exc:
                 events["click_error"] = f"{type(exc).__name__}: {exc}"
                 log(f"no popup ({events['click_error']})")
 
-            # Opener is stale: login completed in popup context. Reload.
+            # Opener is stale: the login completed in the popup context, so
+            # ONE reload of the console is needed -- and the verifier proves it.
             page.goto(CONSOLE_URL, wait_until="domcontentloaded",
                       timeout=T_GOTO)
             try:
                 page.wait_for_load_state("networkidle", timeout=T_IDLE)
             except Exception:
                 pass
-            page.wait_for_timeout(2000)
             page.screenshot(path=flow.shots("after-click.png"),
                             full_page=False)
-            chips_after = flow.read_chips(5)
-            if not chips_after:
+            state, info = flow.session()
+            chip = info["chip"]
+            if state != SESSION_LIVE:
                 flow.record("login", False,
-                            f"no chip proof (popup={events['popup']} "
+                            f"no chip proof (state={state} "
+                            f"popup={events['popup']} "
                             f"code={events['has_code']})")
             flow.record("login", True,
-                        f"chip_after={chips_after[0]} url={page.url}")
+                        f"chip_after={chip} url={info['url']}")
 
             # --- step 5: api_key ----------------------------------------
             flow.check("api_key")
             if flow.data.get("api_key"):
                 flow.record("api_key", True, "exists -> SKIP")
             else:
-                flow.open_menu()
+                flow.open_menu(chip)
                 api_item = visible_first(
                     page, page.get_by_role("menuitem", name="API Token",
                                            exact=True))
@@ -467,7 +483,7 @@ def run_inline(row: dict) -> int:
             if flow.data.get("pat"):
                 flow.record("pat", True, "exists -> SKIP")
             else:
-                flow.open_menu()
+                flow.open_menu(chip)
                 settings_cands = page.locator(
                     "span.truncate.font-medium.text-sm",
                     has_text="Personal Settings")
@@ -524,20 +540,23 @@ def run_inline(row: dict) -> int:
 
             # --- step 7: final quit ---------------------------------------
             flow.check("final-quit")
+            # Kept on purpose: a known page where the account menu is proven
+            # to exist. The blind 1200ms sleep and both chip polls are gone --
+            # the verifier decides, and answers "out" on its first poll.
             page.goto(CONSOLE_URL, wait_until="domcontentloaded",
                       timeout=T_GOTO)
-            page.wait_for_timeout(1200)
-            if not flow.read_chips(5):
+            state, info = flow.session(5)
+            if state != SESSION_LIVE:
                 flow.record("final-quit", True,
                             "already logged out before final quit")
             else:
-                flow.open_menu()
+                flow.open_menu(info["chip"])
                 flow.quit_inline()
                 flow.record("final-quit", True, f"logged_out url={page.url}")
-            chips_final = flow.read_chips(5)
-            if chips_final:
+            state, info = flow.session(5)
+            if state == SESSION_LIVE:
                 flow.record("final-verify", False,
-                            f"chip still present: {chips_final[0]}")
+                            f"chip still present: {info['chip']}")
 
             flow.status("saved", keys_after=sorted(flow.data.keys()))
             log(f"1x single done: keys={sorted(flow.data.keys())}")

@@ -128,3 +128,73 @@ def visible_texts(page, text: str) -> list:
 def read_chips(page, timeout_s: float) -> list[str]:
     """Wait up to ``timeout_s`` for the ``github_<id>`` chip; [] when absent."""
     return wait_for(page, lambda: page.evaluate(CHIPS_JS), timeout_s) or []
+
+
+# One round trip that answers "is a session live?" AND "is this an explicit
+# logged-out page?" -- so confirming a logout costs one poll, not a timeout.
+SESSION_JS = r"""
+() => {
+  const chip = [...document.querySelectorAll('span')]
+    .map((el) => (el.textContent || '').trim())
+    .find((t) => /^github_\d+$/.test(t)) || null;
+  const path = (location.pathname || '').toLowerCase();
+  const onLogin = ['/login', '/signin', '/sign-in', '/auth']
+    .some((m) => path.includes(m));
+  const signIn = [...document.querySelectorAll('a,button')]
+    .some((el) => /sign.?in|log.?in/i.test((el.textContent || '').trim()));
+  return { chip: chip, onLogin: onLogin, signIn: signIn, href: location.href };
+}
+"""
+
+SESSION_LIVE = "live"        # a github_<id> chip is present -> session alive
+LOGGED_OUT = "out"           # explicit logged-out marker -> session dead
+SESSION_UNKNOWN = "unknown"  # neither, and the timeout ran out
+
+
+def session_state(page, timeout_s: float = 15.0, interval_s: float = 0.5,
+                  confirm_out: int = 3):
+    """Conditional session verifier -> ``(state, info)``.
+
+    ``state`` is ``SESSION_LIVE`` when a ``github_<id>`` chip is present,
+    ``LOGGED_OUT`` when the page says logged out (a login route, or a visible
+    Sign in affordance), else ``SESSION_UNKNOWN`` once ``timeout_s`` runs out.
+
+    "live" is returned on the first poll that sees the chip. "out" must be
+    seen ``confirm_out`` times in a row first -- NOT an accident: the live site
+    serves ``/login`` WITH the chip present on a signed-in session, so a chip
+    that is still rendering would otherwise be mistaken for a logout.
+
+    This is the whole point of the function. ``wait_for`` only stops on a
+    TRUTHY value, so an empty chip list made every "confirm logged out" check
+    burn its entire timeout; here "out" is a first-class answer, costing
+    ``confirm_out`` polls instead. ``info`` always carries ``chip``/``url``
+    for logging and for the account-menu trigger.
+    """
+    deadline = time.time() + timeout_s
+    info: dict = {"chip": None, "onLogin": False, "signIn": False, "url": ""}
+    out_streak = 0
+    while True:
+        try:
+            observed = page.evaluate(SESSION_JS)
+        except Exception:
+            observed = None
+        if isinstance(observed, dict):
+            info = {
+                "chip": observed.get("chip") or None,
+                "onLogin": bool(observed.get("onLogin")),
+                "signIn": bool(observed.get("signIn")),
+                "url": observed.get("href") or str(getattr(page, "url", "") or ""),
+            }
+        else:
+            info = {**info, "url": str(getattr(page, "url", "") or "")}
+        if info["chip"]:
+            return SESSION_LIVE, info
+        if info["onLogin"] or info["signIn"]:
+            out_streak += 1
+            if out_streak >= confirm_out:
+                return LOGGED_OUT, info
+        else:
+            out_streak = 0
+        if time.time() >= deadline:
+            return SESSION_UNKNOWN, info
+        page.wait_for_timeout(int(interval_s * 1000))

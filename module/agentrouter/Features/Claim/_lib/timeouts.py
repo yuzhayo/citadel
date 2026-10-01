@@ -8,9 +8,7 @@ change timing:
                              SETTLE_S=2.5, TOTAL_BUDGET_S=600
   flow.py SubprocessStrategy (flow_1x.py):        SUB_T_CHIP_S=10,
                              STEP_TIMEOUT_S=300, SUB_TOTAL_BUDGET_S=1500
-  actions/grab_pat_quit.py   : T_CHIP_S=30, TOTAL_BUDGET_S=300
   actions/quit_session.py    : polls every 0.5s (this module polls at 1.0s)
-  find_checkin.py            : its own budget (recon, unchanged)
 
 Unify those only with the owner's sign-off.
 
