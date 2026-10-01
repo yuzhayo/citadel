@@ -37,11 +37,23 @@
                                                Content="Select profiles…"
                                                Click="SelectProfilesButton_Click"
                                                AutomationProperties.Name="Select CamoProf profiles to add" />
-                        <setting:SettingButton x:Name="RefreshButton"
-                                               Content="Refresh"
-                                               Click="RefreshButton_Click"
-                                               AutomationProperties.Name="Refresh Agentrouter shortcuts" />
-                    </StackPanel>
+<setting:SettingButton x:Name="RefreshButton"
+                                                Content="Refresh"
+                                                Click="RefreshButton_Click"
+                                                AutomationProperties.Name="Refresh Agentrouter shortcuts" />
+                         <setting:SettingToggle x:Name="ShowBrowserToggle"
+                                               setting:UiPreference.Key="agentrouter.launcher.show-browser"
+                                               Margin="12,0,0,0"
+                                               Content="Show browser while claiming"
+                                               IsChecked="False"
+                                               ToolTip="Off claims with no visible browser; the sign-in step always opens one"
+                                               AutomationProperties.Name="Show browser while claiming" />
+                         <setting:SettingButton x:Name="AutoClaimButton"
+                                                Content="Auto claim all"
+                                                Margin="12,0,0,0"
+                                                Click="AutoClaimButton_Click"
+                                                AutomationProperties.Name="Claim the daily reward for every profile" />
+                     </StackPanel>
                 </setting:SettingActionCard.ActionContent>
             </setting:SettingActionCard>
 
@@ -92,6 +104,11 @@
                                 </DataGridTemplateColumn.CellTemplate>
                             </DataGridTemplateColumn>
 
+                            <DataGridTextColumn Header="User ID"
+                                                Binding="{Binding UserIdDisplay}"
+                                                SortMemberPath="UserIdSort"
+                                                Width="100" />
+
                             <DataGridTextColumn Header="Balance"
                                                 CanUserSort="False"
                                                 Width="130" />
@@ -118,6 +135,19 @@
                                                   ToolTip="{Binding SelectedProxy}"
                                                   Style="{DynamicResource SettingComboBoxStyle}"
                                                   AutomationProperties.Name="Proxy selection" />
+                                    </DataTemplate>
+                                </DataGridTemplateColumn.CellTemplate>
+                            </DataGridTemplateColumn>
+
+                            <DataGridTemplateColumn Header="Claim"
+                                                    CanUserSort="False"
+                                                    Width="110">
+                                <DataGridTemplateColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <setting:SettingButton Content="Claim"
+                                                               Tag="{Binding}"
+                                                               Click="ClaimButton_Click"
+                                                               AutomationProperties.Name="Claim the daily reward" />
                                     </DataTemplate>
                                 </DataGridTemplateColumn.CellTemplate>
                             </DataGridTemplateColumn>

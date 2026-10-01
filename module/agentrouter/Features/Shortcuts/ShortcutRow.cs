@@ -24,6 +24,15 @@ internal sealed class ShortcutRow
 
     public string ProfileId { get; }
 
+    /// <summary>Gateway account id for this profile. Not yet populated.</summary>
+    public long? UserId { get; init; }
+
+    /// <summary>Gateway account id, or the em dash while it is unknown.</summary>
+    public string UserIdDisplay => UserId?.ToString() ?? "—";
+
+    /// <summary>Sort key; unknown ids sort first.</summary>
+    public long UserIdSort => UserId ?? 0;
+
     /// <summary>False when the folder is no longer in CamoProf's vault.</summary>
     public bool Exists { get; }
 

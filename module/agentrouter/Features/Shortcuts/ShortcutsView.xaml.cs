@@ -129,6 +129,28 @@ public partial class ShortcutsView : UserControl, IDisposable
         }
     }
 
+    private void AutoClaimButton_Click(object sender, RoutedEventArgs e)
+    {
+        // Placeholder: the claim pipeline is not wired yet.
+        if (_disposed)
+        {
+            return;
+        }
+
+        SetStatus("Auto claim is not wired up yet.");
+    }
+
+    private void ClaimButton_Click(object sender, RoutedEventArgs e)
+    {
+        // Placeholder: the claim pipeline is not wired yet.
+        if (_disposed || sender is not FrameworkElement { Tag: ShortcutRow row })
+        {
+            return;
+        }
+
+        SetStatus("Claim is not wired up yet.");
+    }
+
     private void SetStatus(string? message)
     {
         StatusText.Text = message ?? string.Empty;
