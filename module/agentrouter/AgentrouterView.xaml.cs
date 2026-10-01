@@ -16,6 +16,7 @@ public partial class AgentrouterView : UserControl
 {
     private readonly ShortcutsView _shortcutsView;
     private readonly ProxyView _proxyView;
+    private readonly AgentrouterClaimClient _claims;
     private bool _disposed;
 
     public AgentrouterView(Lifetime lifetime)
@@ -27,9 +28,13 @@ public partial class AgentrouterView : UserControl
         var shortcuts = new ShortcutCatalog();
         var pool = new AgentProxyPool();
 
+        // The claim flow runs in this citizen's own pyhost process. The parent
+        // creates it and owns its lifetime, exactly like the stores above.
+        _claims = new AgentrouterClaimClient();
+
         // Each feature view loads its own data, so the parent never has to
         // know what "ready" means for either of them.
-        _shortcutsView = new ShortcutsView(shortcuts, pool);
+        _shortcutsView = new ShortcutsView(shortcuts, pool, _claims);
         _proxyView = new ProxyView(pool);
 
         ShortcutsHost.Content = _shortcutsView;
@@ -70,5 +75,6 @@ public partial class AgentrouterView : UserControl
         // This screen created both feature views, so it owns their disposal.
         _shortcutsView.Dispose();
         _proxyView.Dispose();
+        _claims.Dispose();
     }
 }

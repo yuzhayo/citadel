@@ -16,13 +16,16 @@ public partial class ShortcutsView : UserControl, IDisposable
 {
     private readonly ShortcutCatalog _catalog;
     private readonly AgentProxyPool _pool;
+    private readonly AgentrouterClaimClient _claims;
     private readonly ObservableCollection<ShortcutRow> _rows = [];
     private bool _disposed;
 
-    internal ShortcutsView(ShortcutCatalog catalog, AgentProxyPool pool)
+    internal ShortcutsView(ShortcutCatalog catalog, AgentProxyPool pool,
+        AgentrouterClaimClient claims)
     {
         _catalog = catalog ?? throw new ArgumentNullException(nameof(catalog));
         _pool = pool ?? throw new ArgumentNullException(nameof(pool));
+        _claims = claims ?? throw new ArgumentNullException(nameof(claims));
         InitializeComponent();
         ShortcutTable.ItemsSource = _rows;
         Refresh();
@@ -140,15 +143,42 @@ public partial class ShortcutsView : UserControl, IDisposable
         SetStatus("Auto claim is not wired up yet.");
     }
 
-    private void ClaimButton_Click(object sender, RoutedEventArgs e)
+    /// <summary>
+    /// Runs the claim flow for one row. The handler only adapts the UI event —
+    /// the flow itself lives behind the citizen's pyhost command.
+    /// </summary>
+    private async void ClaimButton_Click(object sender, RoutedEventArgs e)
     {
-        // Placeholder: the claim pipeline is not wired yet.
-        if (_disposed || sender is not FrameworkElement { Tag: ShortcutRow row })
+        if (_disposed || sender is not FrameworkElement element
+            || element.Tag is not ShortcutRow row)
         {
             return;
         }
 
-        SetStatus("Claim is not wired up yet.");
+        // Literal: ON shows the browser, OFF hides it. Nothing flips it once
+        // the run has started.
+        var headless = ShowBrowserToggle.IsChecked != true;
+
+        // The panel PAT is single-reveal, so a second click while one claim is
+        // running must not be able to race the first on the same profile.
+        element.IsEnabled = false;
+        SetStatus($"Claiming {row.Account}…");
+        try
+        {
+            var result = await _claims.ClaimAsync(row.ProfileId, headless);
+            SetStatus(result.Describe());
+        }
+        catch (Exception ex)
+        {
+            // The flow may already have mutated the account before it failed;
+            // reporting a plain failure would invite a destructive retry.
+            SetStatus("Claim outcome unknown (" + ex.Message
+                      + "). Verify the account before claiming again.");
+        }
+        finally
+        {
+            element.IsEnabled = true;
+        }
     }
 
     private void SetStatus(string? message)

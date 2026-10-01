@@ -1,57 +1,44 @@
 #!/usr/bin/env python3
-r"""Combined 1x daily flow, ONE browser lifecycle (owner ordered: combine,
-do NOT touch the finished piece files).
+#!/usr/bin/env python3
+r"""Claim the daily reward for ONE Agentrouter profile.
 
-Same 7 steps as flow_1x.py, same proven selectors copied from the green
-pieces (grab_api_key / grab_pat / quit_session / github_signin --click). Those
-pieces now live in actions/ with a thin CLI shim over each; this file is the
-fast path.
+Seven steps, one browser lifecycle, one evidence trail:
 
-  1. goto /login -> chip?
-  2. chip PRESENT  -> quit-inline (max 3 tries, 2.5s settle between)
-  3. chip ABSENT confirmed -> login-inline (Sign in, never Console;
-     Continue with GitHub visible-first; popup completes untouched;
-     opener reloaded; chip_after proof or STOP)
-  4. JSON api_key? exists -> SKIP | empty -> capture-inline
-     (menu API Token -> /console/token -> sk- input -> copy-icon path
-     d="M7 4c0-..." -> clipboard/input -> save)
-  5. JSON pat? exists -> SKIP | empty -> capture-inline
-     (menu Personal Settings emerald span -> Security tab ->
-     Generate Token visible-first -> readonly input fills ->
-     Ctrl+A/C -> save)
-  6. quit-inline final -> verify /login + chip gone
+  1. goto /login, then the conditional verifier: chip?
+  2. chip PRESENT -> quit (max 3 tries), no extra navigation
+  3. chip ABSENT confirmed -> login (open the Sign in trigger, then Continue
+     with GitHub). The OAuth popup may never self-close, so completion is read
+     from the popup URL and the chip is proven after ONE console reload.
+  4. JSON api_key? exists -> SKIP | empty -> capture
+  5. JSON pat?     exists -> SKIP | empty -> capture
+  6. quit final -> verify /login and chip gone
   7. browser closed. End state deterministic: logged out.
 
-Two strategies share this file, chosen on the CLI (--inline / --subprocess):
+Why logout first: capture always happens on the FRESH session, never on a stale
+inherited one, and a silently failed logout must not stack a login on a live
+session.
 
-  * InlineStrategy     -- default for flow_1x_single.py: ONE browser, the
-                          seven steps inline (the fast path).
-  * SubprocessStrategy -- default for flow_1x.py: one script + one browser
-                          per step, spawned from %TEMP%\opencode (the
-                          fail-fast, diagnosable path; budget 1500s).
+`headless` is LITERAL: True hides the browser for the whole run, False shows
+it. Nothing flips it mid-run.
 
-The state-changing steps live in actions/ (quit_session, github_signin,
-grab_api_key, grab_pat) and the top-level file of each name is a thin CLI shim
-onto actions.<name>.main. Shared primitives live in _lib/.
+Status, credentials and screenshots go to Citadel's own data folder -- never to
+%TEMP%; see _lib.OUT_DIR.
 
-Timeouts: goto 60s | idle 15s best-effort | chip 15s | menu item 10s |
-          route 15s | fill 20s | scroll 5s | popup settle 30s |
-          TOTAL budget 600s enforced per boundary.
-Secrets: full values only in profile JSON; stdout/status masked.
-Runtime: Citadel venv python only.
+Secrets: full values only in the profile JSON; stdout and status are masked.
+Runtime: driven by the citizen's pyhost process. A manual run uses the Citadel
+venv python: python flow.py <profileId> [--headless]
 """
 
 from __future__ import annotations
 
 import re
-import subprocess
 import sys
 import time
 from datetime import datetime, timezone
 from pathlib import Path
 
-from _lib import (
-    OUT_DIR, RUNTIME_PY, SESSION_LIVE, free_lock, load_profile_json, log,
+from ._lib import (
+    OUT_DIR, SESSION_LIVE, free_lock, load_profile_json, log,
     mask_secret, read_status, read_table, safe_id, save_profile_json,
     session_state, visible_first, visible_texts, wait_for, write_status,
 )
@@ -282,7 +269,7 @@ def _popup_landed(popup) -> bool:
     return "agentrouter.org" in url and "/login" not in url
 
 
-def run_inline(row: dict) -> int:
+def run_inline(row: dict, headless: bool = False) -> int:
     """InlineStrategy: ONE browser, seven steps, one evidence trail."""
     profile_id = row["profileId"]
     flow = InlineStrategy(profile_id, row["profileDir"])
@@ -297,7 +284,7 @@ def run_inline(row: dict) -> int:
 
         flow.status("launching")
         with Camoufox(
-            headless=False,
+            headless=headless,
             persistent_context=True,
             user_data_dir=row["profileDir"],
             humanize=True,
@@ -572,229 +559,8 @@ def run_inline(row: dict) -> int:
 
 
 # --------------------------------------------------------------------------
-# SubprocessStrategy -- the flow_1x behaviour: every step is its own script
-# and its own browser launch, spawned with the Citadel venv python. The step
-# scripts are resolved from OUT_DIR (%TEMP%\opencode) exactly as before, so
-# deploy must place them (plus _lib/ and open_agentrouter.py) there.
+# CLI: python flow.py <profileId> [--headless]
 # --------------------------------------------------------------------------
-
-STEP_TIMEOUT_S = 300        # per spawned step (flow_1x value)
-SUB_TOTAL_BUDGET_S = 1500   # whole subprocess flow (flow_1x value)
-SUB_T_CHIP_S = 10           # flow_1x waited 10s (inline waits 15s) -- local
-
-# The Claim folder that holds this file (and the step scripts beside it).
-BIN_DIR = Path(__file__).resolve().parent
-
-
-class SubprocessStrategy:
-    """One script + one browser per step; proofs come from the status files."""
-
-    def __init__(self, profile_id: str, profile_dir: str):
-        self.profile_id = profile_id
-        self.profile_dir = profile_dir
-        self.status_path = OUT_DIR / f"flow_1x_{profile_id}.status.json"
-        self.deadline = time.time() + SUB_TOTAL_BUDGET_S
-        self.steps: list[dict] = []
-
-    def check(self, step: str) -> None:
-        if time.time() > self.deadline:
-            raise BudgetExceeded(
-                f"total budget {SUB_TOTAL_BUDGET_S}s exceeded at {step}")
-
-    # Unlike InlineStrategy.record(), a failure here is NOT raised: the caller
-    # decides whether that step ends the chain (flow_1x precedent).
-    def record(self, name: str, ok: bool, detail: str = "") -> None:
-        self.steps.append({"step": name, "ok": ok, "detail": detail,
-                           "at": datetime.now(timezone.utc).isoformat(
-                               timespec="seconds")})
-        log(f"[{name}] {'ok' if ok else 'FAIL'} {detail}")
-
-    def status(self, stage: str, **extra) -> None:
-        write_status(self.status_path,
-                     {"stage": stage, "profile": self.profile_id,
-                      "steps": list(self.steps), **extra})
-
-    def fail(self, error: str) -> int:
-        self.status("error", error=error)
-        log(f"error: {error}")
-        return 1
-
-    def read_chip(self) -> tuple[str | None, str]:
-        """Quick check-launch: visit /login, read chip, close. (chip, url)."""
-        self.check("read_chip")
-        free_lock(self.profile_dir)
-        from camoufox.sync_api import Camoufox
-        with Camoufox(
-            headless=False,
-            persistent_context=True,
-            user_data_dir=self.profile_dir,
-            humanize=True,
-            os="windows",
-        ) as context:
-            pages = list(context.pages)
-            page = pages[0] if pages else context.new_page()
-            page.goto(LOGIN_URL, wait_until="domcontentloaded", timeout=T_GOTO)
-            try:
-                page.wait_for_load_state("networkidle", timeout=T_IDLE)
-            except Exception:
-                pass
-            chips = wait_for(page, lambda: page.evaluate(_CHIPS),
-                             SUB_T_CHIP_S)
-            return (chips[0] if chips else None, page.url)
-
-    def step_script(self, script: str) -> Path:
-        """Resolve one step script.
-
-        The deploy copies the step shims (plus _lib/ and actions/) into
-        OUT_DIR, and that copy always wins -- the historical working path.
-        When it is absent (running the flow straight from the repo) fall back
-        to the Claim folder holding this file, where the same scripts live.
-        """
-        deployed = OUT_DIR / script
-        if deployed.is_file():
-            return deployed
-        return BIN_DIR / script
-
-    def run_step(self, name: str, script: str,
-                 args: list[str] | None = None) -> None:
-        """Spawn one step script and wait. Raises StepFailed/BudgetExceeded."""
-        self.check(name)
-        script_path = self.step_script(script)
-        out_path = OUT_DIR / f"flow_1x_{self.profile_id}_{name}.out"
-        cmd = [str(RUNTIME_PY), str(script_path),
-               *(args or [self.profile_id])]
-        log(f"--- spawn {name}: "
-            f"{' '.join([script, *(args or [self.profile_id])])} ---")
-        try:
-            proc = subprocess.run(
-                cmd, capture_output=True, text=True, timeout=STEP_TIMEOUT_S,
-                cwd=str(OUT_DIR), check=False,
-            )
-        except subprocess.TimeoutExpired:
-            raise BudgetExceeded(f"step {name} exceeded {STEP_TIMEOUT_S}s")
-        out_path.write_text(
-            (proc.stdout or "") + "\n--- stderr ---\n" + (proc.stderr or ""),
-            encoding="utf-8")
-        if proc.returncode != 0:
-            tail = (proc.stdout or "").strip().splitlines()[-3:]
-            raise StepFailed(f"step {name} exit={proc.returncode}: "
-                             + " | ".join(tail))
-
-
-def run_subprocess(row: dict) -> int:
-    """flow_1x: reset -> fresh login -> api_key -> pat -> final quit."""
-    profile_id = row["profileId"]
-    flow = SubprocessStrategy(profile_id, row["profileDir"])
-    flow.status("starting")
-
-    try:
-        # --- steps 1-3: reset loop -------------------------------------
-        chip, url = flow.read_chip()
-        flow.record("check-login", True, f"chip={chip or 'absent'} url={url}")
-        tries = 0
-        while chip and tries < RESET_TRIES:
-            tries += 1
-            flow.run_step(f"reset-quit-{tries}", "quit_session.py")
-            st = read_status("quit", profile_id)
-            ok_quit = st.get("stage") in ("saved", "closed") and (
-                st.get("logged_out") is True
-                or "already logged out" in str(st.get("note", "")))
-            if not ok_quit:
-                flow.record(f"reset-quit-{tries}", False,
-                            f"no logout proof: {st.get('error')}")
-                return flow.fail(
-                    f"reset quit try {tries} has no logout proof")
-            flow.record(f"reset-quit-{tries}", True,
-                        f"logged_out={st.get('logged_out')}")
-            time.sleep(SETTLE_S)
-            chip, url = flow.read_chip()
-            flow.record("recheck-login", True,
-                        f"chip={chip or 'absent'} url={url}")
-        if chip:
-            flow.record("reset-loop", False,
-                        f"chip still present after {RESET_TRIES} quits")
-            return flow.fail("session survived 3 quits; refusing login on "
-                             "a live session")
-        flow.record("reset-loop", True, "logout confirmed")
-
-        # --- step 4: fresh login ---------------------------------------
-        # args REPLACE the default [profile_id]: flags must come with it.
-        flow.run_step("login", "github_signin.py", ["--click", profile_id])
-        st = read_status("github_signin", profile_id)
-        if st.get("stage") not in ("clicked", "closed") or not st.get("chip_after"):
-            flow.record("login", False,
-                        f"no login proof: chip_after={st.get('chip_after')} "
-                        f"err={st.get('error')}")
-            return flow.fail("login has no chip proof; capture would run "
-                             "on a dead session")
-        flow.record("login", True,
-                    f"chip_after={st.get('chip_after')} "
-                    f"url={st.get('url_after')}")
-
-        # --- step 5: api_key -------------------------------------------
-        data = load_profile_json(profile_id)
-        if data.get("api_key"):
-            flow.record("api_key", True, "exists -> SKIP")
-        else:
-            flow.run_step("capture-api", "grab_api_key.py")
-            data = load_profile_json(profile_id)
-            if not data.get("api_key"):
-                flow.record("capture-api", False, "api_key still empty")
-                return flow.fail("api_key capture produced nothing")
-            flow.record("capture-api", True, "saved")
-
-        # --- step 6: pat ------------------------------------------------
-        data = load_profile_json(profile_id)
-        if data.get("pat"):
-            flow.record("pat", True, "exists -> SKIP")
-        else:
-            flow.run_step("capture-pat", "grab_pat.py")
-            data = load_profile_json(profile_id)
-            if not data.get("pat"):
-                flow.record("capture-pat", False, "pat still empty")
-                return flow.fail("pat capture produced nothing")
-            flow.record("capture-pat", True, "saved")
-
-        # --- step 7: final quit -----------------------------------------
-        flow.run_step("final-quit", "quit_session.py")
-        st = read_status("quit", profile_id)
-        chip, url = flow.read_chip()
-        if chip:
-            flow.record("final-quit", False,
-                        f"chip still present: {chip} url={url}")
-            return flow.fail("final quit did not end the session")
-        flow.record("final-quit", True, f"logged_out url={url}")
-        data = load_profile_json(profile_id)
-
-        flow.status("saved", keys_after=sorted(data.keys()))
-        log(f"1x flow done: keys={sorted(data.keys())}")
-        return 0
-
-    except (BudgetExceeded, StepFailed) as exc:
-        return flow.fail(f"{type(exc).__name__}: {exc}")
-    except Exception as exc:
-        return flow.fail(f"{type(exc).__name__}: {exc}")
-
-
-# --------------------------------------------------------------------------
-# CLI: ONE entry point, pluggable strategy.
-#   flow_1x_single.py -> default "inline"     (one browser, inline steps)
-#   flow_1x.py        -> default "subprocess" (script + browser per step)
-# --inline / --subprocess override either way.
-# --------------------------------------------------------------------------
-
-def _resolve_strategy(argv: list[str], default: str) -> tuple[str, list[str]]:
-    strategy = default
-    rest: list[str] = []
-    for arg in argv:
-        if arg == "--inline":
-            strategy = "inline"
-        elif arg == "--subprocess":
-            strategy = "subprocess"
-        else:
-            rest.append(arg)
-    return strategy, rest
-
 
 def resolve_row(rest: list[str]) -> dict:
     """argv (flags stripped) -> the Agentrouter table row. Frozen messages."""
@@ -812,14 +578,33 @@ def resolve_row(rest: list[str]) -> dict:
     return row
 
 
-def main(argv: list[str], default_strategy: str = "inline") -> int:
-    strategy, rest = _resolve_strategy(argv, default_strategy)
+def split_flags(argv: list[str]) -> tuple[bool, list[str]]:
+    """Pull --headless out; every other token stays an argument.
+
+    Only the known flag is consumed, so a bad token still reaches safe_id and
+    keeps its original refusal message.
+    """
+    headless = False
+    rest: list[str] = []
+    for arg in argv:
+        if arg == "--headless":
+            headless = True
+        else:
+            rest.append(arg)
+    return headless, rest
+
+
+def main(argv: list[str], headless: bool = False) -> int:
+    """Run the claim flow for one profile.
+
+    ``headless`` is literal: True hides the browser, False shows it. The pyhost
+    command passes the UI toggle's value; the CLI defaults to visible.
+    """
+    flag_headless, rest = split_flags(argv)
     row = resolve_row(rest)
 
     OUT_DIR.mkdir(parents=True, exist_ok=True)
-    if strategy == "subprocess":
-        return run_subprocess(row)
-    return run_inline(row)
+    return run_inline(row, headless=headless or flag_headless)
 
 
 if __name__ == "__main__":

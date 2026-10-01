@@ -20,4 +20,14 @@
     <Compile Include="..\sharedLogic\cs\**\*.cs" />
   </ItemGroup>
 
+  <!--
+    The claim flow ships as this citizen's pyhost plugin. The package folder
+    name IS the importable name and plugin.py doubles as its __init__, which is
+    exactly the convention Citizen.targets' DeployPyhostPlugins documents, so
+    no extra build logic is needed here.
+  -->
+  <PropertyGroup>
+    <PyhostPluginName>agentrouter_claim</PyhostPluginName>
+  </PropertyGroup>
+
 </Project>
