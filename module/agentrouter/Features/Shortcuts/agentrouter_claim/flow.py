@@ -38,7 +38,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from ._lib import (
-    OUT_DIR, SESSION_LIVE, free_lock, load_profile_json, log,
+    OUT_DIR, SESSION_LIVE, dismiss_notice, free_lock, load_profile_json, log,
     mask_secret, read_status, read_table, safe_id, save_profile_json,
     session_state, visible_first, visible_texts, wait_for, write_status,
 )
@@ -191,10 +191,23 @@ class InlineStrategy:
         """
         return session_state(self.page, timeout_s, confirm_out=confirm_out)
 
+    def clear_notice(self) -> None:
+        """Clear the daily System Notice if it is up.
+
+        It is a modal (``aria-modal="true"``), so while it is visible every
+        click aimed at the page behind it is eaten. Called before the first
+        interaction on a page, because a fresh load can bring it back.
+        """
+        result = dismiss_notice(self.page)
+        if result != "none":
+            log(f"system notice: {result}")
+
     def open_menu(self, chip: str) -> None:
         """Click the visible account-menu trigger; prove open by Quit text."""
         if not chip:
             raise StepFailed("open_menu: chip absent, session dead")
+        # The menu cannot be clicked through an open modal overlay.
+        self.clear_notice()
         trig = visible_first(
             self.page,
             self.page.locator('button[aria-haspopup="true"]', has_text=chip))
@@ -335,6 +348,7 @@ def run_inline(row: dict, headless: bool = False) -> int:
             if "/login" not in (info["url"] or page.url or "").lower():
                 page.goto(LOGIN_URL, wait_until="domcontentloaded",
                           timeout=T_GOTO)
+            flow.clear_notice()
             page.screenshot(path=flow.shots("login.png"), full_page=False)
             gh_cands = page.evaluate(_GHBTN_CANDS)
             gh_visible = [c for c in gh_cands

@@ -365,6 +365,65 @@ LOGGED_OUT = "out"           # explicit logged-out marker -> session dead
 SESSION_UNKNOWN = "unknown"  # neither, and the timeout ran out
 
 
+# The daily "System Notice" is a Semi modal (role=dialog, aria-modal=true).
+# While it is up it EATS clicks aimed at the page behind it, so it can break
+# any step that has to click. One evaluate finds the smallest visible element
+# whose exact text is "Close Today" (the inner span, which bubbles to its
+# button) and clicks it -- the same race-free shape as the Quit click.
+#
+# Only "Close Today" is pressed. The header X dismisses for the session only,
+# so the notice would simply come back.
+NOTICE_JS = r"""
+() => {
+  const visible = (el) => {
+    const r = el.getBoundingClientRect();
+    return r.width > 0 && r.height > 0;
+  };
+  const dialogs = [...document.querySelectorAll(
+      'div[role="dialog"][aria-modal="true"], div.semi-modal-content'
+    )].filter((el) => visible(el) && (el.textContent || '').includes('Close Today'));
+  if (dialogs.length === 0) return { present: false, dismissed: false };
+  let best = null;
+  let bestArea = Infinity;
+  for (const el of dialogs[0].querySelectorAll('button, span, div')) {
+    if ((el.textContent || '').trim() !== 'Close Today') continue;
+    if (!visible(el)) continue;
+    const r = el.getBoundingClientRect();
+    const area = r.width * r.height;
+    if (area < bestArea) { best = el; bestArea = area; }
+  }
+  if (!best) return { present: true, dismissed: false };
+  best.click();
+  return { present: true, dismissed: true };
+}
+"""
+
+
+def dismiss_notice(page, timeout_s: float = 3.0) -> str:
+    """Click the daily System Notice's "Close Today" when it is up.
+
+    Returns ``"none"`` (nothing was there -- one evaluate, no waiting),
+    ``"dismissed"``, or ``"stuck"`` when the modal is up but its button never
+    appeared within ``timeout_s``.
+
+    Called before the first interaction on a page, because a fresh page load
+    can bring the notice back.
+    """
+    deadline = time.time() + timeout_s
+    while True:
+        try:
+            seen = page.evaluate(NOTICE_JS)
+        except Exception:
+            seen = None
+        if not isinstance(seen, dict) or not seen.get("present"):
+            return "none"
+        if seen.get("dismissed"):
+            return "dismissed"
+        if time.time() >= deadline:
+            return "stuck"
+        page.wait_for_timeout(250)
+
+
 def session_state(page, timeout_s: float = 15.0, interval_s: float = 0.5,
                   confirm_out: int = 3):
     """Conditional session verifier -> ``(state, info)``.
