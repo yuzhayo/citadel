@@ -1,9 +1,10 @@
 using System.Globalization;
+using System.Net;
 using System.Net.Http;
 using System.Net.Http.Headers;
-using System.Net.Http.Json;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using CitadelBridge;
 
 namespace Module.Agentrouter.Features.Claim;
 
@@ -57,29 +58,25 @@ internal sealed record BalanceProbeResult(
 internal sealed class AgentRouterBalanceProbe
 {
     private const string SelfEndpoint = "/api/user/self";
-
-    // The site sits behind a WAF that answers a bare client; the request shape
-    // that was proven against the live gateway carries a browser UA.
-    private const string UserAgent =
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
-        + " (KHTML, like Gecko) Chrome/154.0.0.0 Safari/537.36";
+    private static readonly TimeSpan RequestTimeout = TimeSpan.FromSeconds(3);
 
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
     };
 
-    private readonly HttpClient _http;
     private readonly string _baseAddress;
 
-    public AgentRouterBalanceProbe(HttpClient http, string baseAddress)
+    public AgentRouterBalanceProbe(string baseAddress)
     {
-        _http = http ?? throw new ArgumentNullException(nameof(http));
         _baseAddress = baseAddress.TrimEnd('/');
     }
 
     public async Task<BalanceProbeResult> ProbeAsync(
-        string pat, long userId, CancellationToken cancellationToken = default)
+        string pat,
+        long userId,
+        ProxyEndpoint? proxy,
+        CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(pat) || userId <= 0)
         {
@@ -87,16 +84,31 @@ internal sealed class AgentRouterBalanceProbe
                 BalanceProbeState.Rejected, "no pat or user id captured");
         }
 
+        if (proxy is not null && proxy.Scheme is not ("http" or "https"))
+        {
+            return BalanceProbeResult.Fail(
+                BalanceProbeState.Unreachable, "proxy is not a supported HTTP endpoint");
+        }
+
+        using var handler = new HttpClientHandler();
+        if (proxy is not null)
+        {
+            handler.Proxy = new WebProxy(proxy.Canonical);
+            handler.UseProxy = true;
+        }
+        using var http = new HttpClient(handler) { Timeout = RequestTimeout };
         using var request = new HttpRequestMessage(HttpMethod.Get, _baseAddress + SelfEndpoint);
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", pat);
         request.Headers.Add("New-API-User", userId.ToString(
             CultureInfo.InvariantCulture));
-        request.Headers.TryAddWithoutValidation("User-Agent", UserAgent);
+        request.Headers.UserAgent.ParseAdd(
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+            + "Chrome/154.0.0.0 Safari/537.36");
 
         HttpResponseMessage response;
         try
         {
-            response = await _http
+            response = await http
                 .SendAsync(request, HttpCompletionOption.ResponseContentRead, cancellationToken)
                 .ConfigureAwait(false);
         }
@@ -128,9 +140,21 @@ internal sealed class AgentRouterBalanceProbe
 
             try
             {
-                var payload = await response.Content
-                    .ReadFromJsonAsync<Envelope>(JsonOptions, cancellationToken)
+                var contentType = response.Content.Headers.ContentType?.MediaType;
+                var body = await response.Content.ReadAsStringAsync(cancellationToken)
                     .ConfigureAwait(false);
+                if (contentType is not ("application/json" or "text/json")
+                    || body.TrimStart().StartsWith("<!doctype html",
+                        StringComparison.OrdinalIgnoreCase)
+                    || body.TrimStart().StartsWith("<html",
+                        StringComparison.OrdinalIgnoreCase))
+                {
+                    return BalanceProbeResult.Fail(
+                        BalanceProbeState.Unreachable,
+                        "balance endpoint returned WAF/browser HTML instead of JSON");
+                }
+
+                var payload = JsonSerializer.Deserialize<Envelope>(body, JsonOptions);
 
                 if (payload is null || !payload.Success || payload.Data is null)
                 {

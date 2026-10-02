@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Net.Http;
+using CitadelBridge;
 
 namespace Module.Agentrouter.Features.Claim;
 
@@ -45,21 +46,16 @@ public sealed record BalanceCheckOutcome(
 internal sealed class AgentRouterBalanceService : IDisposable
 {
     private const string BaseAddress = "https://agentrouter.org";
-
-    // Short on purpose: this is a single small GET, and the caller is a button
-    // click that must come back with an answer.
-    private static readonly TimeSpan RequestTimeout = TimeSpan.FromSeconds(25);
+    private const int MaxProxyAttempts = 10;
 
     private readonly AgentRouterRunProfileStore _profiles;
-    private readonly HttpClient _http;
     private readonly AgentRouterBalanceProbe _probe;
     private int _disposed;
 
     public AgentRouterBalanceService(string? runsRoot = null)
     {
         _profiles = new AgentRouterRunProfileStore(runsRoot);
-        _http = new HttpClient { Timeout = RequestTimeout };
-        _probe = new AgentRouterBalanceProbe(_http, BaseAddress);
+        _probe = new AgentRouterBalanceProbe(BaseAddress);
     }
 
     /// <summary>Reads the stored state for one row. Touches no network.</summary>
@@ -101,9 +97,33 @@ internal sealed class AgentRouterBalanceService : IDisposable
                 0);
         }
 
-        var probe = await _probe
-            .ProbeAsync(profile.Pat, userId, cancellationToken)
-            .ConfigureAwait(false);
+        var endpoints = ProxyPoolContract.ReadSnapshot().Endpoints
+            .Where(endpoint => endpoint.Scheme is "http" or "https")
+            .OrderBy(_ => Random.Shared.Next())
+            .Take(MaxProxyAttempts)
+            .ToArray();
+
+        BalanceProbeResult? probe = null;
+        foreach (var endpoint in endpoints)
+        {
+            probe = await _probe
+                .ProbeAsync(profile.Pat, userId, endpoint, cancellationToken)
+                .ConfigureAwait(false);
+            if (probe.State is BalanceProbeState.Ok or BalanceProbeState.Rejected)
+            {
+                break;
+            }
+        }
+
+        if (probe?.State is not (BalanceProbeState.Ok or BalanceProbeState.Rejected))
+        {
+            probe = await _probe
+                .ProbeAsync(profile.Pat, userId, proxy: null, cancellationToken)
+                .ConfigureAwait(false);
+        }
+
+        probe ??= BalanceProbeResult.Fail(
+            BalanceProbeState.Unreachable, "no proxy attempt was made");
 
         if (probe.State != BalanceProbeState.Ok)
         {
@@ -145,6 +165,5 @@ internal sealed class AgentRouterBalanceService : IDisposable
             return;
         }
 
-        _http.Dispose();
     }
 }

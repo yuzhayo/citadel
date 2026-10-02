@@ -207,6 +207,10 @@ def load_profile_json(profile_id: str, *, ensure_profile: bool = False) -> dict:
 
 
 def save_profile_json(profile_id: str, data: dict) -> None:
+    # Keep the run schema stable from the first credential write. ``null`` is
+    # an explicit not-yet-fetched balance, not a fabricated numeric value;
+    # the C# reader treats incomplete balance blocks as unavailable.
+    data.setdefault("balance", None)
     data["updated_at"] = datetime.now(timezone.utc).isoformat(
         timespec="seconds")
     profile_json_path(profile_id).write_text(

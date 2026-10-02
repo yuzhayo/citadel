@@ -1,4 +1,8 @@
 using System.Collections.ObjectModel;
+using System.IO;
+using System.Text;
+using System.Text.Json;
+using System.Text.Json.Nodes;
 using System.Windows;
 using System.Windows.Controls;
 using Module.Agentrouter.Features.Claim;
@@ -280,6 +284,75 @@ public partial class ShortcutsView : UserControl, IDisposable
             // The clipboard is a shared OS resource: another process holding it
             // open must not take the window down.
             SetStatus("Copy failed: " + ex.Message);
+        }
+    }
+
+    /// <summary>
+    /// Writes the selected row's API key into Claude Code's user settings.
+    /// Only the three Agent Router environment values are changed; all other
+    /// settings and MCP configuration remain untouched.
+    /// </summary>
+    private void InjectButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (_disposed || sender is not FrameworkElement { Tag: ShortcutRow row })
+        {
+            return;
+        }
+
+        if (!row.HasApiKey)
+        {
+            SetStatus($"{row.Account}: no API key captured yet — Claim it first.");
+            return;
+        }
+
+        string? temporaryPath = null;
+        try
+        {
+            var settingsPath = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+                ".claude",
+                "settings.json");
+            var directory = Path.GetDirectoryName(settingsPath)
+                ?? throw new InvalidOperationException("Claude settings folder is unavailable");
+            Directory.CreateDirectory(directory);
+
+            var root = File.Exists(settingsPath)
+                ? JsonNode.Parse(File.ReadAllText(settingsPath)) as JsonObject
+                    ?? throw new InvalidDataException("Claude settings root is not a JSON object")
+                : new JsonObject();
+            var environment = root["env"] as JsonObject ?? new JsonObject();
+            root["env"] = environment;
+            environment["ANTHROPIC_BASE_URL"] = "https://agentrouter.org/";
+            environment["ANTHROPIC_AUTH_TOKEN"] = row.ApiKey;
+            environment["ANTHROPIC_MODEL"] = "deepseek-v4-flash";
+
+            temporaryPath = settingsPath + ".tmp";
+            var json = root.ToJsonString(new JsonSerializerOptions { WriteIndented = true });
+            File.WriteAllText(temporaryPath, json, new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
+            File.Move(temporaryPath, settingsPath, overwrite: true);
+            temporaryPath = null;
+            SetStatus($"{row.Account}: Claude settings injected.");
+        }
+        catch (Exception ex)
+        {
+            SetStatus("Inject failed: " + ex.Message);
+        }
+        finally
+        {
+            if (temporaryPath is not null)
+            {
+                try
+                {
+                    if (File.Exists(temporaryPath))
+                    {
+                        File.Delete(temporaryPath);
+                    }
+                }
+                catch
+                {
+                    // The original settings file remains untouched if cleanup fails.
+                }
+            }
         }
     }
 

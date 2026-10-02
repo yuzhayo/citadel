@@ -174,15 +174,21 @@
                                 </DataGridTemplateColumn.CellTemplate>
                             </DataGridTemplateColumn>
 
-                            <DataGridTextColumn Header="Status"
-                                                Binding="{Binding Status}"
-                                                SortMemberPath="Status"
-                                                Width="110" />
-
-                            <DataGridTextColumn Header="Added"
-                                                Binding="{Binding Added}"
-                                                SortMemberPath="AddedSort"
-                                                Width="150" />
+                            <DataGridTemplateColumn Header="Inject"
+                                                    CanUserSort="False"
+                                                    Width="110">
+                                <DataGridTemplateColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <setting:SettingButton Content="Inject"
+                                                               Tag="{Binding}"
+                                                               IsEnabled="{Binding HasApiKey}"
+                                                               Click="InjectButton_Click"
+                                                               ToolTip="Write this row's API key to Claude settings"
+                                                               ToolTipService.ShowOnDisabled="True"
+                                                               AutomationProperties.Name="Inject this profile into Claude settings" />
+                                    </DataTemplate>
+                                </DataGridTemplateColumn.CellTemplate>
+                            </DataGridTemplateColumn>
 
                             <DataGridTemplateColumn Header="Action"
                                                     CanUserSort="False"

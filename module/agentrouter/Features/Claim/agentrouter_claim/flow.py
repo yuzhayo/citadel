@@ -65,6 +65,14 @@ SETTLE_S = 2.5
 COPY_PATH_D = ("M7 4c0-1.1.9-2 2-2h11a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2h-1"
                "V8c0-2-1-3-3-3H7V4Z")
 
+API_TOKEN_SIDEBAR_SELECTOR = "#root > section > section > aside > div > div > div.semi-navigation.sidebar-nav.semi-navigation-vertical > div > div > div > ul > div:nth-child(2) > a:nth-child(3) > li > span > div > span"
+API_COPY_SELECTOR = "#root > section > section > section > main > div > div > div.semi-card-body > div > div > div > div > div.semi-table-container > div > table > tbody > tr > td:nth-child(5) > div > div > div > div > button:nth-child(2) > span > span > svg > path:nth-child(2)"
+PERSONAL_SETTINGS_SIDEBAR_SELECTOR = "#root > section > section > aside > div > div > div.semi-navigation.sidebar-nav.semi-navigation-vertical > div > div > div > ul > div:nth-child(4) > a:nth-child(3) > li > span > div > span"
+ACCOUNT_ID_SELECTOR = "#root > section > section > section > main > div > div > div > div > div > div.semi-card.\\!rounded-2xl.\\!border-0.\\!shadow-lg.overflow-hidden.semi-card-bordered > div > div.relative.p-4.sm\\:p-6.md\\:p-8.text-gray-600.dark\\:text-gray-300 > div.flex.justify-between.items-start.mb-4.sm\\:mb-6 > div.flex.items-center.flex-1.min-w-0 > div > div.mt-1.flex.flex-wrap.gap-1.sm\\:gap-2 > div.semi-tag.semi-tag-small.semi-tag-square.semi-tag-light.semi-tag-grey-light.\\!rounded-full.bg-slate-100.dark\\:bg-slate-700.text-slate-600.dark\\:text-slate-300 > div"
+SECURITY_SETTINGS_SELECTOR = "#semiTabsecurity > div"
+GENERATE_TOKEN_SELECTOR = "#semiTabPanelsecurity > div > div > div > div > div:nth-child(1) > div > div > button > span > span.semi-button-content-right"
+PAT_INPUT_SELECTOR = "#semiTabPanelsecurity > div > div > div > div > div:nth-child(1) > div > div > div > div.flex-1 > div > div > input"
+
 _CHIPS = """
 () => {
   const out = [];
@@ -125,6 +133,14 @@ _PAT_VALUES = """
     if ((el.value || '').length > 0) out.push(el.value);
   });
   return out;
+}
+"""
+
+_ACCOUNT_ID_TEXT = r"""
+() => {
+  const tag = [...document.querySelectorAll('div')].find((el) =>
+    /^ID:\s*\d+$/.test((el.textContent || '').trim()));
+  return tag ? tag.textContent.trim() : null;
 }
 """
 
@@ -439,28 +455,13 @@ def run_inline(row: dict, headless: bool = False, proxy: str | None = None) -> i
                             f"code={events['has_code']})")
             flow.record("login", True,
                         f"chip_after={chip} url={info['url']}")
-            # The chip proves the FRESH session identity (github_<id>). Persist
-            # its numeric id next to api_key/pat so consumers stop scraping the
-            # chip off the page. Not a secret: logged as-is, like the verifier.
-            chip_id = (chip or "").partition("_")[2]
-            if chip_id.isdigit():
-                flow.data["user_id"] = int(chip_id)
-                save_profile_json(profile_id, flow.data)
-                log(f"user_id saved: {chip_id}")
-
             # --- step 5: api_key ----------------------------------------
             flow.check("api_key")
             if flow.data.get("api_key"):
                 flow.record("api_key", True, "exists -> SKIP")
             else:
-                flow.open_menu(chip)
-                api_item = visible_first(
-                    page, page.get_by_role("menuitem", name="API Token",
-                                           exact=True))
-                if api_item is None:
-                    api_item = visible_first(
-                        page, page.locator(':text-is("API Token")'))
-                if api_item is None:
+                api_item = page.locator(API_TOKEN_SIDEBAR_SELECTOR)
+                if api_item.count() == 0:
                     flow.record("capture-api", False,
                                 "no visible API Token item")
                 api_item.click()
@@ -473,7 +474,7 @@ def run_inline(row: dict, headless: bool = False, proxy: str | None = None) -> i
                 if not key:
                     flow.record("capture-api", False, "no sk- input")
                 log(f"key present: {mask_secret(key)}")
-                copy_loc = page.locator(f'svg path[d="{COPY_PATH_D}"]')
+                copy_loc = page.locator(API_COPY_SELECTOR)
                 if copy_loc.count() == 0:
                     flow.record("capture-api", False, "copy icon not found")
                 copy_loc.first.scroll_into_view_if_needed(timeout=5_000)
@@ -494,30 +495,37 @@ def run_inline(row: dict, headless: bool = False, proxy: str | None = None) -> i
             if flow.data.get("pat"):
                 flow.record("pat", True, "exists -> SKIP")
             else:
-                flow.open_menu(chip)
-                settings_cands = page.locator(
-                    "span.truncate.font-medium.text-sm",
-                    has_text="Personal Settings")
-                settings_item = visible_first(page, settings_cands)
-                if settings_item is None:
+                settings_item = page.locator(PERSONAL_SETTINGS_SIDEBAR_SELECTOR)
+                if settings_item.count() == 0:
                     flow.record("capture-pat", False,
                                 "no visible Personal Settings span")
                 settings_item.click()
                 page.wait_for_url(f"**{PERSONAL_PATH}**", timeout=T_ROUTE_MS)
-                tab = page.get_by_role("tab", name="Security Settings",
-                                       exact=True)
-                if tab.count() == 0:
-                    tab = page.locator(".semi-tabs-tab").filter(
-                        has_text="Security Settings")
+                tab = page.locator(SECURITY_SETTINGS_SELECTOR)
                 tab.first.wait_for(state="visible", timeout=T_MENU_MS)
                 tab.first.scroll_into_view_if_needed(timeout=5_000)
                 tab.first.click()
                 page.wait_for_timeout(1500)
                 page.screenshot(path=flow.shots("sec.png"), full_page=False)
-                cands = page.locator("button.semi-button-primary",
-                                     has_text="Generate Token")
-                gen = visible_first(page, cands)
-                if gen is None:
+
+                # This card and the PAT live on the same Personal Settings
+                # screen. Read the account id here, immediately before token
+                # generation, rather than from the login identity chip.
+                account_tag = page.locator(ACCOUNT_ID_SELECTOR)
+                account_id_text = (
+                    account_tag.inner_text(timeout=T_MENU_MS).strip()
+                    if account_tag.count() > 0
+                    else (page.evaluate(_ACCOUNT_ID_TEXT) or "").strip())
+                account_id_match = re.search(
+                    r"(?:ID\s*:\s*)?(\d+)", account_id_text)
+                if account_id_match:
+                    account_id = account_id_match.group(1)
+                    flow.data["user_id"] = int(account_id)
+                    save_profile_json(profile_id, flow.data)
+                    log(f"account user_id saved: {account_id}")
+
+                gen = page.locator(GENERATE_TOKEN_SELECTOR)
+                if gen.count() == 0:
                     flow.record("capture-pat", False,
                                 "no visible Generate Token")
                 gen.scroll_into_view_if_needed(timeout=5_000)
@@ -528,19 +536,14 @@ def run_inline(row: dict, headless: bool = False, proxy: str | None = None) -> i
                 if not values:
                     flow.record("capture-pat", False,
                                 "PAT input stayed empty 20s")
-                first = page.locator(
-                    "input.semi-input.semi-input-large[readonly]").first
+                first = page.locator(PAT_INPUT_SELECTOR)
                 first.scroll_into_view_if_needed(timeout=5_000)
+                # The page copies its generated token when this field is
+                # clicked. The DOM value remains authoritative so a stale
+                # system clipboard cannot overwrite this profile's PAT.
                 first.click()
-                page.wait_for_timeout(400)
-                page.keyboard.press("Control+A")
-                page.keyboard.press("Control+C")
-                page.wait_for_timeout(400)
-                try:
-                    clip = page.evaluate("navigator.clipboard.readText()")
-                except Exception:
-                    clip = None
-                value = values[0] if not (clip or "").strip() else clip.strip()
+                page.wait_for_timeout(250)
+                value = first.input_value().strip()
                 if not value:
                     flow.record("capture-pat", False, "PAT value empty")
                 page.screenshot(path=flow.shots("pat.png"), full_page=False)
