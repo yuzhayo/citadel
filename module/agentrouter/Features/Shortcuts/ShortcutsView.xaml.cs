@@ -9,23 +9,29 @@ namespace Module.Agentrouter.Features.Shortcuts;
 /// The Launcher tab: lists the CamoProf profiles Agentrouter already points at,
 /// keyed by profile folder but shown by Gmail address. Selecting which ones
 /// are pointed at happens in the Select profiles… floating screen; this view
-/// renders the result, offers the committed proxy pool as choices, and can
-/// drop a pointer. Proxy choice is view state only; it does not route traffic.
+/// renders the result, offers the committed proxy pool as choices, and passes
+/// the selected route into the claim flow.
+/// Each row also shows what the profile's run JSON holds — the account id a
+/// claim recorded, the api_key that claim captured, and the last balance Check
+/// balance fetched. This view reads those, it never invents them; the key is
+/// shown and copied, never rewritten.
 /// </summary>
 public partial class ShortcutsView : UserControl, IDisposable
 {
     private readonly ShortcutCatalog _catalog;
     private readonly AgentProxyPool _pool;
     private readonly AgentrouterClaimClient _claims;
+    private readonly AgentRouterBalanceService _balances;
     private readonly ObservableCollection<ShortcutRow> _rows = [];
     private bool _disposed;
 
     internal ShortcutsView(ShortcutCatalog catalog, AgentProxyPool pool,
-        AgentrouterClaimClient claims)
+        AgentrouterClaimClient claims, AgentRouterBalanceService balances)
     {
         _catalog = catalog ?? throw new ArgumentNullException(nameof(catalog));
         _pool = pool ?? throw new ArgumentNullException(nameof(pool));
         _claims = claims ?? throw new ArgumentNullException(nameof(claims));
+        _balances = balances ?? throw new ArgumentNullException(nameof(balances));
         InitializeComponent();
         ShortcutTable.ItemsSource = _rows;
         Refresh();
@@ -47,7 +53,7 @@ public partial class ShortcutsView : UserControl, IDisposable
             var selections = _rows.ToDictionary(row => row.ProfileId,
                 row => row.SelectedProxy, StringComparer.OrdinalIgnoreCase);
             _pool.Reload();
-            var proxyChoices = new[] { "Random" }
+            var proxyChoices = new[] { "No proxy", "Random" }
                 .Concat(_pool.Rows.Select(row => row.Endpoint.Canonical))
                 .Distinct(StringComparer.Ordinal)
                 .ToArray();
@@ -55,6 +61,11 @@ public partial class ShortcutsView : UserControl, IDisposable
             _rows.Clear();
             foreach (var entry in shortcuts)
             {
+                // The run JSON is this row's source of truth: the id a claim
+                // recorded, and the last balance a check stored. Both are read
+                // from disk on every refresh, so a number survives a restart
+                // and changes only when a new check writes it.
+                var state = _balances.Read(entry.ProfileId);
                 _rows.Add(new ShortcutRow(
                     entry.ProfileId,
                     available.Contains(entry.ProfileId),
@@ -62,7 +73,12 @@ public partial class ShortcutsView : UserControl, IDisposable
                     proxyChoices,
                     selections.TryGetValue(entry.ProfileId, out var selected)
                         && proxyChoices.Contains(selected, StringComparer.Ordinal)
-                            ? selected : "Random"));
+                            ? selected : "No proxy")
+                {
+                    UserId = state.UserId,
+                    ApiKey = state.ApiKey,
+                    Balance = state.Balance,
+                });
             }
 
             var count = _rows.Count;
@@ -158,6 +174,7 @@ public partial class ShortcutsView : UserControl, IDisposable
         // Literal: ON shows the browser, OFF hides it. Nothing flips it once
         // the run has started.
         var headless = ShowBrowserToggle.IsChecked != true;
+        var proxy = ResolveProxy(row.SelectedProxy);
 
         // The panel PAT is single-reveal, so a second click while one claim is
         // running must not be able to race the first on the same profile.
@@ -165,7 +182,7 @@ public partial class ShortcutsView : UserControl, IDisposable
         SetStatus($"Claiming {row.Account}…");
         try
         {
-            var result = await _claims.ClaimAsync(row.ProfileId, headless);
+            var result = await _claims.ClaimAsync(row.ProfileId, headless, proxy);
             SetStatus(result.Describe());
         }
         catch (Exception ex)
@@ -178,6 +195,92 @@ public partial class ShortcutsView : UserControl, IDisposable
         finally
         {
             element.IsEnabled = true;
+        }
+    }
+
+    private string? ResolveProxy(string selection)
+    {
+        if (selection.Equals("No proxy", StringComparison.OrdinalIgnoreCase))
+        {
+            return null;
+        }
+
+        if (selection.Equals("Random", StringComparison.OrdinalIgnoreCase))
+        {
+            var rows = _pool.Rows;
+            return rows.Count == 0
+                ? null
+                : rows[Random.Shared.Next(rows.Count)].Endpoint.Canonical;
+        }
+
+        return selection;
+    }
+
+    /// <summary>
+    /// Fetches one row's balance and stores it in the profile's run JSON.
+    ///
+    /// <para>Clicking is the only thing that changes the number, and a failed
+    /// fetch leaves the stored one alone: nothing here blanks a balance it
+    /// could not re-read.</para>
+    /// </summary>
+    private async void CheckBalanceButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (_disposed || sender is not FrameworkElement element
+            || element.Tag is not ShortcutRow row)
+        {
+            return;
+        }
+
+        element.IsEnabled = false;
+        SetStatus($"Checking balance for {row.Account}…");
+        try
+        {
+            var outcome = await _balances.CheckAsync(row.ProfileId);
+            SetStatus($"{row.Account}: {outcome.Describe()}");
+        }
+        catch (Exception ex)
+        {
+            SetStatus("Balance check failed: " + ex.Message);
+        }
+        finally
+        {
+            element.IsEnabled = true;
+        }
+
+        // Re-reading the JSON is what puts a saved number on screen. This view
+        // holds no balance state of its own.
+        Refresh();
+    }
+
+    /// <summary>
+    /// Copies one row's captured api_key to the clipboard. The key comes from
+    /// the profile's run JSON — this view never invents one, and a row without a
+    /// key has its Copy button disabled, so the empty branch only fires for a
+    /// keyboard or automation path past that.
+    /// </summary>
+    private void CopyKeyButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (_disposed || sender is not FrameworkElement { Tag: ShortcutRow row })
+        {
+            return;
+        }
+
+        if (!row.HasApiKey)
+        {
+            SetStatus($"{row.Account}: no API key captured yet — Claim it first.");
+            return;
+        }
+
+        try
+        {
+            Clipboard.SetText(row.ApiKey);
+            SetStatus($"{row.Account}: API key copied to the clipboard.");
+        }
+        catch (Exception ex)
+        {
+            // The clipboard is a shared OS resource: another process holding it
+            // open must not take the window down.
+            SetStatus("Copy failed: " + ex.Message);
         }
     }
 

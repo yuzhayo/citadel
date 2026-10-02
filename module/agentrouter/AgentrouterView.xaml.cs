@@ -17,6 +17,7 @@ public partial class AgentrouterView : UserControl
     private readonly ShortcutsView _shortcutsView;
     private readonly ProxyView _proxyView;
     private readonly AgentrouterClaimClient _claims;
+    private readonly AgentRouterBalanceService _balances;
     private bool _disposed;
 
     public AgentrouterView(Lifetime lifetime)
@@ -32,9 +33,13 @@ public partial class AgentrouterView : UserControl
         // creates it and owns its lifetime, exactly like the stores above.
         _claims = new AgentrouterClaimClient();
 
+        // A balance check is one authenticated GET, so it needs no browser and
+        // no pyhost; the parent still owns its lifetime like the stores above.
+        _balances = new AgentRouterBalanceService();
+
         // Each feature view loads its own data, so the parent never has to
         // know what "ready" means for either of them.
-        _shortcutsView = new ShortcutsView(shortcuts, pool, _claims);
+        _shortcutsView = new ShortcutsView(shortcuts, pool, _claims, _balances);
         _proxyView = new ProxyView(pool);
 
         ShortcutsHost.Content = _shortcutsView;
@@ -76,5 +81,6 @@ public partial class AgentrouterView : UserControl
         _shortcutsView.Dispose();
         _proxyView.Dispose();
         _claims.Dispose();
+        _balances.Dispose();
     }
 }

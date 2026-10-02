@@ -54,6 +54,7 @@ internal sealed class AgentrouterClaimClient : IDisposable
     public async Task<ClaimOutcome> ClaimAsync(
         string profileId,
         bool headless,
+        string? proxy = null,
         CancellationToken cancellationToken = default)
     {
         ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
@@ -77,6 +78,7 @@ internal sealed class AgentrouterClaimClient : IDisposable
                     {
                         ["profile"] = profileId,
                         ["headless"] = headless,
+                        ["proxy"] = proxy,
                     },
                     ClaimTimeout,
                     cancellationToken)

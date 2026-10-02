@@ -1,7 +1,9 @@
+using System.Globalization;
 using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 
 namespace Module.Agentrouter.SharedLogic;
 
@@ -11,7 +13,7 @@ internal enum BalanceProbeState
     /// <summary>HTTP call or payload was not usable.</summary>
     Unreachable,
 
-    /// <summary>The stored PAT was rejected.</summary>
+    /// <summary>The stored credential was rejected.</summary>
     Rejected,
 
     /// <summary>Quota was read.</summary>
@@ -22,7 +24,6 @@ internal sealed record BalanceProbeResult(
     BalanceProbeState State,
     long Quota,
     long UsedQuota,
-    string Pat,
     string Detail)
 {
     /// <summary>
@@ -32,7 +33,7 @@ internal sealed record BalanceProbeResult(
     public const long QuotaPerUnit = 500_000;
 
     public static BalanceProbeResult Fail(BalanceProbeState state, string detail)
-        => new(state, 0, 0, string.Empty, detail);
+        => new(state, 0, 0, detail);
 
     public decimal Balance => (decimal)Quota / QuotaPerUnit;
 
@@ -42,20 +43,26 @@ internal sealed record BalanceProbeResult(
 /// <summary>
 /// Reads an account's own quota from the gateway.
 ///
-/// <para><c>GET /api/user/self</c> authenticates with the browser session
-/// cookie plus a <c>New-API-User</c> id header. A panel PAT presented as
-/// <c>Authorization: Bearer</c> is refused with 401.</para>
+/// <para><c>GET /api/user/self</c> answers the System Access Token the claim
+/// flow captured (the profile JSON's <c>pat</c>) sent as
+/// <c>Authorization: Bearer</c>, together with the account's numeric id in the
+/// <c>New-API-User</c> header. That pair is the only credential that outlives a
+/// claim run: the flow ends logged out, so a session cookie is gone by the time
+/// this screen asks.</para>
 ///
-/// <para>The response also carries <c>access_token</c>, so one call yields
-/// both the quota and the account's System Access Token.</para>
-///
-/// This is the module's verification surface. The browser establishes the
-/// session; this proves whether quota actually moved. Nothing here parses the
-/// page or depends on the site's markup.
+/// <para>Nothing here parses the console page or drives a browser — one
+/// authenticated GET — which is why a check costs no browser and no profile
+/// lock.</para>
 /// </summary>
 internal sealed class AgentRouterBalanceProbe
 {
     private const string SelfEndpoint = "/api/user/self";
+
+    // The site sits behind a WAF that answers a bare client; the request shape
+    // that was proven against the live gateway carries a browser UA.
+    private const string UserAgent =
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+        + " (KHTML, like Gecko) Chrome/154.0.0.0 Safari/537.36";
 
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -72,18 +79,19 @@ internal sealed class AgentRouterBalanceProbe
     }
 
     public async Task<BalanceProbeResult> ProbeAsync(
-        string session, long userId, CancellationToken cancellationToken = default)
+        string pat, long userId, CancellationToken cancellationToken = default)
     {
-        if (string.IsNullOrWhiteSpace(session) || userId <= 0)
+        if (string.IsNullOrWhiteSpace(pat) || userId <= 0)
         {
             return BalanceProbeResult.Fail(
-                BalanceProbeState.Rejected, "no session cookie or user id stored");
+                BalanceProbeState.Rejected, "no pat or user id captured");
         }
 
         using var request = new HttpRequestMessage(HttpMethod.Get, _baseAddress + SelfEndpoint);
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", pat);
         request.Headers.Add("New-API-User", userId.ToString(
-            System.Globalization.CultureInfo.InvariantCulture));
-        request.Headers.Add("Cookie", $"session={session}");
+            CultureInfo.InvariantCulture));
+        request.Headers.TryAddWithoutValidation("User-Agent", UserAgent);
 
         HttpResponseMessage response;
         try
@@ -108,7 +116,7 @@ internal sealed class AgentRouterBalanceProbe
             {
                 return BalanceProbeResult.Fail(
                     BalanceProbeState.Rejected,
-                    $"PAT rejected ({(int)response.StatusCode})");
+                    $"credential rejected ({(int)response.StatusCode})");
             }
 
             if (!response.IsSuccessStatusCode)
@@ -137,7 +145,6 @@ internal sealed class AgentRouterBalanceProbe
                     BalanceProbeState.Ok,
                     payload.Data.Quota,
                     payload.Data.UsedQuota,
-                    payload.Data.AccessToken ?? string.Empty,
                     "ok");
             }
             catch (JsonException ex)
@@ -153,8 +160,11 @@ internal sealed class AgentRouterBalanceProbe
         SelfData? Data);
 
     /// <summary>
-    /// The self response carries the account's System Access Token in the same
-    /// payload as the quota, so one authenticated call yields both.
+    /// The account-state payload names the consumption figure <c>used_quota</c>;
+    /// the camel-case policy cannot map that onto UsedQuota by itself, so the
+    /// name is pinned here.
     /// </summary>
-    private sealed record SelfData(long Quota, long UsedQuota, string? AccessToken);
+    private sealed record SelfData(
+        long Quota,
+        [property: JsonPropertyName("used_quota")] long UsedQuota);
 }

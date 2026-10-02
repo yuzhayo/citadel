@@ -25,6 +25,7 @@ Status, credentials and screenshots go to Citadel's own data folder -- never to
 %TEMP%; see _lib.OUT_DIR.
 
 Secrets: full values only in the profile JSON; stdout and status are masked.
+The github_<id> chip id also lands in that JSON as "user_id" (not a secret).
 Runtime: driven by the citizen's pyhost process. A manual run uses the Citadel
 venv python: python flow.py <profileId> [--headless]
 """
@@ -282,7 +283,7 @@ def _popup_landed(popup) -> bool:
     return "agentrouter.org" in url and "/login" not in url
 
 
-def run_inline(row: dict, headless: bool = False) -> int:
+def run_inline(row: dict, headless: bool = False, proxy: str | None = None) -> int:
     """InlineStrategy: ONE browser, seven steps, one evidence trail."""
     profile_id = row["profileId"]
     flow = InlineStrategy(profile_id, row["profileDir"])
@@ -302,6 +303,7 @@ def run_inline(row: dict, headless: bool = False) -> int:
             user_data_dir=row["profileDir"],
             humanize=True,
             os="windows",
+            **({"proxy": {"server": proxy}} if proxy else {}),
         ) as context:
             pages = list(context.pages)
             flow.page = pages[0] if pages else context.new_page()
@@ -437,6 +439,14 @@ def run_inline(row: dict, headless: bool = False) -> int:
                             f"code={events['has_code']})")
             flow.record("login", True,
                         f"chip_after={chip} url={info['url']}")
+            # The chip proves the FRESH session identity (github_<id>). Persist
+            # its numeric id next to api_key/pat so consumers stop scraping the
+            # chip off the page. Not a secret: logged as-is, like the verifier.
+            chip_id = (chip or "").partition("_")[2]
+            if chip_id.isdigit():
+                flow.data["user_id"] = int(chip_id)
+                save_profile_json(profile_id, flow.data)
+                log(f"user_id saved: {chip_id}")
 
             # --- step 5: api_key ----------------------------------------
             flow.check("api_key")
@@ -608,7 +618,7 @@ def split_flags(argv: list[str]) -> tuple[bool, list[str]]:
     return headless, rest
 
 
-def main(argv: list[str], headless: bool = False) -> int:
+def main(argv: list[str], headless: bool = False, proxy: str | None = None) -> int:
     """Run the claim flow for one profile.
 
     ``headless`` is literal: True hides the browser, False shows it. The pyhost
@@ -618,7 +628,7 @@ def main(argv: list[str], headless: bool = False) -> int:
     row = resolve_row(rest)
 
     OUT_DIR.mkdir(parents=True, exist_ok=True)
-    return run_inline(row, headless=headless or flag_headless)
+    return run_inline(row, headless=headless or flag_headless, proxy=proxy)
 
 
 if __name__ == "__main__":

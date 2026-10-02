@@ -35,10 +35,13 @@ async def cmd_claim(host, msg):
     profile = msg.get("profile")
     if not isinstance(profile, str) or not profile:
         raise ValueError("profile wajib: nama folder profil CamoProf")
+    proxy = msg.get("proxy")
+    if proxy is not None and (not isinstance(proxy, str) or not proxy.strip()):
+        raise ValueError("proxy harus berupa URL atau null")
 
     try:
         returncode = await asyncio.to_thread(
-            flow.main, [profile], bool(msg.get("headless")))
+            flow.main, [profile], bool(msg.get("headless")), proxy=proxy)
     except SystemExit as exc:
         return {"outcome": "refused", "returncode": 2, "detail": str(exc)}
 

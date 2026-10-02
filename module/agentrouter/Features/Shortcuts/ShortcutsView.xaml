@@ -62,7 +62,7 @@
                     Style="{DynamicResource SettingCardStyle}">
                 <Grid>
                     <setting:SettingTable x:Name="ShortcutTable"
-                                          setting:UiPreference.Key="agentrouter.shortcuts.table"
+                                          setting:UiPreference.Key="agentrouter.shortcuts.table.v2"
                                           CanUserSortColumns="True"
                                           AutomationProperties.Name="Agentrouter profile shortcuts">
                         <setting:SettingTable.InteractiveColumns>
@@ -91,14 +91,18 @@
                                                 <ColumnDefinition Width="*" />
                                                 <ColumnDefinition Width="Auto" />
                                             </Grid.ColumnDefinitions>
-                                            <TextBlock Text="—"
-                                                       VerticalAlignment="Center" />
+                                            <TextBlock Text="{Binding ApiKeyDisplay}"
+                                                       VerticalAlignment="Center"
+                                                       TextTrimming="CharacterEllipsis"
+                                                       ToolTip="{Binding ApiKeyToolTip}" />
                                             <setting:SettingButton Grid.Column="1"
                                                                    Content="⧉"
-                                                                   IsEnabled="False"
-                                                                   ToolTip="Copy key (placeholder)"
+                                                                   Tag="{Binding}"
+                                                                   IsEnabled="{Binding HasApiKey}"
+                                                                   Click="CopyKeyButton_Click"
+                                                                   ToolTip="Copy this profile's API key to the clipboard"
                                                                    ToolTipService.ShowOnDisabled="True"
-                                                                   AutomationProperties.Name="Copy key (placeholder)" />
+                                                                   AutomationProperties.Name="Copy the API key" />
                                         </Grid>
                                     </DataTemplate>
                                 </DataGridTemplateColumn.CellTemplate>
@@ -107,11 +111,27 @@
                             <DataGridTextColumn Header="User ID"
                                                 Binding="{Binding UserIdDisplay}"
                                                 SortMemberPath="UserIdSort"
-                                                Width="100" />
+                                                Width="100">
+                                <DataGridTextColumn.ElementStyle>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="TextAlignment" Value="Center" />
+                                    </Style>
+                                </DataGridTextColumn.ElementStyle>
+                            </DataGridTextColumn>
 
-                            <DataGridTextColumn Header="Balance"
-                                                CanUserSort="False"
-                                                Width="130" />
+                            <DataGridTemplateColumn Header="Balance"
+                                                    CanUserSort="True"
+                                                    SortMemberPath="BalanceSort"
+                                                    Width="130">
+                                <DataGridTemplateColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <TextBlock Text="{Binding BalanceDisplay}"
+                                                   VerticalAlignment="Center"
+                                                   TextAlignment="Center"
+                                                   ToolTip="{Binding BalanceToolTip}" />
+                                    </DataTemplate>
+                                </DataGridTemplateColumn.CellTemplate>
+                            </DataGridTemplateColumn>
 
                             <DataGridTemplateColumn Header="Check balance"
                                                     CanUserSort="False"
@@ -119,8 +139,10 @@
                                 <DataGridTemplateColumn.CellTemplate>
                                     <DataTemplate>
                                         <setting:SettingButton Content="Check balance"
-                                                               IsEnabled="False"
-                                                               AutomationProperties.Name="Check balance (placeholder)" />
+                                                               Tag="{Binding}"
+                                                               Click="CheckBalanceButton_Click"
+                                                               ToolTip="Read this account's balance from the gateway and store it in the profile JSON"
+                                                               AutomationProperties.Name="Check the account balance" />
                                     </DataTemplate>
                                 </DataGridTemplateColumn.CellTemplate>
                             </DataGridTemplateColumn>
