@@ -1,19 +1,19 @@
 using System.Globalization;
 using System.Net.Http;
 
-namespace Module.Agentrouter.SharedLogic;
+namespace Module.Agentrouter.Features.Claim;
 
 /// <summary>
 /// What one row reads from disk: the account id a claim recorded, the api_key
 /// it captured, and the stored balance.
 /// </summary>
-internal sealed record ProfileBalanceState(
+public sealed record ProfileBalanceState(
     long? UserId,
     string ApiKey,
     BalanceSnapshot? Balance);
 
 /// <summary>Hasil satu get balance. Tidak pernah memuat secret.</summary>
-internal sealed record BalanceCheckOutcome(
+public sealed record BalanceCheckOutcome(
     string State,
     string Detail,
     decimal Balance,

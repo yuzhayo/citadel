@@ -1,11 +1,12 @@
 using System.IO;
 using System.Text.Json.Nodes;
 using CitadelBridge;
+using Module.Agentrouter.SharedLogic;
 
-namespace Module.Agentrouter.SharedLogic;
+namespace Module.Agentrouter.Features.Claim;
 
 /// <summary>Hasil satu claim. Tidak pernah memuat secret.</summary>
-internal sealed record ClaimOutcome(
+public sealed record ClaimOutcome(
     string Outcome,
     int ReturnCode,
     string Detail,

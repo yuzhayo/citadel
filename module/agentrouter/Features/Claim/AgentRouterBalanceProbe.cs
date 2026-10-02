@@ -5,7 +5,7 @@ using System.Net.Http.Json;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
-namespace Module.Agentrouter.SharedLogic;
+namespace Module.Agentrouter.Features.Claim;
 
 /// <summary>What one balance probe observed.</summary>
 internal enum BalanceProbeState

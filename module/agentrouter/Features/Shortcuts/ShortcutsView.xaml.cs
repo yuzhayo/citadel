@@ -1,6 +1,7 @@
 using System.Collections.ObjectModel;
 using System.Windows;
 using System.Windows.Controls;
+using Module.Agentrouter.Features.Claim;
 using Module.Agentrouter.SharedLogic;
 
 namespace Module.Agentrouter.Features.Shortcuts;
@@ -20,18 +21,16 @@ public partial class ShortcutsView : UserControl, IDisposable
 {
     private readonly ShortcutCatalog _catalog;
     private readonly AgentProxyPool _pool;
-    private readonly AgentrouterClaimClient _claims;
-    private readonly AgentRouterBalanceService _balances;
+    private readonly IAgentRouterClaimService _claims;
     private readonly ObservableCollection<ShortcutRow> _rows = [];
     private bool _disposed;
 
     internal ShortcutsView(ShortcutCatalog catalog, AgentProxyPool pool,
-        AgentrouterClaimClient claims, AgentRouterBalanceService balances)
+        IAgentRouterClaimService claims)
     {
         _catalog = catalog ?? throw new ArgumentNullException(nameof(catalog));
         _pool = pool ?? throw new ArgumentNullException(nameof(pool));
         _claims = claims ?? throw new ArgumentNullException(nameof(claims));
-        _balances = balances ?? throw new ArgumentNullException(nameof(balances));
         InitializeComponent();
         ShortcutTable.ItemsSource = _rows;
         Refresh();
@@ -65,7 +64,7 @@ public partial class ShortcutsView : UserControl, IDisposable
                 // recorded, and the last balance a check stored. Both are read
                 // from disk on every refresh, so a number survives a restart
                 // and changes only when a new check writes it.
-                var state = _balances.Read(entry.ProfileId);
+                var state = _claims.Read(entry.ProfileId);
                 _rows.Add(new ShortcutRow(
                     entry.ProfileId,
                     available.Contains(entry.ProfileId),
@@ -235,7 +234,7 @@ public partial class ShortcutsView : UserControl, IDisposable
         SetStatus($"Checking balance for {row.Account}…");
         try
         {
-            var outcome = await _balances.CheckAsync(row.ProfileId);
+            var outcome = await _claims.CheckAsync(row.ProfileId);
             SetStatus($"{row.Account}: {outcome.Describe()}");
         }
         catch (Exception ex)

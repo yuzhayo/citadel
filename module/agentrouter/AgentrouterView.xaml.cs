@@ -1,5 +1,6 @@
 using System.Windows.Controls;
 using Citadel.Core.Rpl;
+using Module.Agentrouter.Features.Claim;
 using Module.Agentrouter.Features.Proxy;
 using Module.Agentrouter.Features.Shortcuts;
 using Module.Agentrouter.SharedLogic;
@@ -16,8 +17,7 @@ public partial class AgentrouterView : UserControl
 {
     private readonly ShortcutsView _shortcutsView;
     private readonly ProxyView _proxyView;
-    private readonly AgentrouterClaimClient _claims;
-    private readonly AgentRouterBalanceService _balances;
+    private readonly IAgentRouterClaimService _claims;
     private bool _disposed;
 
     public AgentrouterView(Lifetime lifetime)
@@ -31,15 +31,11 @@ public partial class AgentrouterView : UserControl
 
         // The claim flow runs in this citizen's own pyhost process. The parent
         // creates it and owns its lifetime, exactly like the stores above.
-        _claims = new AgentrouterClaimClient();
-
-        // A balance check is one authenticated GET, so it needs no browser and
-        // no pyhost; the parent still owns its lifetime like the stores above.
-        _balances = new AgentRouterBalanceService();
+        _claims = new AgentRouterClaimFeature();
 
         // Each feature view loads its own data, so the parent never has to
         // know what "ready" means for either of them.
-        _shortcutsView = new ShortcutsView(shortcuts, pool, _claims, _balances);
+        _shortcutsView = new ShortcutsView(shortcuts, pool, _claims);
         _proxyView = new ProxyView(pool);
 
         ShortcutsHost.Content = _shortcutsView;
@@ -81,6 +77,5 @@ public partial class AgentrouterView : UserControl
         _shortcutsView.Dispose();
         _proxyView.Dispose();
         _claims.Dispose();
-        _balances.Dispose();
     }
 }

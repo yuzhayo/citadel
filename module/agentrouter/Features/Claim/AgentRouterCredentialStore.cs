@@ -3,8 +3,9 @@ using System.Security.Cryptography;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using CitadelBridge;
+using Module.Agentrouter.SharedLogic;
 
-namespace Module.Agentrouter.SharedLogic;
+namespace Module.Agentrouter.Features.Claim;
 
 /// <summary>
 /// One profile's gateway credentials.

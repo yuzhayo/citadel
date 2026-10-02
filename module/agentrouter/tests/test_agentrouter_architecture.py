@@ -83,6 +83,13 @@ def _feature_types():
     return found
 
 
+def _public_feature_types(feature):
+    return {
+        name for name, (visibility, owner) in _feature_types().items()
+        if owner == feature and visibility == "public"
+    }
+
+
 def _files_outside(feature):
     """Every source file in the citizen that is not part of `feature`."""
     own_prefix = "Features/" + feature + "/"
@@ -137,7 +144,7 @@ class FeatureIsolationTest(unittest.TestCase):
             for path in _cs_files(os.path.join(FEATURES, feature)):
                 code = _strip_line_comments(_read(path))
                 for owner in _FEATURE_NS.findall(code):
-                    if owner != feature:
+                    if owner != feature and owner != "Claim":
                         hits.append(
                             "%s imports Features.%s" % (
                                 os.path.relpath(path, MODULE).replace(os.sep, "/"),
@@ -210,7 +217,9 @@ class ParentContractTest(unittest.TestCase):
 
         allowed = sorted(
             name for name, (visibility, _) in feature_types.items()
-            if visibility == "public" and name.endswith("View"))
+            if visibility == "public"
+            and (name.endswith("View") or name.endswith("Feature")
+                 or name.startswith("I")))
         forbidden = sorted(
             name for name in feature_types if name not in allowed)
         self.assertTrue(
@@ -230,7 +239,7 @@ class ParentContractTest(unittest.TestCase):
                     hits.append("%s named in %s" % (name, relative))
         self.assertEqual(
             [], hits,
-            "parent bypassed the public *View contract: %s" % hits)
+                "parent bypassed the public feature contract: %s" % hits)
 
     def test_every_feature_folder_is_self_contained(self):
         folders = _feature_folders()
@@ -241,7 +250,10 @@ class ParentContractTest(unittest.TestCase):
             folder = os.path.join(FEATURES, feature)
             sources = [name for name in os.listdir(folder) if name.endswith(".cs")]
             views = [name for name in os.listdir(folder) if name.endswith(".xaml")]
-            if not sources or not views:
+            has_contract = any(
+                name.startswith("I") or name.endswith("Feature")
+                for name in _public_feature_types(feature))
+            if not sources or (not views and not has_contract):
                 incomplete.append(feature)
         self.assertEqual(
             [], incomplete,

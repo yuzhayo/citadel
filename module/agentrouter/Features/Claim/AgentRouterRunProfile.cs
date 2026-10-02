@@ -5,10 +5,10 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
 
-namespace Module.Agentrouter.SharedLogic;
+namespace Module.Agentrouter.Features.Claim;
 
 /// <summary>One balance reading, in the shape the run JSON stores it.</summary>
-internal sealed record BalanceSnapshot(
+public sealed record BalanceSnapshot(
     long Quota,
     long UsedQuota,
     decimal Usd,
