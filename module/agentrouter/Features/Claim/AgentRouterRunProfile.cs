@@ -18,6 +18,7 @@ public sealed record BalanceSnapshot(
 /// <summary>One daily sign-in lookup stored in the profile run JSON.</summary>
 public sealed record LoginSnapshot(
     bool Success,
+    bool Verified,
     string? Content,
     string Detail,
     string LocalDate,
@@ -176,6 +177,7 @@ internal sealed class AgentRouterRunProfileStore
                 document[LoginKey] = new JsonObject
                 {
                     ["success"] = snapshot.Success,
+                    ["verified"] = snapshot.Verified,
                     ["content"] = snapshot.Content,
                     ["detail"] = snapshot.Detail,
                     ["local_date"] = snapshot.LocalDate,
@@ -292,8 +294,12 @@ internal sealed class AgentRouterRunProfileStore
             return null;
         }
 
+        var verified = login["verified"] is JsonValue verifiedValue
+            && verifiedValue.TryGetValue<bool>(out var checkedResult)
+            && checkedResult;
         return new LoginSnapshot(
             success,
+            verified,
             ReadString(login, "content"),
             ReadString(login, "detail") ?? string.Empty,
             ReadString(login, "local_date") ?? string.Empty,

@@ -8,4 +8,7 @@ namespace Module.Agentrouter.SharedLogic;
 /// it. A shortcut whose folder has since been removed is kept so the operator
 /// can see it went missing, and is reported as such rather than dropped.
 /// </summary>
-internal sealed record ShortcutEntry(string ProfileId, DateTimeOffset AddedAtUtc);
+internal sealed record ShortcutEntry(
+    string ProfileId,
+    DateTimeOffset AddedAtUtc,
+    string? SelectedProxy = null);

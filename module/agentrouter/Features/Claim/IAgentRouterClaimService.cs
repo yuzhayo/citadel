@@ -19,9 +19,17 @@ public interface IAgentRouterClaimService : IDisposable
 public sealed class AgentRouterClaimFeature : IAgentRouterClaimService
 {
     private readonly AgentrouterClaimClient _claims = new();
-    private readonly AgentRouterBalanceService _balances = new();
-    private readonly AgentRouterLoginService _login = new();
+    private readonly AgentRouterRunProfileStore _profiles = new();
+    private readonly AgentRouterProxyManager _proxyManager = new();
+    private readonly AgentRouterBalanceService _balances;
+    private readonly AgentRouterLoginService _login;
     private int _disposed;
+
+    public AgentRouterClaimFeature()
+    {
+        _balances = new AgentRouterBalanceService(_profiles, _proxyManager);
+        _login = new AgentRouterLoginService(_profiles, _proxyManager);
+    }
 
     public Task<ClaimOutcome> ClaimAsync(string profileId, bool headless,
         string? proxy, CancellationToken cancellationToken = default)

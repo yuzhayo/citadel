@@ -1,5 +1,4 @@
 using System.Globalization;
-using System.Net;
 using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Text.Json;
@@ -25,7 +24,8 @@ internal sealed record BalanceProbeResult(
     BalanceProbeState State,
     long Quota,
     long UsedQuota,
-    string Detail)
+    string Detail,
+    bool ProxyUsable)
 {
     /// <summary>
     /// Gateway quota units per one unit of account currency. Both the balance
@@ -33,8 +33,9 @@ internal sealed record BalanceProbeResult(
     /// </summary>
     public const long QuotaPerUnit = 500_000;
 
-    public static BalanceProbeResult Fail(BalanceProbeState state, string detail)
-        => new(state, 0, 0, detail);
+    public static BalanceProbeResult Fail(
+        BalanceProbeState state, string detail, bool proxyUsable = false)
+        => new(state, 0, 0, detail, proxyUsable);
 
     public decimal Balance => (decimal)Quota / QuotaPerUnit;
 
@@ -84,18 +85,7 @@ internal sealed class AgentRouterBalanceProbe
                 BalanceProbeState.Rejected, "no pat or user id captured");
         }
 
-        if (proxy is not null && proxy.Scheme is not ("http" or "https"))
-        {
-            return BalanceProbeResult.Fail(
-                BalanceProbeState.Unreachable, "proxy is not a supported HTTP endpoint");
-        }
-
-        using var handler = new HttpClientHandler();
-        if (proxy is not null)
-        {
-            handler.Proxy = new WebProxy(proxy.Canonical);
-            handler.UseProxy = true;
-        }
+        using var handler = AgentRouterProxyHttpHandler.Create(proxy);
         using var http = new HttpClient(handler) { Timeout = RequestTimeout };
         using var request = new HttpRequestMessage(HttpMethod.Get, _baseAddress + SelfEndpoint);
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", pat);
@@ -123,21 +113,6 @@ internal sealed class AgentRouterBalanceProbe
 
         using (response)
         {
-            if (response.StatusCode is System.Net.HttpStatusCode.Unauthorized
-                or System.Net.HttpStatusCode.Forbidden)
-            {
-                return BalanceProbeResult.Fail(
-                    BalanceProbeState.Rejected,
-                    $"credential rejected ({(int)response.StatusCode})");
-            }
-
-            if (!response.IsSuccessStatusCode)
-            {
-                return BalanceProbeResult.Fail(
-                    BalanceProbeState.Unreachable,
-                    $"HTTP {(int)response.StatusCode}");
-            }
-
             try
             {
                 var contentType = response.Content.Headers.ContentType?.MediaType;
@@ -156,20 +131,51 @@ internal sealed class AgentRouterBalanceProbe
 
                 var payload = JsonSerializer.Deserialize<Envelope>(body, JsonOptions);
 
-                if (payload is null || !payload.Success || payload.Data is null)
+                if (payload is null)
                 {
                     return BalanceProbeResult.Fail(
                         BalanceProbeState.Unreachable,
-                        string.IsNullOrEmpty(payload?.Message)
-                            ? "unexpected payload"
-                            : payload!.Message!);
+                        "unexpected payload",
+                        proxyUsable: true);
+                }
+
+                if (!payload.Success)
+                {
+                    var detail = string.IsNullOrEmpty(payload.Message)
+                        ? $"API request rejected ({(int)response.StatusCode})"
+                        : payload.Message!;
+                    return BalanceProbeResult.Fail(
+                        response.StatusCode is System.Net.HttpStatusCode.Unauthorized
+                            or System.Net.HttpStatusCode.Forbidden
+                            || response.IsSuccessStatusCode
+                                ? BalanceProbeState.Rejected
+                                : BalanceProbeState.Unreachable,
+                        detail,
+                        proxyUsable: true);
+                }
+
+                if (payload.Data is null)
+                {
+                    return BalanceProbeResult.Fail(
+                        BalanceProbeState.Unreachable,
+                        $"unexpected payload (HTTP {(int)response.StatusCode})",
+                        proxyUsable: true);
+                }
+
+                if (!response.IsSuccessStatusCode)
+                {
+                    return BalanceProbeResult.Fail(
+                        BalanceProbeState.Unreachable,
+                        $"HTTP {(int)response.StatusCode}",
+                        proxyUsable: true);
                 }
 
                 return new BalanceProbeResult(
                     BalanceProbeState.Ok,
                     payload.Data.Quota,
                     payload.Data.UsedQuota,
-                    "ok");
+                    "ok",
+                    ProxyUsable: true);
             }
             catch (JsonException ex)
             {

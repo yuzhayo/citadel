@@ -1,5 +1,4 @@
 using System.Globalization;
-using System.Net;
 using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Text.Json;
@@ -17,10 +16,18 @@ public sealed record LoginCheckOutcome(string State, string Detail)
 internal sealed class AgentRouterLoginService : IDisposable
 {
     private const string BaseAddress = "https://agentrouter.org";
-    private const int MaxProxyAttempts = 10;
     private static readonly TimeSpan RequestTimeout = TimeSpan.FromSeconds(3);
-    private readonly AgentRouterRunProfileStore _profiles = new();
+    private readonly AgentRouterRunProfileStore _profiles;
+    private readonly AgentRouterProxyManager _proxyManager;
     private int _disposed;
+
+    public AgentRouterLoginService(
+        AgentRouterRunProfileStore profiles,
+        AgentRouterProxyManager proxyManager)
+    {
+        _profiles = profiles;
+        _proxyManager = proxyManager;
+    }
 
     public async Task<LoginCheckOutcome> CheckAsync(
         string profileId, CancellationToken cancellationToken = default)
@@ -37,24 +44,25 @@ internal sealed class AgentRouterLoginService : IDisposable
         var localDate = localNow.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
         var start = new DateTimeOffset(localNow.Date, localNow.Offset).ToUnixTimeSeconds();
         var end = localNow.ToUnixTimeSeconds();
-        var endpoints = ProxyPoolContract.ReadSnapshot().Endpoints
-            .Where(endpoint => endpoint.Scheme is "http" or "https")
-            .OrderBy(_ => Random.Shared.Next())
-            .Take(MaxProxyAttempts)
-            .ToArray();
+        using var checkSlot = await _proxyManager
+            .EnterCheckAsync(cancellationToken).ConfigureAwait(false);
+        using var lease = await _proxyManager
+            .AcquireAsync(cancellationToken).ConfigureAwait(false);
 
         LoginLookup? lookup = null;
-        foreach (var endpoint in endpoints)
+        foreach (var endpoint in lease.Endpoints)
         {
             lookup = await RequestAsync(profile.Pat, userId, localDate, start, end,
                 endpoint, cancellationToken).ConfigureAwait(false);
-            if (lookup.IsUsable)
+            if (lookup.ProxyUsable)
             {
+                lease.MarkSuccess(endpoint);
                 break;
             }
+            lease.MarkFailure(endpoint);
         }
 
-        if (lookup is null || !lookup.IsUsable)
+        if (lookup is null || !lookup.ProxyUsable)
         {
             lookup = await RequestAsync(profile.Pat, userId, localDate, start, end,
                 null, cancellationToken).ConfigureAwait(false);
@@ -62,6 +70,7 @@ internal sealed class AgentRouterLoginService : IDisposable
 
         var snapshot = new LoginSnapshot(
             lookup.Success,
+            lookup.Verified,
             lookup.Content,
             lookup.Detail,
             localDate,
@@ -73,20 +82,16 @@ internal sealed class AgentRouterLoginService : IDisposable
 
         return new LoginCheckOutcome(
             "saved",
-            lookup.Success ? "✓ Login" : "✗ Login");
+            lookup.Verified
+                ? lookup.Success ? "✓ Login" : "✗ Login"
+                : lookup.Detail);
     }
 
     private static async Task<LoginLookup> RequestAsync(
         string pat, long userId, string localDate, long start, long end,
         ProxyEndpoint? proxy, CancellationToken cancellationToken)
     {
-        using var handler = new HttpClientHandler();
-        if (proxy is not null)
-        {
-            handler.Proxy = new WebProxy(proxy.Canonical);
-            handler.UseProxy = true;
-        }
-
+        using var handler = AgentRouterProxyHttpHandler.Create(proxy);
         using var client = new HttpClient(handler) { Timeout = RequestTimeout };
         var uri = $"{BaseAddress}/api/log/self?p=1&page_size=100&type=0"
             + "&token_name=&model_name="
@@ -96,6 +101,9 @@ internal sealed class AgentRouterLoginService : IDisposable
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", pat);
         request.Headers.Add("New-API-User", userId.ToString(CultureInfo.InvariantCulture));
         request.Headers.TryAddWithoutValidation("Accept", "application/json");
+        request.Headers.TryAddWithoutValidation("Referer", "https://agentrouter.org/");
+        request.Headers.TryAddWithoutValidation("Cache-Control", "no-store");
+        request.Headers.TryAddWithoutValidation("Accept-Language", "en-US,en;q=0.9");
         request.Headers.UserAgent.ParseAdd(
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
             + "Chrome/154.0.0.0 Safari/537.36");
@@ -107,18 +115,35 @@ internal sealed class AgentRouterLoginService : IDisposable
                 .ConfigureAwait(false);
             var body = await response.Content.ReadAsStringAsync(cancellationToken)
                 .ConfigureAwait(false);
-            if (!response.IsSuccessStatusCode)
+            var contentType = response.Content.Headers.ContentType?.MediaType;
+            if (contentType is not ("application/json" or "text/json")
+                || body.TrimStart().StartsWith("<", StringComparison.Ordinal))
             {
-                return LoginLookup.Failed($"HTTP {(int)response.StatusCode}");
+                return LoginLookup.Failed("respons HTML/WAF, bukan JSON");
             }
 
             var parsed = JsonNode.Parse(body) as JsonObject;
-            if (parsed is null || parsed["success"]?.GetValue<bool>() != true)
+            if (parsed is null)
             {
                 return LoginLookup.Failed("respons bukan JSON login yang valid");
             }
 
-            var items = (parsed["data"]?["items"] as JsonArray) ?? [];
+            if (parsed["success"]?.GetValue<bool>() != true)
+            {
+                var message = parsed["message"]?.GetValue<string>()
+                    ?? "API menolak request";
+                return LoginLookup.ApiRejected(message);
+            }
+
+            if (!response.IsSuccessStatusCode)
+            {
+                return LoginLookup.ApiRejected($"HTTP {(int)response.StatusCode}");
+            }
+
+            if (parsed["data"]?["items"] is not JsonArray items)
+            {
+                return LoginLookup.ApiRejected("respons API tidak berisi daftar log");
+            }
             var content = items
                 .OfType<JsonObject>()
                 .Select(item => item["content"]?.GetValue<string>())
@@ -141,12 +166,21 @@ internal sealed class AgentRouterLoginService : IDisposable
 
     public void Dispose() => Interlocked.Exchange(ref _disposed, 1);
 
-    private sealed record LoginLookup(bool IsUsable, bool Success, string? Content, string Detail)
+    private sealed record LoginLookup(
+        bool ProxyUsable,
+        bool Verified,
+        bool Success,
+        string? Content,
+        string Detail)
     {
         public static LoginLookup Successful(string? content)
-            => new(true, content is not null, content,
+            => new(true, true, content is not null, content,
                 content is not null ? "✓ Login" : "✗ Login");
 
-        public static LoginLookup Failed(string detail) => new(false, false, null, detail);
+        public static LoginLookup ApiRejected(string detail)
+            => new(true, false, false, null, detail);
+
+        public static LoginLookup Failed(string detail)
+            => new(false, false, false, null, detail);
     }
 }

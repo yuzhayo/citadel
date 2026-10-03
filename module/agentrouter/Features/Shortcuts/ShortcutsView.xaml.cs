@@ -5,6 +5,7 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Threading;
 using Module.Agentrouter.Features.Claim;
 using Module.Agentrouter.SharedLogic;
 
@@ -27,7 +28,12 @@ public partial class ShortcutsView : UserControl, IDisposable
     private readonly AgentProxyPool _pool;
     private readonly IAgentRouterClaimService _claims;
     private readonly ObservableCollection<ShortcutRow> _rows = [];
+    private readonly DataGridTemplateColumn? _loginColumn;
+    private readonly DispatcherTimer _dateTimer;
+    private string _loginHeaderDate = string.Empty;
     private bool _disposed;
+    private bool _claimAllRunning;
+    private bool _batchRunning;
 
     internal ShortcutsView(ShortcutCatalog catalog, AgentProxyPool pool,
         IAgentRouterClaimService claims)
@@ -37,7 +43,14 @@ public partial class ShortcutsView : UserControl, IDisposable
         _claims = claims ?? throw new ArgumentNullException(nameof(claims));
         InitializeComponent();
         ShortcutTable.ItemsSource = _rows;
+        _loginColumn = ShortcutTable.InteractiveColumns
+            .OfType<DataGridTemplateColumn>()
+            .FirstOrDefault(column => string.Equals(
+                column.Header?.ToString(), "Login", StringComparison.Ordinal));
         Refresh();
+        _dateTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(30) };
+        _dateTimer.Tick += DateTimer_Tick;
+        _dateTimer.Start();
     }
 
     /// <summary>Rebuilds shortcuts and choices from the committed combined pool.</summary>
@@ -53,8 +66,6 @@ public partial class ShortcutsView : UserControl, IDisposable
             var available = _catalog.ScanAvailable()
                 .ToHashSet(StringComparer.OrdinalIgnoreCase);
             var shortcuts = _catalog.Load();
-            var selections = _rows.ToDictionary(row => row.ProfileId,
-                row => row.SelectedProxy, StringComparer.OrdinalIgnoreCase);
             _pool.Reload();
             var proxyChoices = new[] { "No proxy", "Random" }
                 .Concat(_pool.Rows.Select(row => row.Endpoint.Canonical))
@@ -62,6 +73,12 @@ public partial class ShortcutsView : UserControl, IDisposable
                 .ToArray();
 
             _rows.Clear();
+            var today = DateTime.Now.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture);
+            if (_loginColumn is not null)
+            {
+                _loginColumn.Header = $"Login · {today}";
+            }
+            _loginHeaderDate = today;
             foreach (var entry in shortcuts)
             {
                 // The run JSON is this row's source of truth: the id a claim
@@ -74,12 +91,13 @@ public partial class ShortcutsView : UserControl, IDisposable
                     available.Contains(entry.ProfileId),
                     entry.AddedAtUtc,
                     proxyChoices,
-                    selections.TryGetValue(entry.ProfileId, out var selected)
-                        && proxyChoices.Contains(selected, StringComparer.Ordinal)
-                            ? selected : "No proxy")
+                    !string.IsNullOrWhiteSpace(entry.SelectedProxy)
+                        && proxyChoices.Contains(entry.SelectedProxy, StringComparer.Ordinal)
+                            ? entry.SelectedProxy : "No proxy")
                 {
                     UserId = state.UserId,
                     ApiKey = state.ApiKey,
+                    HasPat = state.HasPat,
                     Balance = state.Balance,
                     Login = state.Login,
                 });
@@ -87,10 +105,14 @@ public partial class ShortcutsView : UserControl, IDisposable
 
             var count = _rows.Count;
             var missing = _rows.Count(row => row.Status == "Missing");
-            SummaryText.Text = count == 0
-                ? "No profiles added."
-                : $"{count} profile{(count == 1 ? "" : "s")} added"
-                  + (missing > 0 ? $" · {missing} missing" : string.Empty);
+            if (!_batchRunning && string.IsNullOrWhiteSpace(StatusText.Text))
+            {
+                ProgressTitleText.Text = count == 0
+                    ? "Agent Router · ready"
+                    : $"{count} profiles ready"
+                      + (missing > 0 ? $" · {missing} missing" : string.Empty);
+                StatusText.Text = "Pilih operasi untuk memulai.";
+            }
 
             EmptyText.Visibility = count == 0
                 ? Visibility.Visible
@@ -99,6 +121,16 @@ public partial class ShortcutsView : UserControl, IDisposable
         catch (Exception ex)
         {
             SetStatus("Shortcut refresh failed: " + ex.Message);
+        }
+    }
+
+    private void DateTimer_Tick(object? sender, EventArgs e)
+    {
+        var today = DateTime.Now.ToString(
+            "yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture);
+        if (!string.Equals(today, _loginHeaderDate, StringComparison.Ordinal))
+        {
+            Refresh();
         }
     }
 
@@ -152,15 +184,152 @@ public partial class ShortcutsView : UserControl, IDisposable
         }
     }
 
-    private void AutoClaimButton_Click(object sender, RoutedEventArgs e)
+    private async void AutoClaimButton_Click(object sender, RoutedEventArgs e)
     {
-        // Placeholder: the claim pipeline is not wired yet.
-        if (_disposed)
+        if (_disposed || _batchRunning)
         {
             return;
         }
 
-        SetStatus("Auto claim is not wired up yet.");
+        _claimAllRunning = true;
+        var profiles = _rows.Where(row => row.Exists)
+            .OrderBy(_ => Random.Shared.Next())
+            .ToArray();
+        BeginBatch("Claim all", profiles.Length);
+        try
+        {
+            var headless = ShowBrowserToggle.IsChecked != true;
+            var completed = 0;
+            var succeeded = 0;
+            var failed = 0;
+            foreach (var row in profiles)
+            {
+                UpdateBatchProgress(completed, profiles.Length,
+                    $"{completed}/{profiles.Length} selesai · mengklaim {row.Account}");
+                try
+                {
+                    var result = await _claims.ClaimAsync(
+                        row.ProfileId, headless, ResolveProxy(row.SelectedProxy));
+                    if (result.Outcome == "saved") succeeded++;
+                    else failed++;
+                }
+                catch
+                {
+                    // Continue the sequential batch; the row-level claim method
+                    // reports an unknown outcome and the remaining rows still run.
+                    failed++;
+                }
+                completed++;
+                UpdateBatchProgress(completed, profiles.Length,
+                    $"{completed}/{profiles.Length} selesai · {succeeded} berhasil · {failed} gagal");
+            }
+
+            FinishBatch("Claim all selesai",
+                $"{succeeded} berhasil · {failed} gagal", profiles.Length);
+        }
+        finally
+        {
+            _claimAllRunning = false;
+            if (_batchRunning)
+            {
+                FinishBatch("Claim all selesai", "Proses berakhir.", profiles.Length);
+            }
+            Refresh();
+        }
+    }
+
+    private async void CheckAllBalanceButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (_disposed) return;
+        await RunCheckAllAsync("balance", row => _claims.CheckAsync(row.ProfileId));
+    }
+
+    private async void CheckAllLoginButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (_disposed) return;
+        await RunCheckAllAsync("login", row => _claims.CheckLoginAsync(row.ProfileId));
+    }
+
+    private async Task RunCheckAllAsync<T>(
+        string label,
+        Func<ShortcutRow, Task<T>> check)
+    {
+        if (_disposed || _batchRunning) return;
+        var profiles = _rows.Where(row => row.Exists && row.HasLoginCredentials
+            && row.UserId is > 0).ToArray();
+        BeginBatch($"Check all {label}", profiles.Length);
+        var completed = 0;
+        var succeeded = 0;
+        var failed = 0;
+        try
+        {
+            await Task.WhenAll(profiles.Select(async row =>
+            {
+                try
+                {
+                    var result = await check(row).ConfigureAwait(true);
+                    var didSucceed = result switch
+                    {
+                        BalanceCheckOutcome balance => balance.State == "saved",
+                        LoginCheckOutcome login => login.State == "saved",
+                        _ => true,
+                    };
+                    if (didSucceed) Interlocked.Increment(ref succeeded);
+                    else Interlocked.Increment(ref failed);
+                }
+                catch
+                {
+                    Interlocked.Increment(ref failed);
+                }
+
+                var done = Interlocked.Increment(ref completed);
+                UpdateBatchProgress(done, profiles.Length,
+                    $"{done}/{profiles.Length} selesai · {Volatile.Read(ref failed)} gagal");
+            }));
+            FinishBatch($"Check all {label} selesai",
+                $"{succeeded} berhasil · {failed} gagal", profiles.Length);
+        }
+        finally
+        {
+            if (_batchRunning)
+            {
+                FinishBatch($"Check all {label} selesai", "Proses berakhir.", profiles.Length);
+            }
+            Refresh();
+        }
+    }
+
+    private void BeginBatch(string title, int total)
+    {
+        _batchRunning = true;
+        AutoClaimButton.IsEnabled = false;
+        CheckAllBalanceButton.IsEnabled = false;
+        CheckAllLoginButton.IsEnabled = false;
+        ProgressTitleText.Text = total == 0 ? $"{title} · tidak ada profil" : title;
+        StatusText.Text = total == 0 ? "Tidak ada profil yang memenuhi syarat." : $"0/{total} selesai";
+        BatchProgressBar.Value = 0;
+        BatchProgressBar.Visibility = total == 0 ? Visibility.Collapsed : Visibility.Visible;
+    }
+
+    private void UpdateBatchProgress(int completed, int total, string detail)
+    {
+        StatusText.Text = detail;
+        if (total > 0)
+        {
+            BatchProgressBar.Value = Math.Clamp(completed * 100d / total, 0, 100);
+        }
+    }
+
+    private void FinishBatch(string title, string detail, int total)
+    {
+        _batchRunning = false;
+        ProgressTitleText.Text = title;
+        StatusText.Text = detail;
+        BatchProgressBar.Value = total > 0 ? 100 : 0;
+        BatchProgressBar.Visibility = total > 0 ? Visibility.Visible : Visibility.Collapsed;
+        AutoClaimButton.IsEnabled = true;
+        CheckAllBalanceButton.IsEnabled = true;
+        CheckAllLoginButton.IsEnabled = true;
     }
 
     /// <summary>
@@ -169,7 +338,7 @@ public partial class ShortcutsView : UserControl, IDisposable
     /// </summary>
     private async void ClaimButton_Click(object sender, RoutedEventArgs e)
     {
-        if (_disposed || sender is not FrameworkElement element
+        if (_disposed || _claimAllRunning || sender is not FrameworkElement element
             || element.Tag is not ShortcutRow row)
         {
             return;
@@ -283,6 +452,25 @@ public partial class ShortcutsView : UserControl, IDisposable
         Refresh();
     }
 
+    private void ProxySelection_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (_disposed || sender is not ComboBox { DataContext: ShortcutRow row } combo
+            || combo.SelectedItem is not string selected)
+        {
+            return;
+        }
+
+        row.SelectedProxy = selected;
+        try
+        {
+            _catalog.SetProxy(row.ProfileId, selected);
+        }
+        catch (Exception ex)
+        {
+            SetStatus("Proxy selection could not be saved: " + ex.Message);
+        }
+    }
+
     /// <summary>
     /// Copies one row's captured api_key to the clipboard. The key comes from
     /// the profile's run JSON — this view never invents one, and a row without a
@@ -386,10 +574,25 @@ public partial class ShortcutsView : UserControl, IDisposable
 
     private void SetStatus(string? message)
     {
-        StatusText.Text = message ?? string.Empty;
-        StatusText.Visibility = string.IsNullOrWhiteSpace(message)
-            ? Visibility.Collapsed
-            : Visibility.Visible;
+        if (_batchRunning && !string.IsNullOrWhiteSpace(message))
+        {
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(message))
+        {
+            ProgressTitleText.Text = _rows.Count == 0
+                ? "Agent Router · ready"
+                : $"{_rows.Count} profiles ready";
+            StatusText.Text = "Pilih operasi untuk memulai.";
+            BatchProgressBar.Value = 0;
+            BatchProgressBar.Visibility = Visibility.Collapsed;
+            return;
+        }
+
+        ProgressTitleText.Text = "Activity";
+        StatusText.Text = message;
+        BatchProgressBar.Visibility = Visibility.Collapsed;
     }
 
     public void Dispose()
@@ -400,5 +603,7 @@ public partial class ShortcutsView : UserControl, IDisposable
         }
 
         _disposed = true;
+        _dateTimer.Stop();
+        _dateTimer.Tick -= DateTimer_Tick;
     }
 }

@@ -116,6 +116,28 @@ internal sealed class ShortcutCatalog
         }
     }
 
+    public void SetProxy(string profileId, string selectedProxy)
+    {
+        if (!IsSafeProfileId(profileId))
+        {
+            throw new InvalidOperationException("nama profile tidak sah");
+        }
+
+        ArgumentNullException.ThrowIfNull(selectedProxy);
+        lock (_sync)
+        {
+            var entries = LoadUnlocked().ToList();
+            var index = entries.FindIndex(entry => SameId(entry.ProfileId, profileId));
+            if (index < 0)
+            {
+                return;
+            }
+
+            entries[index] = entries[index] with { SelectedProxy = selectedProxy };
+            SaveUnlocked(entries);
+        }
+    }
+
     private static bool SameId(string left, string right)
         => string.Equals(left, right, StringComparison.OrdinalIgnoreCase);
 

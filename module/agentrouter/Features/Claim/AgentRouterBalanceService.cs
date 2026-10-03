@@ -1,6 +1,5 @@
 using System.Globalization;
 using System.Net.Http;
-using CitadelBridge;
 
 namespace Module.Agentrouter.Features.Claim;
 
@@ -11,6 +10,7 @@ namespace Module.Agentrouter.Features.Claim;
 public sealed record ProfileBalanceState(
     long? UserId,
     string ApiKey,
+    bool HasPat,
     BalanceSnapshot? Balance,
     LoginSnapshot? Login);
 
@@ -35,10 +35,11 @@ public sealed record BalanceCheckOutcome(
 /// <summary>
 /// Fetches one profile's balance and stores it in that profile's run JSON.
 ///
-/// <para>The get is ONE authenticated HTTP call with the credentials the claim
-/// flow already captured (the panel PAT plus the account id) — no browser, no
-/// profile lock, no logout, so it is safe to repeat and safe to run while a
-/// claim is in flight on another profile.</para>
+/// <para>The authenticated GET uses credentials the claim flow already
+/// captured (the panel PAT plus the account id). It first tries up to five
+/// exclusively leased pool proxies, then falls back to a direct request if no
+/// proxy returns a usable API response. It opens no browser and takes no
+/// profile lock.</para>
 ///
 /// <para>A failed get is reported and NOT stored: the number on screen is the
 /// last thing the gateway actually said, and a timeout says nothing about it.
@@ -47,15 +48,17 @@ public sealed record BalanceCheckOutcome(
 internal sealed class AgentRouterBalanceService : IDisposable
 {
     private const string BaseAddress = "https://agentrouter.org";
-    private const int MaxProxyAttempts = 10;
-
     private readonly AgentRouterRunProfileStore _profiles;
+    private readonly AgentRouterProxyManager _proxyManager;
     private readonly AgentRouterBalanceProbe _probe;
     private int _disposed;
 
-    public AgentRouterBalanceService(string? runsRoot = null)
+    public AgentRouterBalanceService(
+        AgentRouterRunProfileStore profiles,
+        AgentRouterProxyManager proxyManager)
     {
-        _profiles = new AgentRouterRunProfileStore(runsRoot);
+        _profiles = profiles;
+        _proxyManager = proxyManager;
         _probe = new AgentRouterBalanceProbe(BaseAddress);
     }
 
@@ -66,6 +69,7 @@ internal sealed class AgentRouterBalanceService : IDisposable
         return new ProfileBalanceState(
             profile?.UserId,
             profile?.ApiKey ?? string.Empty,
+            !string.IsNullOrWhiteSpace(profile?.Pat),
             profile?.Balance,
             profile?.Login);
     }
@@ -99,18 +103,26 @@ internal sealed class AgentRouterBalanceService : IDisposable
                 0);
         }
 
-        var endpoints = ProxyPoolContract.ReadSnapshot().Endpoints
-            .Where(endpoint => endpoint.Scheme is "http" or "https")
-            .OrderBy(_ => Random.Shared.Next())
-            .Take(MaxProxyAttempts)
-            .ToArray();
+        using var checkSlot = await _proxyManager
+            .EnterCheckAsync(cancellationToken).ConfigureAwait(false);
+        using var lease = await _proxyManager
+            .AcquireAsync(cancellationToken).ConfigureAwait(false);
 
         BalanceProbeResult? probe = null;
-        foreach (var endpoint in endpoints)
+        foreach (var endpoint in lease.Endpoints)
         {
             probe = await _probe
                 .ProbeAsync(profile.Pat, userId, endpoint, cancellationToken)
                 .ConfigureAwait(false);
+            if (probe.ProxyUsable)
+            {
+                lease.MarkSuccess(endpoint);
+            }
+            else
+            {
+                lease.MarkFailure(endpoint);
+            }
+
             if (probe.State is BalanceProbeState.Ok or BalanceProbeState.Rejected)
             {
                 break;

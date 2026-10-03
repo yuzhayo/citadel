@@ -70,11 +70,21 @@ internal sealed class ShortcutRow
 
     public LoginSnapshot? Login { get; init; }
 
-    public string LoginDisplay => Login is null ? "—" : Login.Success ? "✓" : "✗";
+    public bool HasPat { get; init; }
+
+    public bool HasLoginCredentials => HasPat && UserId is > 0;
+
+    public string LoginDisplay => Login is null
+        || !Login.Verified
+        || !string.Equals(Login.LocalDate, DateTime.Now.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture), StringComparison.Ordinal)
+            ? "—"
+            : Login.Success ? "✓" : "✗";
 
     public string LoginToolTip => Login is null
         ? "belum pernah dicek"
-        : Login.Detail;
+        : !string.Equals(Login.LocalDate, DateTime.Now.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture), StringComparison.Ordinal)
+            ? $"hasil {Login.LocalDate} sudah kedaluwarsa"
+            : Login.Detail;
 
     /// <summary>USD balance, or the em dash while none was ever fetched.</summary>
     public string BalanceDisplay => Balance is { } snapshot
