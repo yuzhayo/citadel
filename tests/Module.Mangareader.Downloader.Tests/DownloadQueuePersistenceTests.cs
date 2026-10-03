@@ -352,8 +352,8 @@ public sealed class DownloadQueuePersistenceTests : IDisposable
         Assert.Equal(0, job.CompletedPages);
         Assert.Equal(1, feature.Summary().DownloadActive);
 
-        feature.StopAll();
         stopServer.Cancel();
+        await feature.PauseAndDrainAsync();
         await server;
     }
 
