@@ -10,6 +10,9 @@ public interface IAgentRouterClaimService : IDisposable
 
     Task<BalanceCheckOutcome> CheckAsync(string profileId,
         CancellationToken cancellationToken = default);
+
+    Task<LoginCheckOutcome> CheckLoginAsync(string profileId,
+        CancellationToken cancellationToken = default);
 }
 
 /// <summary>Claim and balance implementation owned by the Claim feature.</summary>
@@ -17,6 +20,7 @@ public sealed class AgentRouterClaimFeature : IAgentRouterClaimService
 {
     private readonly AgentrouterClaimClient _claims = new();
     private readonly AgentRouterBalanceService _balances = new();
+    private readonly AgentRouterLoginService _login = new();
     private int _disposed;
 
     public Task<ClaimOutcome> ClaimAsync(string profileId, bool headless,
@@ -29,10 +33,15 @@ public sealed class AgentRouterClaimFeature : IAgentRouterClaimService
         CancellationToken cancellationToken = default)
         => _balances.CheckAsync(profileId, cancellationToken);
 
+    public Task<LoginCheckOutcome> CheckLoginAsync(string profileId,
+        CancellationToken cancellationToken = default)
+        => _login.CheckAsync(profileId, cancellationToken);
+
     public void Dispose()
     {
         if (Interlocked.Exchange(ref _disposed, 1) != 0) return;
         _claims.Dispose();
         _balances.Dispose();
+        _login.Dispose();
     }
 }

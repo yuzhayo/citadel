@@ -68,6 +68,14 @@ internal sealed class ShortcutRow
     /// </summary>
     public BalanceSnapshot? Balance { get; init; }
 
+    public LoginSnapshot? Login { get; init; }
+
+    public string LoginDisplay => Login is null ? "—" : Login.Success ? "✓" : "✗";
+
+    public string LoginToolTip => Login is null
+        ? "belum pernah dicek"
+        : Login.Detail;
+
     /// <summary>USD balance, or the em dash while none was ever fetched.</summary>
     public string BalanceDisplay => Balance is { } snapshot
         ? Format(snapshot.Usd)

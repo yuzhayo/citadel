@@ -15,6 +15,14 @@ public sealed record BalanceSnapshot(
     decimal UsedUsd,
     DateTimeOffset FetchedAtUtc);
 
+/// <summary>One daily sign-in lookup stored in the profile run JSON.</summary>
+public sealed record LoginSnapshot(
+    bool Success,
+    string? Content,
+    string Detail,
+    string LocalDate,
+    DateTimeOffset CheckedAtUtc);
+
 /// <summary>
 /// What one profile's run JSON holds: the account id the flow captured, the
 /// api_key that claim captured, and the last balance this screen fetched.
@@ -26,7 +34,8 @@ internal sealed record AgentRouterRunProfile(
     long? UserId,
     string ApiKey,
     string Pat,
-    BalanceSnapshot? Balance);
+    BalanceSnapshot? Balance,
+    LoginSnapshot? Login);
 
 /// <summary>
 /// The claim flow's per-profile JSON, <c>agentrouter-&lt;id&gt;.json</c> beside
@@ -43,6 +52,7 @@ internal sealed record AgentRouterRunProfile(
 internal sealed class AgentRouterRunProfileStore
 {
     private const string BalanceKey = "balance";
+    private const string LoginKey = "login";
 
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -99,7 +109,8 @@ internal sealed class AgentRouterRunProfileStore
             ReadLong(document, "user_id"),
             ReadString(document, "api_key") ?? string.Empty,
             ReadString(document, "pat") ?? string.Empty,
-            ReadBalance(document[BalanceKey] as JsonObject));
+            ReadBalance(document[BalanceKey] as JsonObject),
+            ReadLogin(document[LoginKey] as JsonObject));
     }
 
     /// <summary>
@@ -134,6 +145,46 @@ internal sealed class AgentRouterRunProfileStore
 
                 // Write beside the target, then swap: a reader never observes a
                 // half-written file, and an interrupted save leaves the old one.
+                var staging = path + ".tmp";
+                File.WriteAllText(staging, document.ToJsonString(JsonOptions));
+                File.Move(staging, path, overwrite: true);
+                return true;
+            }
+            catch (IOException)
+            {
+                return false;
+            }
+            catch (UnauthorizedAccessException)
+            {
+                return false;
+            }
+        }
+    }
+
+    /// <summary>Adds or replaces the daily login lookup without touching credentials.</summary>
+    public bool WriteLogin(string profileId, LoginSnapshot snapshot)
+    {
+        ArgumentNullException.ThrowIfNull(snapshot);
+        var path = PathFor(profileId);
+
+        lock (_sync)
+        {
+            try
+            {
+                var document = TryLoad(path) ?? new JsonObject();
+                document["profile"] ??= JsonValue.Create(profileId);
+                document[LoginKey] = new JsonObject
+                {
+                    ["success"] = snapshot.Success,
+                    ["content"] = snapshot.Content,
+                    ["detail"] = snapshot.Detail,
+                    ["local_date"] = snapshot.LocalDate,
+                    ["checked_at"] = snapshot.CheckedAtUtc
+                        .ToUniversalTime()
+                        .ToString("yyyy-MM-dd'T'HH:mm:ss'Z'", CultureInfo.InvariantCulture),
+                };
+
+                Directory.CreateDirectory(_root);
                 var staging = path + ".tmp";
                 File.WriteAllText(staging, document.ToJsonString(JsonOptions));
                 File.Move(staging, path, overwrite: true);
@@ -230,4 +281,22 @@ internal sealed class AgentRouterRunProfileStore
             CultureInfo.InvariantCulture,
             DateTimeStyles.AdjustToUniversal | DateTimeStyles.AssumeUniversal,
             out moment);
+
+    private static LoginSnapshot? ReadLogin(JsonObject? login)
+    {
+        if (login is null
+            || login["success"] is not JsonValue successValue
+            || !successValue.TryGetValue<bool>(out var success)
+            || !TryReadTimestamp(login, "checked_at", out var checkedAt))
+        {
+            return null;
+        }
+
+        return new LoginSnapshot(
+            success,
+            ReadString(login, "content"),
+            ReadString(login, "detail") ?? string.Empty,
+            ReadString(login, "local_date") ?? string.Empty,
+            checkedAt);
+    }
 }

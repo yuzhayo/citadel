@@ -81,6 +81,7 @@ public partial class ShortcutsView : UserControl, IDisposable
                     UserId = state.UserId,
                     ApiKey = state.ApiKey,
                     Balance = state.Balance,
+                    Login = state.Login,
                 });
             }
 
@@ -252,6 +253,33 @@ public partial class ShortcutsView : UserControl, IDisposable
 
         // Re-reading the JSON is what puts a saved number on screen. This view
         // holds no balance state of its own.
+        Refresh();
+    }
+
+    private async void CheckLoginButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (_disposed || sender is not FrameworkElement element
+            || element.Tag is not ShortcutRow row)
+        {
+            return;
+        }
+
+        element.IsEnabled = false;
+        SetStatus($"Checking login for {row.Account}…");
+        try
+        {
+            var outcome = await _claims.CheckLoginAsync(row.ProfileId);
+            SetStatus($"{row.Account}: {outcome.Describe()}");
+        }
+        catch (Exception ex)
+        {
+            SetStatus("Login check failed: " + ex.Message);
+        }
+        finally
+        {
+            element.IsEnabled = true;
+        }
+
         Refresh();
     }
 

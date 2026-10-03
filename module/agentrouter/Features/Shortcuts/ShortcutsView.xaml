@@ -147,6 +147,37 @@
                                 </DataGridTemplateColumn.CellTemplate>
                             </DataGridTemplateColumn>
 
+                            <DataGridTemplateColumn Header="Check login"
+                                                    CanUserSort="False"
+                                                    Width="140">
+                                <DataGridTemplateColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <setting:SettingButton Content="Check login"
+                                                               Tag="{Binding}"
+                                                               IsEnabled="{Binding HasApiKey}"
+                                                               Click="CheckLoginButton_Click"
+                                                               ToolTip="Read today's sign-in log and save it to the profile JSON"
+                                                               ToolTipService.ShowOnDisabled="True"
+                                                               AutomationProperties.Name="Check daily login" />
+                                    </DataTemplate>
+                                </DataGridTemplateColumn.CellTemplate>
+                            </DataGridTemplateColumn>
+
+                            <DataGridTemplateColumn Header="Login"
+                                                    CanUserSort="False"
+                                                    Width="80">
+                                <DataGridTemplateColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <TextBlock Text="{Binding LoginDisplay}"
+                                                   ToolTip="{Binding LoginToolTip}"
+                                                   HorizontalAlignment="Center"
+                                                   VerticalAlignment="Center"
+                                                   FontSize="16"
+                                                   TextAlignment="Center" />
+                                    </DataTemplate>
+                                </DataGridTemplateColumn.CellTemplate>
+                            </DataGridTemplateColumn>
+
                             <DataGridTemplateColumn Header="Proxy"
                                                     CanUserSort="False"
                                                     Width="220">

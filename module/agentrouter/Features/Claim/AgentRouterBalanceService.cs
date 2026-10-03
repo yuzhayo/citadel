@@ -11,7 +11,8 @@ namespace Module.Agentrouter.Features.Claim;
 public sealed record ProfileBalanceState(
     long? UserId,
     string ApiKey,
-    BalanceSnapshot? Balance);
+    BalanceSnapshot? Balance,
+    LoginSnapshot? Login);
 
 /// <summary>Hasil satu get balance. Tidak pernah memuat secret.</summary>
 public sealed record BalanceCheckOutcome(
@@ -65,7 +66,8 @@ internal sealed class AgentRouterBalanceService : IDisposable
         return new ProfileBalanceState(
             profile?.UserId,
             profile?.ApiKey ?? string.Empty,
-            profile?.Balance);
+            profile?.Balance,
+            profile?.Login);
     }
 
     /// <summary>Fetches the balance and, on success, writes it to the JSON.</summary>
