@@ -389,10 +389,6 @@ NOTICE_JS = r"""
       (el.innerText || el.textContent || '').replace(/\s+/g, ' ').trim()
         === 'Close Today' && visible(el));
     if (!button) continue;
-    if (dialog.dataset.citadelCloseTodayClicked === '1') {
-      return { present: true, dismissed: false };
-    }
-    dialog.dataset.citadelCloseTodayClicked = '1';
     button.click();
     return { present: true, dismissed: true };
   }
@@ -416,17 +412,16 @@ NOTICE_WATCHER_JS = r"""
       };
       for (const dialog of document.querySelectorAll(
           '[role="dialog"][aria-modal="true"]')) {
-        if (!visible(dialog)) {
-          delete dialog.dataset.citadelCloseTodayClicked;
-          continue;
-        }
+        if (!visible(dialog)) continue;
         const footer = dialog.querySelector('.semi-modal-footer');
         if (!footer) continue;
         const button = [...footer.querySelectorAll('button')].find((el) =>
           (el.innerText || el.textContent || '').replace(/\s+/g, ' ').trim()
             === 'Close Today' && visible(el));
-        if (!button || dialog.dataset.citadelCloseTodayClicked === '1') continue;
-        dialog.dataset.citadelCloseTodayClicked = '1';
+        if (!button) continue;
+        const lastClick = Number(dialog.dataset.citadelCloseTodayLastClick || 0);
+        if (Date.now() - lastClick < 1000) continue;
+        dialog.dataset.citadelCloseTodayLastClick = String(Date.now());
         button.click();
       }
     } catch (_) { /* transient DOM replacement; retry on the next tick */ }
@@ -464,7 +459,10 @@ def dismiss_notice(page, timeout_s: float = 3.0) -> str:
         if not isinstance(seen, dict) or not seen.get("present"):
             return "none"
         if seen.get("dismissed"):
-            return "dismissed"
+            # The DOM can keep the overlay mounted for a short animation. Do
+            # not report success until the blocking dialog is actually gone.
+            page.wait_for_timeout(250)
+            continue
         if time.time() >= deadline:
             return "stuck"
         page.wait_for_timeout(250)

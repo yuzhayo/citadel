@@ -6,6 +6,8 @@ public interface IAgentRouterClaimService : IDisposable
     Task<ClaimOutcome> ClaimAsync(string profileId, bool headless, string? proxy,
         CancellationToken cancellationToken = default);
 
+    void StopClaim();
+
     ProfileBalanceState Read(string profileId);
 
     Task<BalanceCheckOutcome> CheckAsync(string profileId,
@@ -34,6 +36,8 @@ public sealed class AgentRouterClaimFeature : IAgentRouterClaimService
     public Task<ClaimOutcome> ClaimAsync(string profileId, bool headless,
         string? proxy, CancellationToken cancellationToken = default)
         => _claims.ClaimAsync(profileId, headless, proxy, cancellationToken);
+
+    public void StopClaim() => _claims.StopClaim();
 
     public ProfileBalanceState Read(string profileId) => _balances.Read(profileId);
 

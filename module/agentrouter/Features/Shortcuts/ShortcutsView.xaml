@@ -56,6 +56,12 @@
                                                 Margin="12,0,0,0"
                                                 Click="AutoClaimButton_Click"
                                                 AutomationProperties.Name="Claim the daily reward for every profile" />
+                         <setting:SettingButton x:Name="StopClaimButton"
+                                                Content="Stop claim"
+                                                Margin="8,0,0,0"
+                                                IsEnabled="False"
+                                                Click="StopClaimButton_Click"
+                                                AutomationProperties.Name="Stop the active claim" />
                          <setting:SettingButton x:Name="CheckAllBalanceButton"
                                                 Content="Check all balance"
                                                 Margin="8,0,0,0"

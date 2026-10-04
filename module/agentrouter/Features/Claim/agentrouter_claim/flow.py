@@ -293,11 +293,41 @@ def _popup_landed(popup) -> bool:
     """
     try:
         if popup.is_closed():
-            return True
+            return False
         url = (popup.url or "").lower()
     except Exception:
         return True
     return "agentrouter.org" in url and "/login" not in url
+
+
+def _popup_has_session(popup) -> bool:
+    """True only when the new tab is back on Agent Router with a live chip."""
+    if not _popup_landed(popup):
+        return False
+    try:
+        state, _ = session_state(popup, timeout_s=0.1, interval_s=0.1,
+                                 confirm_out=1)
+        return state == SESSION_LIVE
+    except Exception:
+        return False
+
+
+def _close_popup_verified(popup) -> bool:
+    """Close a non-active OAuth popup and verify the browser accepted it."""
+    try:
+        if popup.is_closed():
+            return True
+        popup.close()
+        for _ in range(10):
+            if popup.is_closed():
+                return True
+            popup.wait_for_timeout(100)
+    except Exception as exc:
+        log(f"popup close failed: {type(exc).__name__}: {exc}")
+    try:
+        return bool(popup.is_closed())
+    except Exception:
+        return False
 
 
 def run_inline(row: dict, headless: bool = False, proxy: str | None = None) -> int:
@@ -322,6 +352,8 @@ def run_inline(row: dict, headless: bool = False, proxy: str | None = None) -> i
             os="windows",
             **({"proxy": {"server": proxy}} if proxy else {}),
         ) as context:
+            # Install the notice watcher for every page, including OAuth tabs.
+            context.add_init_script(script=NOTICE_WATCHER_JS)
             pages = list(context.pages)
             flow.page = pages[0] if pages else context.new_page()
             page = flow.page
@@ -330,7 +362,6 @@ def run_inline(row: dict, headless: bool = False, proxy: str | None = None) -> i
             # but a System Notice can also arrive between flow actions. Keep a
             # bounded, page-local watcher active for this flow's browser page;
             # add_init_script reinstalls it after every navigation.
-            page.add_init_script(script=NOTICE_WATCHER_JS)
             page.evaluate(NOTICE_WATCHER_JS)
 
             # --- steps 1-3: ONE entry navigation + the verifier ---------
@@ -431,23 +462,31 @@ def run_inline(row: dict, headless: bool = False, proxy: str | None = None) -> i
                 events["popup"] = popup_url.split("?")[0]
                 events["has_code"] = "code=" in popup_url
                 log(f"popup: {events['popup']} has_code={events['has_code']}")
-                completed = wait_for(page, lambda: _popup_landed(popup),
+                completed = wait_for(page, lambda: _popup_has_session(popup),
                                      T_POPUP_S)
-                if not completed:
-                    log("popup did not reach the app in 30s; closing it")
-                try:
-                    popup.close()
-                except Exception:
-                    pass
+                if completed:
+                    # The provider completes OAuth in this new tab. Continue
+                    # all remaining claim steps there instead of switching
+                    # back to a stale opener page.
+                    page = popup
+                    flow.page = popup
+                    log(f"popup selected as active flow page: {popup.url}")
+                else:
+                    log("popup did not reach a live app session; closing it")
+                    closed = _close_popup_verified(popup)
+                    log(f"popup close verified={closed}")
+                    if not closed:
+                        events["click_error"] = "popup remained open after close"
                 events["completed"] = bool(completed)
             except Exception as exc:
                 events["click_error"] = f"{type(exc).__name__}: {exc}"
                 log(f"no popup ({events['click_error']})")
 
-            # Opener is stale: the login completed in the popup context, so
-            # ONE reload of the console is needed -- and the verifier proves it.
-            page.goto(CONSOLE_URL, wait_until="domcontentloaded",
-                      timeout=T_GOTO)
+            # If the popup was selected it is already the live page. Otherwise
+            # use the opener as the fallback and reload it once to prove login.
+            if not events["completed"]:
+                page.goto(CONSOLE_URL, wait_until="domcontentloaded",
+                          timeout=T_GOTO)
             try:
                 page.wait_for_load_state("networkidle", timeout=T_IDLE)
             except Exception:
@@ -562,11 +601,9 @@ def run_inline(row: dict, headless: bool = False, proxy: str | None = None) -> i
 
             # --- step 7: final quit ---------------------------------------
             flow.check("final-quit")
-            # Kept on purpose: a known page where the account menu is proven
-            # to exist. The blind 1200ms sleep and both chip polls are gone --
-            # the verifier decides, and answers "out" on its first poll.
-            page.goto(CONSOLE_URL, wait_until="domcontentloaded",
-                      timeout=T_GOTO)
+            # Stay on the active page (including the successful OAuth tab).
+            # The account menu is shared by the authenticated routes, so an
+            # extra /console navigation is unnecessary and can race overlays.
             state, info = flow.session(5)
             if state != SESSION_LIVE:
                 flow.record("final-quit", True,

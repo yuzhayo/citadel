@@ -33,6 +33,8 @@ public partial class ShortcutsView : UserControl, IDisposable
     private string _loginHeaderDate = string.Empty;
     private bool _disposed;
     private bool _claimAllRunning;
+    private bool _claimRunning;
+    private bool _claimStopRequested;
     private bool _batchRunning;
 
     internal ShortcutsView(ShortcutCatalog catalog, AgentProxyPool pool,
@@ -192,6 +194,8 @@ public partial class ShortcutsView : UserControl, IDisposable
         }
 
         _claimAllRunning = true;
+        _claimRunning = true;
+        _claimStopRequested = false;
         var profiles = _rows.Where(row => row.Exists)
             .OrderBy(_ => Random.Shared.Next())
             .ToArray();
@@ -204,6 +208,10 @@ public partial class ShortcutsView : UserControl, IDisposable
             var failed = 0;
             foreach (var row in profiles)
             {
+                if (_claimStopRequested)
+                {
+                    break;
+                }
                 UpdateBatchProgress(completed, profiles.Length,
                     $"{completed}/{profiles.Length} selesai · mengklaim {row.Account}");
                 try
@@ -230,6 +238,7 @@ public partial class ShortcutsView : UserControl, IDisposable
         finally
         {
             _claimAllRunning = false;
+            _claimRunning = false;
             if (_batchRunning)
             {
                 FinishBatch("Claim all selesai", "Proses berakhir.", profiles.Length);
@@ -305,6 +314,8 @@ public partial class ShortcutsView : UserControl, IDisposable
         AutoClaimButton.IsEnabled = false;
         CheckAllBalanceButton.IsEnabled = false;
         CheckAllLoginButton.IsEnabled = false;
+        StopClaimButton.IsEnabled = title.StartsWith("Claim",
+            StringComparison.OrdinalIgnoreCase);
         ProgressTitleText.Text = total == 0 ? $"{title} · tidak ada profil" : title;
         StatusText.Text = total == 0 ? "Tidak ada profil yang memenuhi syarat." : $"0/{total} selesai";
         BatchProgressBar.Value = 0;
@@ -330,6 +341,7 @@ public partial class ShortcutsView : UserControl, IDisposable
         AutoClaimButton.IsEnabled = true;
         CheckAllBalanceButton.IsEnabled = true;
         CheckAllLoginButton.IsEnabled = true;
+        StopClaimButton.IsEnabled = false;
     }
 
     /// <summary>
@@ -348,6 +360,9 @@ public partial class ShortcutsView : UserControl, IDisposable
         // the run has started.
         var headless = ShowBrowserToggle.IsChecked != true;
         var proxy = ResolveProxy(row.SelectedProxy);
+        _claimRunning = true;
+        _claimStopRequested = false;
+        StopClaimButton.IsEnabled = true;
 
         // The panel PAT is single-reveal, so a second click while one claim is
         // running must not be able to race the first on the same profile.
@@ -362,13 +377,30 @@ public partial class ShortcutsView : UserControl, IDisposable
         {
             // The flow may already have mutated the account before it failed;
             // reporting a plain failure would invite a destructive retry.
-            SetStatus("Claim outcome unknown (" + ex.Message
-                      + "). Verify the account before claiming again.");
+            SetStatus(_claimStopRequested
+                ? "Claim stopped. Verify the account before claiming again."
+                : "Claim outcome unknown (" + ex.Message
+                  + "). Verify the account before claiming again.");
         }
         finally
         {
             element.IsEnabled = true;
+            _claimRunning = false;
+            StopClaimButton.IsEnabled = false;
         }
+    }
+
+    private void StopClaimButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (_disposed || !_claimRunning)
+        {
+            return;
+        }
+
+        _claimStopRequested = true;
+        SetStatus("Stopping claim…");
+        _claims.StopClaim();
+        StopClaimButton.IsEnabled = false;
     }
 
     private string? ResolveProxy(string selection)

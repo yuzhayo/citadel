@@ -105,6 +105,23 @@ internal sealed class AgentrouterClaimClient : IDisposable
         }
     }
 
+    /// <summary>
+    /// Explicit user stop for a stuck claim. Abort kills pyhost and its entire
+    /// Camoufox/process tree so a slow proxy cannot hold the UI until timeout.
+    /// The next claim lazily creates a fresh host.
+    /// </summary>
+    public void StopClaim()
+    {
+        PyHost? host;
+        lock (_sync)
+        {
+            host = _host;
+            _host = null;
+        }
+
+        host?.Abort();
+    }
+
     private PyHost EnsureHost()
     {
         lock (_sync)
