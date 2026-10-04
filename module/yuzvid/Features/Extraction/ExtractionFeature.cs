@@ -2,16 +2,23 @@ using System;
 using System.Collections.Generic;
 using System.Text.Json;
 using System.Threading.Tasks;
+using System.Windows;
 using Module.Yuzvid.Features.Browser;
 
 namespace Module.Yuzvid.Features.Extraction;
 
 /// <summary>One extraction pass over the current page (Source A ∪ Source B).</summary>
+/// <param name="StoreKey">
+/// Path of the persisted JSON for this pass, or null when persistence failed.
+/// Callers pass this to <see cref="ExtractionFeature.ResolveStored"/> to read a
+/// link back from disk instead of holding the live object.
+/// </param>
 public sealed record ExtractionResult(
     string PageUrl,
     IReadOnlyList<VideoLink> Links,
     bool StaticSkipped,
-    string? StaticSkipReason);
+    string? StaticSkipReason,
+    string? StoreKey = null);
 
 /// <summary>
 /// Entry point of the Extraction feature (parent talks ONLY to this).
@@ -29,10 +36,48 @@ public sealed class ExtractionFeature
     private const string DomDumpScript = "document.documentElement.outerHTML";
 
     private readonly IYuzvidBrowserController _browser;
+    private ExtractionWindow? _window;
 
     public ExtractionFeature(IYuzvidBrowserController browser)
     {
         _browser = browser ?? throw new ArgumentNullException(nameof(browser));
+    }
+
+    /// <summary>Single-link copy requested from the extraction window.</summary>
+    public event EventHandler<VideoLink>? CopyRequested;
+
+    /// <summary>Single-link enqueue requested from the extraction window.</summary>
+    public event EventHandler<VideoLink>? QueueRequested;
+
+    /// <summary>Batch enqueue of every checked row.</summary>
+    public event EventHandler<IReadOnlyList<VideoLink>>? QueueSelectionRequested;
+
+    /// <summary>Re-run extraction for the current page.</summary>
+    public event EventHandler? RescanRequested;
+
+    /// <summary>
+    /// Show (or refresh) the feature-owned floating extraction window. The window
+    /// is created here — never by the parent — so the shell references no
+    /// feature-declared type (guard YUZ-2). Reused on subsequent passes.
+    /// </summary>
+    public void ShowWindow(Window owner, ExtractionResult result)
+    {
+        ArgumentNullException.ThrowIfNull(result);
+
+        if (_window is null)
+        {
+            _window = new ExtractionWindow();
+            if (owner is not null) _window.Owner = owner;
+            _window.Closed += (_, _) => _window = null;
+            _window.CopyRequested += (_, link) => CopyRequested?.Invoke(this, link);
+            _window.QueueRequested += (_, link) => QueueRequested?.Invoke(this, link);
+            _window.QueueSelectionRequested += (_, links) => QueueSelectionRequested?.Invoke(this, links);
+            _window.RescanRequested += (_, _) => RescanRequested?.Invoke(this, EventArgs.Empty);
+        }
+
+        _window.ShowResults(result);
+        if (!_window.IsVisible) _window.Show();
+        _window.Activate();
     }
 
     public async Task<ExtractionResult> ExtractAsync()
@@ -81,6 +126,18 @@ public sealed class ExtractionFeature
             skipReason = "Browser belum siap.";
         }
 
-        return new ExtractionResult(pageUrl, merged, skipped, skipReason);
+        // Persist as a backup: a restarted app (or a later Queue click) can
+        // resolve links from disk. Failure only leaves StoreKey null.
+        var result = new ExtractionResult(pageUrl, merged, skipped, skipReason);
+        var storeKey = ExtractionStore.Save(result);
+        return result with { StoreKey = storeKey };
     }
+
+    /// <summary>
+    /// Re-reads one link previously saved under <paramref name="storeKey"/>.
+    /// Returns null when it cannot be resolved from disk — the caller falls
+    /// back to its in-memory copy.
+    /// </summary>
+    public static VideoLink? ResolveStored(string? storeKey, string? linkKey)
+        => ExtractionStore.ResolveLink(storeKey, linkKey);
 }

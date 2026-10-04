@@ -369,37 +369,79 @@ LOGGED_OUT = "out"           # explicit logged-out marker -> session dead
 SESSION_UNKNOWN = "unknown"  # neither, and the timeout ran out
 
 
-# The daily "System Notice" is a Semi modal (role=dialog, aria-modal=true).
-# While it is up it EATS clicks aimed at the page behind it, so it can break
-# any step that has to click. One evaluate finds the smallest visible element
-# whose exact text is "Close Today" (the inner span, which bubbles to its
-# button) and clicks it -- the same race-free shape as the Quit click.
-#
-# Only "Close Today" is pressed. The header X dismisses for the session only,
-# so the notice would simply come back.
+# The daily System Notice may appear after the initial page check. Keep a
+# page-local watcher alive for the claim flow so a late modal cannot block a
+# later action. It targets only the exact footer action "Close Today".
 NOTICE_JS = r"""
 () => {
   const visible = (el) => {
     const r = el.getBoundingClientRect();
-    return r.width > 0 && r.height > 0;
+    const style = getComputedStyle(el);
+    return r.width > 0 && r.height > 0 && style.visibility !== 'hidden'
+      && style.display !== 'none';
   };
-  const dialogs = [...document.querySelectorAll(
-      'div[role="dialog"][aria-modal="true"], div.semi-modal-content'
-    )].filter((el) => visible(el) && (el.textContent || '').includes('Close Today'));
-  if (dialogs.length === 0) return { present: false, dismissed: false };
-  let best = null;
-  let bestArea = Infinity;
-  for (const el of dialogs[0].querySelectorAll('button, span, div')) {
-    if ((el.textContent || '').trim() !== 'Close Today') continue;
-    if (!visible(el)) continue;
-    const r = el.getBoundingClientRect();
-    const area = r.width * r.height;
-    if (area < bestArea) { best = el; bestArea = area; }
+  for (const dialog of document.querySelectorAll(
+      '[role="dialog"][aria-modal="true"]')) {
+    if (!visible(dialog)) continue;
+    const footer = dialog.querySelector('.semi-modal-footer');
+    if (!footer) continue;
+    const button = [...footer.querySelectorAll('button')].find((el) =>
+      (el.innerText || el.textContent || '').replace(/\s+/g, ' ').trim()
+        === 'Close Today' && visible(el));
+    if (!button) continue;
+    if (dialog.dataset.citadelCloseTodayClicked === '1') {
+      return { present: true, dismissed: false };
+    }
+    dialog.dataset.citadelCloseTodayClicked = '1';
+    button.click();
+    return { present: true, dismissed: true };
   }
-  if (!best) return { present: true, dismissed: false };
-  best.click();
-  return { present: true, dismissed: true };
+  return { present: false, dismissed: false };
 }
+"""
+
+# Re-evaluate immediately, after DOM changes, and on a modest timer. The init
+# script is page-scoped and runs again on navigation; closing the flow's page
+# ends the observer and timer automatically.
+NOTICE_WATCHER_JS = r"""
+(() => {
+  if (window.__citadelCloseTodayWatcher) return;
+  const scan = () => {
+    try {
+      const visible = (el) => {
+        const r = el.getBoundingClientRect();
+        const style = getComputedStyle(el);
+        return r.width > 0 && r.height > 0 && style.visibility !== 'hidden'
+          && style.display !== 'none';
+      };
+      for (const dialog of document.querySelectorAll(
+          '[role="dialog"][aria-modal="true"]')) {
+        if (!visible(dialog)) {
+          delete dialog.dataset.citadelCloseTodayClicked;
+          continue;
+        }
+        const footer = dialog.querySelector('.semi-modal-footer');
+        if (!footer) continue;
+        const button = [...footer.querySelectorAll('button')].find((el) =>
+          (el.innerText || el.textContent || '').replace(/\s+/g, ' ').trim()
+            === 'Close Today' && visible(el));
+        if (!button || dialog.dataset.citadelCloseTodayClicked === '1') continue;
+        dialog.dataset.citadelCloseTodayClicked = '1';
+        button.click();
+      }
+    } catch (_) { /* transient DOM replacement; retry on the next tick */ }
+  };
+  const observer = new MutationObserver(scan);
+  observer.observe(document.documentElement, { childList: true, subtree: true });
+  const timer = setInterval(scan, 500);
+  window.__citadelCloseTodayWatcher = { observer, timer };
+  window.addEventListener('pagehide', () => {
+    observer.disconnect();
+    clearInterval(timer);
+    delete window.__citadelCloseTodayWatcher;
+  }, { once: true });
+  scan();
+})()
 """
 
 

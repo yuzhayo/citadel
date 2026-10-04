@@ -10,6 +10,7 @@
         <Grid>
             <Grid.RowDefinitions>
                 <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
                 <RowDefinition Height="*" />
             </Grid.RowDefinitions>
 
@@ -39,7 +40,32 @@
                 </setting:SettingActionCard.ActionContent>
             </setting:SettingActionCard>
 
-            <Border Grid.Row="1"
+            <!-- Download folder: path + change + open. -->
+            <setting:SettingActionCard Grid.Row="1" Margin="0,10,0,0">
+                <setting:SettingActionCard.Content>
+                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                        <TextBlock Text="Simpan ke:" Foreground="{DynamicResource Body}"
+                                   VerticalAlignment="Center" Margin="0,0,8,0" />
+                        <TextBlock x:Name="DownloadFolderText"
+                                   Foreground="{DynamicResource Fg}"
+                                   VerticalAlignment="Center"
+                                   MaxWidth="360" TextTrimming="CharacterEllipsis"
+                                   ToolTip="{Binding RelativeSource={RelativeSource Self}, Path=Text}" />
+                    </StackPanel>
+                </setting:SettingActionCard.Content>
+                <setting:SettingActionCard.ActionContent>
+                    <StackPanel Orientation="Horizontal">
+                        <setting:SettingButton Content="Ubah folder…" MinWidth="120"
+                                               Click="ChangeFolder_Click"
+                                               AutomationProperties.Name="Change download folder" />
+                        <setting:SettingButton Content="Buka folder" MinWidth="110" Margin="10,0,0,0"
+                                               Click="OpenDownloadFolder_Click"
+                                               AutomationProperties.Name="Open download folder" />
+                    </StackPanel>
+                </setting:SettingActionCard.ActionContent>
+            </setting:SettingActionCard>
+
+            <Border Grid.Row="2"
                     Margin="0,10,0,0"
                     Style="{DynamicResource SettingCardStyle}">
                 <setting:SettingTable x:Name="QueueTable"
@@ -62,7 +88,7 @@
                         <DataGridTextColumn Header="Detail"
                                             Width="260"
                                             Binding="{Binding Detail}" />
-                        <DataGridTemplateColumn Header="Action" Width="150">
+                        <DataGridTemplateColumn Header="Action" Width="190">
                             <DataGridTemplateColumn.CellTemplate>
                                 <DataTemplate>
                                     <StackPanel Orientation="Horizontal">
@@ -88,6 +114,18 @@
                                                 Cursor="Hand"
                                                 Click="RowStop_Click"
                                                 Tag="{Binding}" />
+                                        <Button Content="&#xE838;"
+                                                FontFamily="Segoe MDL2 Assets"
+                                                FontSize="11"
+                                                Padding="6,1"
+                                                Margin="0,0,4,0"
+                                                Background="Transparent"
+                                                Foreground="{DynamicResource Accent}"
+                                                BorderThickness="0"
+                                                Cursor="Hand"
+                                                Click="RowOpenFolder_Click"
+                                                Tag="{Binding}"
+                                                ToolTip="Buka folder unduhan" />
                                         <Button Content="&#xE74D;"
                                                 FontFamily="Segoe MDL2 Assets"
                                                 FontSize="11"

@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Net;
 using System.Text.RegularExpressions;
 
 namespace Module.Yuzvid.Features.Extraction;
@@ -14,6 +15,10 @@ namespace Module.Yuzvid.Features.Extraction;
 //   fetch, retry/backoff, per-server JSON file output.
 // Deviation: host match is OrdinalIgnoreCase (Python `in` is case-sensitive;
 //   real-world hosts are lowercase, so behavior is identical on real input).
+// Added 2026-10-04 (NOT from urllib_lib): VersionGroups (igay69 linksv1..4
+//   server-player versions), anchor-label parsing (igay69 anchor text), and
+//   display-title derivation. Evidence: ARTEFACT/igay69-probe/log.md §servers,
+//   ARTEFACT/IMPLEMENTATION_PLAN-ige69.md (linksv3 = playmogo/myvidplay links).
 
 /// <summary>One video-host URL found on a page, with ported metadata.</summary>
 public sealed record VideoLink(
@@ -24,7 +29,10 @@ public sealed record VideoLink(
     int? EpisodeNum,
     string? EpisodeTitle,
     string ServerGroup,
-    bool IsDirectMedia)
+    bool IsDirectMedia,
+    string VersionGroup = "",
+    string? Label = null,
+    string? Title = null)
 {
     /// <summary>Dedup identity: origin + path, query ignored (urllib_lib rule).</summary>
     public string DedupKey
@@ -39,6 +47,12 @@ public sealed record VideoLink(
 
     /// <summary>Drawer badge text. Empty for embed pages, marked for direct media.</summary>
     public string DirectBadge => IsDirectMedia ? "\u25cf direct" : string.Empty;
+
+    /// <summary>Row title for the drawer; falls back to the slug when none derived.</summary>
+    public string DisplayTitle => string.IsNullOrWhiteSpace(Title) ? Slug : Title!;
+
+    /// <summary>Secondary row line: "host · slug".</summary>
+    public string DetailLine => Host + " \u00b7 " + Slug;
 }
 
 /// <summary>
@@ -78,6 +92,29 @@ public static class VideoLinkExtractor
         ["byseqekaho.com"] = "byseqekaho",
     };
 
+    // igay69 server-player versions (linksv1..linksv4 tab panels). Host→version.
+    // Evidence: igay69-probe/log.md "Server 1 DoodStream / Server 2 VOE /
+    // Server 3 PlayMogo / Server 4 Byseqekaho"; IMPLEMENTATION_PLAN-ige69.md
+    // (linksv3 = playmogo/myvidplay). Only V3 (playmogo) is downloadable today.
+    private static readonly Dictionary<string, string> VersionGroups = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["luluvid.com"] = "V1", ["luluvdoo.com"] = "V1", ["luluvdo.com"] = "V1",
+        ["dood.wf"] = "V1", ["doodstream.co"] = "V1",
+        ["voe.sx"] = "V2", ["voe.pm"] = "V2", ["voe.unblockit.top"] = "V2",
+        ["playmogo.com"] = "V3", ["myvidplay.com"] = "V3",
+        ["byseqekaho.com"] = "V4",
+    };
+
+    // Human label for a version group (header text in the drawer).
+    public static string VersionLabel(string version) => version switch
+    {
+        "V1" => "V1 \u00b7 DoodStream",
+        "V2" => "V2 \u00b7 VOE",
+        "V3" => "V3 \u00b7 PlayMogo",
+        "V4" => "V4 \u00b7 Byseqekaho",
+        _ => version,
+    };
+
     private static readonly Regex UrlPattern =
         new(@"https?://[^\s'""<>\\]+", RegexOptions.Compiled);
 
@@ -97,6 +134,78 @@ public static class VideoLinkExtractor
 
     private static readonly string[] DirectMediaExtensions =
         { ".mp4", ".m3u8", ".webm" };
+
+    // igay69 labeled anchors: <a href="…">link | video | streaming & download | part 01</a>.
+    // Text cannot contain nested tags (plain-text anchors, per IMPLEMENTATION_PLAN-ige69.md).
+    private static readonly Regex AnchorPattern = new(
+        @"<a[^>]+href\s*=\s*[""'](?<url>https?://[^""']+)[""'][^>]*>(?<text>[^<]{1,200})</a>",
+        RegexOptions.Compiled | RegexOptions.IgnoreCase);
+
+    /// <summary>
+    /// igay69 anchor labels: URL → anchor text. Gives hash-slug links a readable
+    /// title ("link | video | streaming &amp; download | part 01"). Best-effort:
+    /// pages without labeled anchors simply yield no entries.
+    /// </summary>
+    public static IReadOnlyDictionary<string, string> ExtractAnchorLabels(string html)
+    {
+        var labels = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        if (string.IsNullOrEmpty(html)) return labels;
+
+        foreach (Match m in AnchorPattern.Matches(html))
+        {
+            var url = WebUtility.HtmlDecode(m.Groups["url"].Value).Trim();
+            var text = WebUtility.HtmlDecode(m.Groups["text"].Value).Trim();
+            if (url.Length == 0 || text.Length == 0) continue;
+            labels[url] = text;
+        }
+        return labels;
+    }
+
+    /// <summary>
+    /// Display title, best-first: URL episode title (byseqekaho style) →
+    /// igay69 anchor label → humanized word-like slug → null (caller falls
+    /// back to the slug for hash-only pages).
+    /// </summary>
+    public static string? DeriveTitle(string? label, string? episodeTitle, string slug, int? episodeNum)
+    {
+        if (!string.IsNullOrWhiteSpace(episodeTitle))
+            return episodeNum is { } n ? $"{episodeTitle} Part {n:00}" : episodeTitle;
+
+        if (!string.IsNullOrWhiteSpace(label))
+        {
+            var seg = label.Trim();
+            var lastSep = seg.LastIndexOf('|');
+            if (lastSep >= 0 && lastSep + 1 < seg.Length)
+                seg = seg[(lastSep + 1)..].Trim();
+            if (seg.Length > 0
+                && !seg.Equals("download", StringComparison.OrdinalIgnoreCase)
+                && !seg.Equals("watch", StringComparison.OrdinalIgnoreCase))
+                return Humanize(seg);
+        }
+
+        if (!IsHashLike(slug))
+            return Humanize(slug);
+
+        return null;
+    }
+
+    /// <summary>Hash-only slug (e.g. snu73d1s27wb) carries no words to humanize.</summary>
+    private static bool IsHashLike(string slug)
+        => slug.Length >= 8 && !slug.Contains('-') && !slug.Contains('_');
+
+    private static string Humanize(string text)
+    {
+        var words = text.Replace('_', ' ').Replace('-', ' ')
+            .Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        var builder = new System.Text.StringBuilder();
+        foreach (var word in words)
+        {
+            if (builder.Length > 0) builder.Append(' ');
+            builder.Append(char.ToUpperInvariant(word[0]));
+            if (word.Length > 1) builder.Append(word, 1, word.Length - 1);
+        }
+        return builder.ToString();
+    }
 
     /// <summary>
     /// True when the URI is directly downloadable media (extension match).
@@ -124,6 +233,17 @@ public static class VideoLinkExtractor
         return labels.Length >= 2 ? labels[^2] : host;
     }
 
+    /// <summary>igay69 server-player version (V1..V4) for a host, or "" when unknown.</summary>
+    public static string GetVersionGroup(string host)
+    {
+        foreach (var kv in VersionGroups)
+        {
+            if (host.Contains(kv.Key, StringComparison.OrdinalIgnoreCase))
+                return kv.Value;
+        }
+        return string.Empty;
+    }
+
     /// <summary>
     /// Extract + filter + dedup + metadata. Mirrors the urllib_lib pipeline
     /// minus fetching (the caller supplies rendered HTML).
@@ -135,6 +255,7 @@ public static class VideoLinkExtractor
             ? DefaultVideoHosts
             : new List<string>(hosts);
 
+        var labels = ExtractAnchorLabels(html ?? string.Empty);
         var seen = new HashSet<string>(StringComparer.Ordinal);
         var result = new List<VideoLink>();
 
@@ -159,7 +280,8 @@ public static class VideoLinkExtractor
             if (!hostHit && !IsDirectMediaUrl(cleaned))
                 continue;
 
-            var link = BuildLink(cleaned, uri, host);
+            labels.TryGetValue(cleaned, out var label);
+            var link = BuildLink(cleaned, uri, host, label);
             if (seen.Add(link.DedupKey))
                 result.Add(link);
         }
@@ -171,7 +293,7 @@ public static class VideoLinkExtractor
     /// Build a single link from an absolute URI (Source B tap path).
     /// Null when the string is not an absolute http(s) URL with a dotted host.
     /// </summary>
-    public static VideoLink? TryBuildFromUri(string full)
+    public static VideoLink? TryBuildFromUri(string full, string? label = null)
     {
         if (!Uri.TryCreate(full, UriKind.Absolute, out var uri))
             return null;
@@ -180,10 +302,10 @@ public static class VideoLinkExtractor
         var host = uri.Host;
         if (string.IsNullOrEmpty(host) || !host.Contains('.'))
             return null;
-        return BuildLink(full, uri, host);
+        return BuildLink(full, uri, host, label);
     }
 
-    private static VideoLink BuildLink(string full, Uri uri, string host)
+    private static VideoLink BuildLink(string full, Uri uri, string host, string? label = null)
     {
         var path = uri.AbsolutePath;
         var trimmed = path.TrimEnd('/');
@@ -213,8 +335,12 @@ public static class VideoLinkExtractor
                 title = titlePart;
         }
 
+        // Uniform display title (label/episode/slug aware).
+        var displayTitle = DeriveTitle(label, title, slug, episodeNum);
+
         return new VideoLink(
             full, host, path, slug, episodeNum, title,
-            GetServerGroup(host), IsDirectMediaUrl(full));
+            GetServerGroup(host), IsDirectMediaUrl(full),
+            GetVersionGroup(host), label, displayTitle);
     }
 }

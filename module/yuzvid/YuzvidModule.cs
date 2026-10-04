@@ -28,7 +28,9 @@ public sealed class YuzvidModule : IModule
         var settings = new YuzvidRuntimeView();
         settings.Wire(browser);
         var extraction = new ExtractionFeature(browser);
-        var queue = new QueueEngine(() => browser.DownloadProxy);
+        var queueEngine = new QueueDownloaderClient(QueueSettingsStore.ResolveDownloadFolder());
+        lifetime.Add(queueEngine.Dispose);
+        var queue = new QueueEngine(() => browser.DownloadProxy, queueEngine);
         lifetime.Add(queue.Dispose);
         var queueView = new QueueView(queue);
         return new YuzvidView(browser, settings, extraction, queue, queueView);

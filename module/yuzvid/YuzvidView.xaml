@@ -2,7 +2,6 @@
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:setting="clr-namespace:Citadel.Setting.Components;assembly=Citadel.Setting"
-             xmlns:extraction="clr-namespace:Module.Yuzvid.Features.Extraction"
              Background="{DynamicResource Bg}"
              Foreground="{DynamicResource Fg}"
              UseLayoutRounding="True"
@@ -269,26 +268,6 @@
                                            FontSize="11" />
                             </Border>
                         </Grid>
-                    </Border>
-                </Popup>
-
-                <!-- Link drawer popup (Extraction feature) -->
-                <Popup x:Name="LinkDrawerPopup"
-                       IsOpen="False"
-                       PlacementTarget="{Binding ElementName=ExtractButton}"
-                       Placement="Bottom"
-                       StaysOpen="False"
-                       AllowsTransparency="True"
-                       PopupAnimation="Slide">
-                    <Border Background="{DynamicResource Bg}"
-                            BorderBrush="{DynamicResource Dim}"
-                            BorderThickness="1"
-                            CornerRadius="6"
-                            MinWidth="420"
-                            MaxWidth="560"
-                            MaxHeight="420"
-                            Margin="0,4,0,0">
-                        <extraction:LinkDrawerView x:Name="LinkDrawer" />
                     </Border>
                 </Popup>
 

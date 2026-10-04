@@ -1,7 +1,10 @@
 using System;
+using System.Diagnostics;
+using System.IO;
 using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
+using Microsoft.Win32;
 
 namespace Module.Yuzvid.Features.Queue;
 
@@ -20,6 +23,66 @@ public partial class QueueView : UserControl
         QueueTable.ItemsSource = _engine.Items;
         _engine.Items.CollectionChanged += (_, _) => RefreshSummary();
         RefreshSummary();
+        RefreshDownloadFolderText();
+    }
+
+    private void RefreshDownloadFolderText()
+        => DownloadFolderText.Text = _engine.DownloadFolder;
+
+    private void ChangeFolder_Click(object sender, RoutedEventArgs e)
+    {
+        var current = _engine.DownloadFolder;
+        var dialog = new OpenFolderDialog
+        {
+            Title = "Pilih folder simpan unduhan",
+            Multiselect = false,
+            InitialDirectory = Directory.Exists(current) ? current : string.Empty,
+        };
+
+        var owner = Window.GetWindow(this);
+        var accepted = owner is null ? dialog.ShowDialog() : dialog.ShowDialog(owner);
+        if (accepted != true) return;
+
+        try
+        {
+            _engine.SetDownloadFolder(dialog.FolderName);
+            RefreshDownloadFolderText();
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show("Tidak dapat mengganti folder: " + ex.Message,
+                "Yuzvid", MessageBoxButton.OK, MessageBoxImage.Warning);
+        }
+    }
+
+    private void OpenDownloadFolder_Click(object sender, RoutedEventArgs e)
+        => OpenInExplorer(_engine.DownloadFolder, selectFile: false);
+
+    private void RowOpenFolder_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is not Button btn || btn.Tag is not QueueItem item) return;
+
+        // Finished file → reveal it; otherwise open the download folder.
+        if (!string.IsNullOrEmpty(item.FilePath) && File.Exists(item.FilePath))
+            OpenInExplorer(item.FilePath!, selectFile: true);
+        else
+            OpenInExplorer(_engine.DownloadFolder, selectFile: false);
+    }
+
+    private static void OpenInExplorer(string path, bool selectFile)
+    {
+        try
+        {
+            var target = selectFile
+                ? "/select,\"" + path.Replace("\"", string.Empty, StringComparison.Ordinal) + "\""
+                : "\"" + path.Replace("\"", string.Empty, StringComparison.Ordinal) + "\"";
+            Process.Start(new ProcessStartInfo("explorer.exe", target) { UseShellExecute = true });
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show("Tidak dapat membuka folder: " + ex.Message,
+                "Yuzvid", MessageBoxButton.OK, MessageBoxImage.Warning);
+        }
     }
 
     private void RefreshSummary()

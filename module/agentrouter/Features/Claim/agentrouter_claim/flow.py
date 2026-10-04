@@ -39,7 +39,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from ._lib import (
-    OUT_DIR, SESSION_LIVE, dismiss_notice, free_lock, load_profile_json, log,
+    NOTICE_WATCHER_JS, OUT_DIR, SESSION_LIVE, dismiss_notice, free_lock,
+    load_profile_json, log,
     mask_secret, read_status, read_table, safe_id, save_profile_json,
     session_state, visible_first, visible_texts, wait_for, write_status,
 )
@@ -324,6 +325,13 @@ def run_inline(row: dict, headless: bool = False, proxy: str | None = None) -> i
             pages = list(context.pages)
             flow.page = pages[0] if pages else context.new_page()
             page = flow.page
+
+            # The one-shot clear_notice calls remain as an immediate fallback,
+            # but a System Notice can also arrive between flow actions. Keep a
+            # bounded, page-local watcher active for this flow's browser page;
+            # add_init_script reinstalls it after every navigation.
+            page.add_init_script(script=NOTICE_WATCHER_JS)
+            page.evaluate(NOTICE_WATCHER_JS)
 
             # --- steps 1-3: ONE entry navigation + the verifier ---------
             flow.check("check-login")

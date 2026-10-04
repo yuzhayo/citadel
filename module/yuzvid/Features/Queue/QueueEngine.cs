@@ -17,6 +17,13 @@ public sealed class QueueItem : INotifyPropertyChanged
     public string Url { get; }
     public string Item { get; }
 
+    /// <summary>
+    /// True when the URL already IS the media file (.mp4/.m3u8/.webm) and the
+    /// naive HTTP path can fetch it directly. False for player pages
+    /// (playmogo/doodstream /d/ links) that must be resolved to a CDN URL first.
+    /// </summary>
+    internal bool IsDirectMedia { get; }
+
     private string _status = "Antre";
     public string Status
     {
@@ -42,11 +49,15 @@ public sealed class QueueItem : INotifyPropertyChanged
     internal string? FilePath;
     internal int Attempts;
 
-    public QueueItem(string title, string url, string item)
+    /// <summary>Job id di plugin Python saat unduhan lewat engine (null untuk jalur direct).</summary>
+    internal string? EngineJobId;
+
+    public QueueItem(string title, string url, string item, bool isDirectMedia = false)
     {
         Title = title;
         Url = url;
         Item = item;
+        IsDirectMedia = isDirectMedia;
     }
 
     public event PropertyChangedEventHandler? PropertyChanged;
@@ -55,36 +66,71 @@ public sealed class QueueItem : INotifyPropertyChanged
 }
 
 /// <summary>
-/// Owns download transfers. No WebView2, no Browser internals: downloads route
-/// through the controller-supplied <see cref="IWebProxy"/> (same local proxy as
-/// browsing), so upstream/proxy ownership never leaves the Browser feature.
-/// All public methods must be called from the UI thread (items are UI-bound).
+/// Owns download transfers. Two paths, decided per item:
+///   - <b>direct media</b> (.mp4/.m3u8/.webm): naive HttpGet, routed through the
+///     controller-supplied <see cref="IWebProxy"/> (same local proxy as browsing).
+///   - <b>player page</b> (playmogo/doodstream /d/ link): resolved to a CDN URL
+///     and downloaded by the pyhost <c>yuzvid_downloader</c> plugin (multi-thread
+///     range + resume). The plugin runs its own engine; this class only drives it.
+/// No WebView2, no Browser internals: upstream/proxy ownership never leaves the
+/// Browser feature. All public methods must be called from the UI thread.
 /// </summary>
 public sealed class QueueEngine : IDisposable
 {
     private const int MaxAttempts = 2;
     private const int BufferSize = 64 * 1024;
+    private const int EngineThreads = 4;
 
     private readonly Func<IWebProxy?> _proxyProvider;
+    private readonly QueueDownloaderClient _engine;
     private bool _disposed;
 
     public ObservableCollection<QueueItem> Items { get; } = new();
 
-    public static string DownloadsFolder => Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-        "Citadel", "Yuzvid", "Downloads");
+    /// <summary>Default folder (immutable); resolved folder comes from settings.</summary>
+    public static string DownloadsFolder => QueueSettingsStore.DefaultDownloadFolder;
 
-    public QueueEngine(Func<IWebProxy?> proxyProvider)
+    /// <summary>Active download folder (configurable via UI, persisted).</summary>
+    public string DownloadFolder { get; private set; }
+
+    /// <summary>
+    /// Constructor is internal: the composition root (YuzvidModule) builds the
+    /// engine + client pair; the parent receives the ready-made instance and
+    /// never constructs feature types (guard YUZ-2).
+    /// </summary>
+    internal QueueEngine(Func<IWebProxy?> proxyProvider, QueueDownloaderClient engine)
     {
         _proxyProvider = proxyProvider ?? throw new ArgumentNullException(nameof(proxyProvider));
+        _engine = engine ?? throw new ArgumentNullException(nameof(engine));
+        DownloadFolder = QueueSettingsStore.ResolveDownloadFolder();
+    }
+
+    /// <summary>
+    /// Change the download folder (persisted). Client is retargeted so the
+    /// Python engine writes into the new folder for subsequent jobs.
+    /// </summary>
+    public void SetDownloadFolder(string folder)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(folder);
+        var full = Path.GetFullPath(folder);
+        DownloadFolder = full;
+        QueueSettingsStore.SetDownloadFolder(full);
+        _engine.SetOutputDir(full);
+        Directory.CreateDirectory(full);
     }
 
     public QueueItem Enqueue(VideoLink link)
     {
         ArgumentNullException.ThrowIfNull(link);
-        var title = string.IsNullOrEmpty(link.EpisodeTitle) ? link.Slug : $"{link.EpisodeTitle} (part {link.EpisodeNum})";
+        // DisplayTitle is the same derivation the extractor shows (anchor label →
+        // episode title → humanized slug); the old Slug-first form surfaced raw
+        // hashes (e.g. "snu73d1s27wb") for label-carrying pages.
+        var title = link.DisplayTitle;
         if (string.IsNullOrEmpty(title)) title = link.Host;
-        var item = new QueueItem(title, link.Full, link.ServerGroup) { Detail = link.ServerGroup };
+        var item = new QueueItem(title, link.Full, link.ServerGroup, link.IsDirectMedia)
+        {
+            Detail = link.DetailLine,
+        };
         Items.Add(item);
         return item;
     }
@@ -139,6 +185,25 @@ public sealed class QueueEngine : IDisposable
     {
         ArgumentNullException.ThrowIfNull(item);
         try { item.Cts?.Cancel(); } catch { /* best effort */ }
+        TryStopEngineJob(item.EngineJobId);
+    }
+
+    /// <summary>
+    /// Best-effort stop job plugin (lepas dari kanal UI). Kegagalan diabaikan —
+    /// checkpoint tetap tersimpan sehingga resume aman.
+    /// </summary>
+    private void TryStopEngineJob(string? jobId)
+    {
+        if (string.IsNullOrEmpty(jobId)) return;
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+                await _engine.StopAsync(jobId!, cts.Token).ConfigureAwait(false);
+            }
+            catch { /* plugin/transport tidak siap — checkpoint tetap aman */ }
+        });
     }
 
     public void CancelAll()
@@ -172,7 +237,78 @@ public sealed class QueueEngine : IDisposable
 
     private async Task DownloadOnceAsync(QueueItem item, CancellationToken token)
     {
-        Directory.CreateDirectory(DownloadsFolder);
+        Directory.CreateDirectory(DownloadFolder);
+        if (item.IsDirectMedia)
+        {
+            await DownloadDirectAsync(item, token);
+        }
+        else
+        {
+            await DownloadViaEngineAsync(item, token);
+        }
+    }
+
+    /// <summary>
+    /// Player page (/d/ link): resolve → CDN URL, then hand the transfer to the
+    /// pyhost engine (multi-thread range + resume). Polls plugin status ~2x/s.
+    /// </summary>
+    private async Task DownloadViaEngineAsync(QueueItem item, CancellationToken token)
+    {
+        item.Detail = "resolve CDN…";
+        var resolution = await _engine.ResolveAsync(item.Url, token);
+        if (!resolution.Success || string.IsNullOrEmpty(resolution.CdnUrl))
+        {
+            throw new InvalidOperationException(
+                resolution.Error ?? "CDN URL tidak ditemukan");
+        }
+
+        item.Detail = $"engine: {resolution.Filename}";
+        var jobId = await _engine.StartAsync(
+            resolution.CdnUrl!,
+            resolution.Filename ?? "video.mp4",
+            resolution.FileSize,
+            resolution.Etag,
+            EngineThreads,
+            token);
+        if (string.IsNullOrEmpty(jobId))
+            throw new InvalidOperationException("Plugin unduhan menolak job.");
+
+        item.EngineJobId = jobId;
+        item.FilePath = null;
+        while (true)
+        {
+            token.ThrowIfCancellationRequested();
+            var p = await _engine.StatusAsync(jobId!, token);
+
+            switch (p.Status)
+            {
+                case "done":
+                    item.Progress = "100%";
+                    item.FilePath = p.SavePath;
+                    return;
+                case "failed":
+                    throw new InvalidOperationException(p.Error ?? "Unduhan gagal");
+                case "stopped":
+                    throw new OperationCanceledException(token);
+                default:
+                    var mb = p.Downloaded / 1048576.0;
+                    var totalMb = p.Total / 1048576.0;
+                    item.Progress = p.Total > 0
+                        ? $"{p.Percent:0}% ({mb:0.0}/{totalMb:0.0} MB)"
+                        : $"{mb:0.0} MB";
+                    var speed = p.Speed >= 1048576
+                        ? $"{p.Speed / 1048576:0.0} MB/s"
+                        : $"{p.Speed / 1024:0} KB/s";
+                    item.Detail = $"engine · {speed}";
+                    await Task.Delay(500, token);
+                    break;
+            }
+        }
+    }
+
+    /// <summary>Direct media URL: naive streaming GET through the browser proxy.</summary>
+    private async Task DownloadDirectAsync(QueueItem item, CancellationToken token)
+    {
         var filePath = NextFreePath(BuildFileName(item.Url));
         item.FilePath = filePath;
 
@@ -222,15 +358,15 @@ public sealed class QueueEngine : IDisposable
         return name;
     }
 
-    private static string NextFreePath(string fileName)
+    private string NextFreePath(string fileName)
     {
-        var path = Path.Combine(DownloadsFolder, fileName);
+        var path = Path.Combine(DownloadFolder, fileName);
         if (!File.Exists(path)) return path;
         var stem = Path.GetFileNameWithoutExtension(fileName);
         var ext = Path.GetExtension(fileName);
         for (int i = 2; ; i++)
         {
-            var candidate = Path.Combine(DownloadsFolder, $"{stem} ({i}){ext}");
+            var candidate = Path.Combine(DownloadFolder, $"{stem} ({i}){ext}");
             if (!File.Exists(candidate)) return candidate;
         }
     }

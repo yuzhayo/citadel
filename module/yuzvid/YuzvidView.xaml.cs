@@ -26,6 +26,9 @@ public partial class YuzvidView : UserControl, IRetainedViewModule
     private readonly QueueEngine _queue;
     private bool _settingsMounted;
     private readonly Dictionary<string, string> _urlLookup = new(); // display → full URL
+    // Store key of the last extraction pass — lets Queue read the link back
+    // from the persisted JSON instead of the live object (backup + decoupling).
+    private string? _lastStoreKey;
     private const int MaxDisplayUrl = 80;
     private const int MaxHistoryItems = 50;
 
@@ -84,19 +87,33 @@ public partial class YuzvidView : UserControl, IRetainedViewModule
         _browser.NavigationQueued += Browser_NavigationQueued;
         _browser.StateChanged += Browser_StateChanged;
 
-        // Drawer commands: copy now, enqueue + jump to Queue tab, re-scan re-runs extract.
-        LinkDrawer.CopyRequested += (_, link) =>
+        // Extraction feature commands (routed by the shell; feature owns its window).
+        _extraction.CopyRequested += (_, link) =>
         {
             try { Clipboard.SetText(link.Full); }
             catch { /* clipboard busy — best effort */ }
         };
-        LinkDrawer.QueueRequested += (_, link) =>
+        _extraction.QueueRequested += (_, link) =>
         {
-            _queue.Enqueue(link);
-            LinkDrawerPopup.IsOpen = false;
+            // Prefer the persisted copy (backup); fall back to the live object
+            // when the JSON is missing or unreadable.
+            var stored = ExtractionFeature.ResolveStored(_lastStoreKey, link.DedupKey);
+            _queue.Enqueue(stored ?? link);
             WorkspaceTabs.SelectedIndex = 1;
         };
-        LinkDrawer.RescanRequested += async (_, _) => await RunExtractionAsync();
+
+        // Batch: queue every checked row in one action.
+        _extraction.QueueSelectionRequested += (_, links) =>
+        {
+            foreach (var link in links)
+            {
+                var stored = ExtractionFeature.ResolveStored(_lastStoreKey, link.DedupKey);
+                _queue.Enqueue(stored ?? link);
+            }
+            WorkspaceTabs.SelectedIndex = 1;
+        };
+
+        _extraction.RescanRequested += async (_, _) => await RunExtractionAsync();
 
         // Start with buttons disabled (browser initializing)
         UpdateToolbarButtons(false);
@@ -150,8 +167,8 @@ public partial class YuzvidView : UserControl, IRetainedViewModule
         try
         {
             var result = await _extraction.ExtractAsync();
-            LinkDrawer.ShowResults(result);
-            LinkDrawerPopup.IsOpen = true;
+            _lastStoreKey = result.StoreKey;
+            _extraction.ShowWindow(Window.GetWindow(this), result);
         }
         catch (Exception ex)
         {

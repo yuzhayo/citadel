@@ -20,6 +20,10 @@
   <PropertyGroup>
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
     <AppendRuntimeIdentifierToOutputPath>false</AppendRuntimeIdentifierToOutputPath>
+    <!-- The Queue owns one pyhost feature plugin. Citizen.targets deploys
+         Features/*/<package>/*.py flat beside the shared pyhost payload and
+         the C# host activates it via CITADEL_PYHOST_PLUGINS at spawn. -->
+    <PyhostPluginName>yuzvid_downloader</PyhostPluginName>
   </PropertyGroup>
 
   <Target Name="DeployWebView2Native" AfterTargets="DeployCitizen">
