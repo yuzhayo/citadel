@@ -1,4 +1,4 @@
-r"""Architecture guards for the Yuzvid ownership refactor (docs/work/yuzvid-phase23/REFACTOR_PLAN.md).
+r"""Architecture guards for the Yuzvid ownership refactor (see module/yuzvid/WIKI.md).
 
 The parent shell (YuzvidView) is a dumb router: it may only speak the public
 Browser contract. Feature internals stay inside Features/ and are assembled
