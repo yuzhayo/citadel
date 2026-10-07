@@ -17,12 +17,20 @@ namespace Module.Yuzvid.Features.Browser;
 /// </summary>
 internal static class RedirectBlockList
 {
-    // Baked fallback. tsyndicate/marzaent: popup-trace.log 2026-09-16,
-    // main tab walked igay69 → tsyndicate → marzaent → stripchat twice.
+    // Baked fallback. Every host here is proven by local trace evidence — never
+    // a guess.
+    //   tsyndicate/marzaent: popup-trace.log 2026-09-16 — main tab walked
+    //     igay69 → tsyndicate → marzaent → stripchat twice.
+    //   petmoniker.com: 2026-10-04 — sangetods.net video click starts a server
+    //     redirect chain into petmoniker.com/<...>-names/ ad pages. Re-added in
+    //     P4 ONLY together with the B2 restore (YuzvidBrowserView) that returns
+    //     the tab to its last good URL; the earlier cancel-only attempt (Option A)
+    //     stranded the tab on the google.com/url interstitial and was reverted.
     private static readonly string[] BakedHosts =
     [
         "tsyndicate.com",
         "go.marzaent.com",
+        "petmoniker.com",
     ];
 
     private const string ListUrl = "https://easylist.to/easylist/easylist.txt";
@@ -43,6 +51,14 @@ internal static class RedirectBlockList
         if (string.IsNullOrEmpty(uri)) return false;
         if (!Uri.TryCreate(uri, UriKind.Absolute, out var parsed)) return false;
         return IsBlockedHost(parsed.Host);
+    }
+
+    /// <summary>The blocked host matched for a URI, or null when not listed.</summary>
+    public static string? TryGetBlockedHost(string? uri)
+    {
+        if (string.IsNullOrEmpty(uri)) return null;
+        if (!Uri.TryCreate(uri, UriKind.Absolute, out var parsed)) return null;
+        return IsBlockedHost(parsed.Host) ? parsed.Host : null;
     }
 
     public static bool IsBlockedHost(string? host)

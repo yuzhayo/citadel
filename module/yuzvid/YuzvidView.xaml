@@ -93,8 +93,9 @@
                                                    MinWidth="80"
                                                    Height="36"
                                                    Margin="8,0,0,0"
-                                                   Content="Extract"
-                                                   ToolTip="Extract links from current page"
+                                                   Content="Ambil Link"
+                                                   ToolTip="Ambil link video dari halaman saat ini (atau pakai input URL di jendela Extraction)"
+                                                   AutomationProperties.Name="Ambil Link"
                                                    Click="ExtractButton_Click"
                                                    IsEnabled="False" />
                             <setting:SettingButton x:Name="SettingsGearButton"

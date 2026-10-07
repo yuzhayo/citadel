@@ -186,6 +186,10 @@ internal sealed class SilentPopupHostManager : IDisposable
     private async Task ConfigureChildCoreAsync(CoreWebView2 core)
     {
         core.Settings.UserAgent = YuzvidBrowserView.SharedUserAgent;
+        // P1 hardening: popup cores must also auto-dismiss JS dialogs — an ad
+        // confirm() inside a hidden session would otherwise hang that session.
+        core.Settings.AreDefaultScriptDialogsEnabled = false;
+        core.ScriptDialogOpening += (s, e) => YuzvidBrowserView.DismissScriptDialog(e);
         core.AddWebResourceRequestedFilter("*", CoreWebView2WebResourceContext.All);
         core.WebResourceRequested += OnPopupResourceRequested;
         await core.AddScriptToExecuteOnDocumentCreatedAsync(YuzvidBrowserView.BridgeScript)
@@ -264,6 +268,7 @@ internal sealed class SilentPopupHostManager : IDisposable
         {
             session.HardTimer?.Stop();
             session.IdleTimer?.Stop();
+            session.DivertTimer?.Stop();
             if (session.Core is not null)
             {
                 if (session.NavigationHandler is not null)
@@ -287,6 +292,7 @@ internal sealed class SilentPopupHostManager : IDisposable
     {
         try { session.HardTimer?.Stop(); } catch { }
         try { session.IdleTimer?.Stop(); } catch { }
+        try { session.DivertTimer?.Stop(); } catch { }
         try { (session.Window?.Web as IDisposable)?.Dispose(); } catch { }
         try { session.Window?.Close(); } catch { }
         _sessions.Remove(session.Id);
@@ -310,6 +316,93 @@ internal sealed class SilentPopupHostManager : IDisposable
     }
 
     internal void ClearDetached() => _detached = false;
+
+    /// <summary>
+    /// Divert a blocked ad-redirect URL into a hidden session that loads it for
+    /// a few seconds, then closes — the ad "runs" invisibly while the main tab
+    /// stays on its real page. Used when a document hop is cancelled instead of
+    /// only dropped, so the ad's own expectations (an impression, a click) are
+    /// satisfied without ever touching the visible tab. Best-effort.
+    /// </summary>
+    internal void DivertToHidden(string url)
+    {
+        if (_detached || _shutdown || _disposed) return;
+        if (!_ui.CheckAccess())
+        {
+            try { _ui.BeginInvoke(new Action(() => DivertToHidden(url))); }
+            catch { /* dispatcher gone — nothing to open */ }
+            return;
+        }
+        // Budget: an ad site can retry its redirect dozens of times per minute.
+        // Each divert owns a hidden WebView2 for ~5s, so cap concurrent diverts
+        // and drop the overflow (the hop is still cancelled — the main tab is
+        // never touched either way).
+        var diverting = 0;
+        foreach (var s in _sessions.Values)
+        {
+            if (s.DivertTimer is not null) diverting++;
+        }
+        if (diverting >= 3)
+        {
+            Trace("divert skipped (budget full)");
+            return;
+        }
+        _ = DivertToHiddenAsync(url);
+    }
+
+    private async Task DivertToHiddenAsync(string url)
+    {
+        if (_detached || _shutdown || _disposed) return;
+        var session = new PopupSession { Id = Guid.NewGuid() };
+        _sessions[session.Id] = session;
+        Trace(session.Id + " divert-open host=" + PopupTrace.HostOf(url));
+
+        try
+        {
+            session.Window = new HiddenPopupWindow();
+            session.Window.Show();
+            await session.Window.Web.EnsureCoreWebView2Async(_environment).ConfigureAwait(true);
+        }
+        catch (Exception ex)
+        {
+            Trace("divert init-failed: " + ex.Message);
+            CloseSession(session.Id, "divert-init-failed");
+            return;
+        }
+
+        if (_detached || _shutdown || _disposed || !_sessions.ContainsKey(session.Id))
+        {
+            DisposeOrphan(session);
+            return;
+        }
+
+        var core = session.Window.Web.CoreWebView2;
+        if (core is null)
+        {
+            CloseSession(session.Id, "divert-no-core");
+            return;
+        }
+
+        session.Core = core;
+        await ConfigureChildCoreAsync(core).ConfigureAwait(true);
+
+        if (_detached || _shutdown || _disposed || !_sessions.ContainsKey(session.Id))
+        {
+            DisposeOrphan(session);
+            return;
+        }
+
+        try { core.Navigate(url); }
+        catch (Exception ex) { Trace("divert navigate failed: " + ex.Message); }
+
+        var id = session.Id;
+        session.DivertTimer = new DispatcherTimer(DispatcherPriority.Background, _ui)
+        {
+            Interval = TimeSpan.FromSeconds(5),
+        };
+        session.DivertTimer.Tick += (_, _) => CloseSession(id, "divert-done");
+        session.DivertTimer.Start();
+    }
 
     internal void Shutdown()
     {
@@ -344,6 +437,7 @@ internal sealed class SilentPopupHostManager : IDisposable
         public CoreWebView2? Core;
         public DispatcherTimer? HardTimer;
         public DispatcherTimer? IdleTimer;
+        public DispatcherTimer? DivertTimer;
         public EventHandler<CoreWebView2NavigationCompletedEventArgs>? NavigationHandler;
         public EventHandler<CoreWebView2NewWindowRequestedEventArgs>? NestedPopupHandler;
     }

@@ -57,24 +57,40 @@
             <!-- Toolbar -->
             <setting:SettingActionCard Grid.Row="1" Margin="12,10,12,0">
                 <setting:SettingActionCard.Content>
-                    <WrapPanel>
-                        <setting:SettingButton x:Name="QueueSelectedButton"
-                                               Content="Queue selected (0)"
-                                               MinWidth="160"
-                                               Click="QueueSelected_Click" />
-                        <setting:SettingButton x:Name="CopySelectedButton"
-                                               Content="Copy selected"
-                                               MinWidth="130" Margin="10,0,0,0"
-                                               Click="CopySelected_Click" />
-                        <setting:SettingButton x:Name="SelectAllButton"
-                                               Content="Select all"
-                                               MinWidth="110" Margin="10,0,0,0"
-                                               Click="SelectAll_Click" />
-                        <setting:SettingButton x:Name="ClearButton"
-                                               Content="Clear selection"
-                                               MinWidth="130" Margin="10,0,0,0"
-                                               Click="Clear_Click" />
-                    </WrapPanel>
+                    <StackPanel>
+                        <WrapPanel>
+                            <setting:SettingButton x:Name="QueueSelectedButton"
+                                                   Content="Queue selected (0)"
+                                                   MinWidth="160"
+                                                   Click="QueueSelected_Click" />
+                            <setting:SettingButton x:Name="CopySelectedButton"
+                                                   Content="Copy selected"
+                                                   MinWidth="130" Margin="10,0,0,0"
+                                                   Click="CopySelected_Click" />
+                            <setting:SettingButton x:Name="SelectAllButton"
+                                                   Content="Select all"
+                                                   MinWidth="110" Margin="10,0,0,0"
+                                                   Click="SelectAll_Click" />
+                            <setting:SettingButton x:Name="ClearButton"
+                                                   Content="Clear selection"
+                                                   MinWidth="130" Margin="10,0,0,0"
+                                                   Click="Clear_Click" />
+                        </WrapPanel>
+                        <!-- P2: manual page-URL input. Paste a NORMAL page URL; the parent
+                             navigates there and runs extraction on the loaded page. -->
+                        <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+                            <setting:SettingField x:Name="ManualUrlBox"
+                                                  Width="480" Height="34"
+                                                  Placeholder="Tempel URL halaman (bukan link CDN) — lalu Enter"
+                                                  PreviewKeyDown="ManualUrlBox_PreviewKeyDown"
+                                                  AutomationProperties.Name="Manual page URL" />
+                            <setting:SettingButton x:Name="ManualUrlGoButton"
+                                                   Content="Ambil &amp; Extract"
+                                                   MinWidth="130" Margin="10,0,0,0"
+                                                   Click="ManualUrlGo_Click"
+                                                   AutomationProperties.Name="Extract from manual URL" />
+                        </StackPanel>
+                    </StackPanel>
                 </setting:SettingActionCard.Content>
                 <setting:SettingActionCard.ActionContent>
                     <setting:SettingButton x:Name="RescanButton"

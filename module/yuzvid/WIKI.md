@@ -1,10 +1,13 @@
 # Yuzvid — Living Wiki
 
-> **Terakhir diupdate: 2026-10-04 14:24 (+07:00)**
-> — hapus dokumen lama yang menyesatkan (`flows-yuzvid.md`, `yuzvid-overview.md`,
-> `docs/work/yuzvid-phase23/`); WIKI.md kini sumber kebenaran tunggal bentuk module.
-> **Setiap kali file ini diubah, WAJIB update baris timestamp di atas** (format
-> `YYYY-MM-DD HH:mm (+07:00)`).
+> **Terakhir diupdate: 2026-10-04 20:12 (+07:00)**
+> — **v3.1.56 chain-cut:** hop ke-2 rantai redirect (NavigationId sama, lintas-host
+> ke host buram/interstitial) DIPOTONG di `NavigationStarting` — tab tak pernah
+> ninggalin halaman bersih, hop jahat di-divert ke hidden, lalu intent dibuka ulang.
+> Terbukti: petmoniker dipotong di `hop=2 first=sangetods.net`; percobaan ke-2 ke
+> slug **MENDARAT** (situs serve setelah iklan "dapat kesan" via divert).
+> Sebelumnya 19:55 revert guard interstitial. **Setiap kali file ini diubah, WAJIB
+> update baris timestamp di atas** (format `YYYY-MM-DD HH:mm (+07:00)`).
 
 > **WAJIB DIUPDATE setiap ada perubahan pada `module/yuzvid/`.**
 > Kalau kamu (agent/ manusia) mengubah code, logic, flow, atau UI di module ini,
@@ -175,10 +178,20 @@ dikirim situs ke servernya sendiri). Retaliasinya: player di-pause, tembok
 |---|---|---|
 | Cek `window.open` null (`if (!p \|\| p.closed)`) | **Setiap** `window.open` dapat core WebView2 hidup (hidden), tanpa kecuali | drop/null → terdeteksi seketika → retaliasi. **Jangan pernah kembalikan drop.** |
 | Flag skrip + impression pixel | Hidden session menjalankan chain penuh (UA, filter, tap, bridge sama dengan tab utama) | block rantai/session palsu → sesi ditandai server-side |
-| Bait element/DOM | Block sub-resource hanya **7 domain** terbukti-aman; sisanya mengalir | block agresif → bait gagal render → ketahuan |
+| Bait element/DOM | Block sub-resource hanya **4 host jahat terbukti**; Google ad hosts DIBUKA (WPS detector butuh `adsbygoogle.js` load) | block agresif → bait gagal render / fetch detektor reject → ketahuan |
 | Hijack same-tab (location/form) | Cancel `NavigationStarting` hanya non-gesture ke host terdaftar; gesture + same-host selalu lolos | cancel buta / biarkan → tab dibajak atau klik normal mati |
+| **Dialog `confirm()`/`alert()` blokir UI** | **Auto-dismiss via `ScriptDialogOpening`** (P1, 2026-10-04): dialog tidak pernah tampil; confirm dijawab "No", beforeunload di-Accept agar nav jalan | render dialog native → seluruh app frozen sampai diklik |
 | Hijack DNS ISP (SafeSearch paksa) | DoH di C#, bukan flag Chromium | flag/do-nothing → SafeSearch ISP lolos |
 | Ganti proxy = restart browser | LocalProxyServer di tengah (browser→localhost, toggle upstream) | env recreate → sesi mati tiap ganti proxy |
+
+**Bukti detektor sangetods.net (2026-10-04, plugin WP `wps-adblocker-detector`):** script
+halaman mem-`fetch` HEAD `pagead2.googlesyndication.com/.../adsbygoogle.js` (no-cors) —
+bila reject → wall. Lalu cek `window.adsbygoogle == null` (script gagal load) → wall.
+Terakhir cek bait `.ads`/`#add-image` via `getComputedStyle` (kita tidak cosmetic-filter
+→ aman). Karena `pagead2` diblokir, jalur 1–2 memicu "Adblocker detected!". Fix = unblock
+3 host Google (`ads.google.com`, `pagead2.googlesyndication.com`, `www.googletagservices.com`);
+popup tetap disekap `SilentPopupHostManager`. Bukti: HTML via local proxy + accessibility
+tree WebView2 memuat teks wall; trace log menunjukkan popup/redirect policy tetap bekerja.
 
 **Pemisahan A/B tap:** Sumber B (`GetVideoRequestSnapshot`) menang saat seri karena
 URI-nya membawa token CDN; Sumber A (regex DOM) hanya pelengkap.
@@ -229,14 +242,83 @@ Konstanta penting: `MaxDomChars=3_000_000` · `MaxTapEntries=200` ·
 | 1 | **V1/V2/V4 belum bisa diunduh** — hanya V3 (playmogo) yang resolve-nya proven; grup lain masuk antre lalu gagal di resolve | `VersionGroups` + `resolve.py` | Medium | port resolve doodlib spesifik playmogo |
 | 2 | **Downloader Python tanpa proxy** — `plugin.py` baca `msg["proxy"]` tapi `QueueDownloaderClient.StartAsync` tidak mengirim field `proxy` → engine unduh direct (beda dgn jalur direct-media yg pakai proxy browser) | `QueueDownloaderClient.cs` ↔ `plugin.py` | Medium | jalur engine tdk lewat LocalProxyServer |
 | 3 | **BlockedDomains match substring** (`uri.Contains`) bukan host-anchored → rawan false-positive | `YuzvidBrowserView.xaml.cs:~520` | Low | pertimbangkan host-suffix match |
-| 4 | **Respons blok sintetis** `200 "Blocked" text/plain` — kandidat fingerprint detektor | `YuzvidBrowserView.xaml.cs` + popup manager | Low | riset terbuka (sangetods.net) |
+| 4 | **Respons blok sintetis** `200 "Blocked" text/plain` untuk 4 host sisa — masih kandidat fingerprint bila situs mem-fetch host itu | `YuzvidBrowserView.xaml.cs` + popup manager | Info | sangetods.net wall FIXED 2026-10-04 via unblock Google; respons sintetis tidak lagi memicu wall di sana |
 | 5 | **ExtractionStore tanpa prune** — JSON lama menumpuk | `ExtractionStore.cs` | Low | belum ada kebijakan retensi |
 | 6 | Kosmetik: tombol "Open" bookmark pakai glyph `E72B` (ikon Back) | `YuzvidView.xaml` | Info | ganti ke ikon open yang benar |
+| 7 | **Same-tab ad redirect — FINAL FIX v3.1.54 (2026-10-04).** Chain: video click → `petmoniker/wp-json` → `google.com/url` (interstitial) → client redirect `petmoniker/<...>-names/`. Solusi final 3 lapis: **(1)** hop ke `BakedHosts` di-cancel **DAN dialihkan ke hidden session yang auto-close ±5 dtk** (`DivertToHidden` + budget 3 concurrent; "redirect → popup → closed") — iklan lihat load-nya selesai tanpa pernah nyentuh tab; **(2)** interstitial `google.com/url` ikut diblok (`IsInterstitial` di `ShouldCancelDocumentNav`, meski gesture) — ini penyebab tab STUCK; **(3)** restore ke **intent** (bukan prev) hanya jika tab beneran darat di interstitial. Regresi P4 lama (restore ke prev / nyangkut) beres. Terverifikasi v3.1.54: `nav-cancel` + `divert-open` + `closed (divert-done)`, FINAL URL = halaman video. | `YuzvidBrowserView.ShouldCancelDocumentNav/DivertToHidden` + `SilentPopupHostManager.DivertToHidden*` | Resolved | Pelajaran: cancel tanpa restorasi/redirect = tab nyangkut; redirect restore ke PREV = tujuan gak tercapai. Alihkan ke hidden = iklan puas, tab bersih. |
+| 9 | **JANGAN cancel interstitial `google.com/url` di `ShouldCancelDocumentNav`.** Flashback v3.1.53: guard itu mematikan SEMUA klik card (sangetods me-redirect card lewat hop itu di NavigationId yang sama → cancel membatalkan seluruh nav; trace: semua card `cancelled-by-guard`). Sudah DICABUT di v3.1.55. Interstitial hanya boleh ditangani di completion (restore ke intent) atau routing popup (divert), TIDAK di starting. | `YuzvidBrowserView.ShouldCancelDocumentNav` | Resolved (reverted) | Regression P1-P4; lihat changelog. |
+| 8 | **Wall sangetods.net mungkin balik** karena situs masih nge-bounce ke home pasca-revert — pantau; kalau balik, akar-nya blocklist/redirect, bukan ekstraksi. | WIKI §5 | Info | — |
 
 ---
 
 ## 9. Changelog (ringkas — terbaru di atas)
 
+- **2026-10-04 20:12** — **v3.1.56 chain-cut (fix hijack yang benar).** Pelajaran:
+  cancel interstitial di starting (v3.1.53) membunuh card (hop itu bagian nav sah);
+  biarkan lewat lalu cancel hop akhir (v3.1.55) → tab PARKIR di `google.com/url` +
+  slug gak masuk history. **Fix:** lacak `NavigationId` (server redirect pakai id
+  SAMA) + jumlah hop; hop ke-2 yang **lintas-host** ke host buram/interstitial =
+  hop hijack → cancel DI SITU (`chain-cut`), divert ke hidden, buka ulang intent
+  (cooldown 3 dtk, max 3). Tab tak pernah ninggalin halaman bersih. **Terbukti:**
+  `chain-cut id=126 hop=2 first=sangetods.net host=petmoniker.com`; percobaan ke-2
+  ke `/ngentot-bareng-boti-...` → URL akhir = slug (situs serve setelah iklan
+  "dapat kesan" via divert). Sisa: satu percobaan bisa singgah di halaman sebelumnya
+  (cooldown) — retry mendarat.
+- **2026-10-04 19:55** — **v3.1.55: REVERT guard interstitial.** v3.1.53 men-cancel
+  `google.com/url` walau gesture → SEMUA klik card mati (sangetods redirect card
+  lewat hop itu di NavigationId sama; trace sebelum: card `cancelled-by-guard`).
+  Guard dicabut; card kembali `nav-done ok=True`. Interstitial tetap ditangani di
+  completion (restore ke intent, max 3) + divert hop iklan ke hidden. Terverifikasi.
+- **2026-10-04 19:35** — **v3.1.51–54: dua regresi P4 dihapus + model final hijack.**
+  R1 (restore ke prev → tujuan tak tercapai): restore kini menyasar **intent URL**,
+  hanya saat tab nyangkut interstitial. R2 ("Ambil Link hilang"): jendela di-force
+  ke foreground (`SetForegroundWindow`) + status tabel saat 0 link. v3.1.53:
+  interstitial `google.com/url` diblok (ini sumber "stuck" sebenarnya). v3.1.54:
+  tiap hop iklan yang di-cancel **dialihkan ke hidden session auto-close**
+  (`DivertToHidden`, budget 3) — perilaku "redirect → popup → closed" sesuai
+  permintaan operator. Terverifikasi runtime: FINAL URL = halaman video, trace
+  `divert-open` → `closed (divert-done)`.
+  **REVERTED (v3.1.55):** the interstitial-cancel at NavigationStarting killed
+  every card click (sangetods redirects cards THROUGH google.com/url under the
+  same NavigationId) — removed. See changelog top entry + §8 #9.
+- **2026-10-04 18:47** — **P2/P3 (v3.1.48) + P4 (v3.1.50), terverifikasi.**
+  P2: `SettingField` + tombol "Ambil & Extract" di `ExtractionWindow` → event
+  `ExtractUrlRequested` → parent `Navigate(url)` + `RunExtractionAsync()` (tempel URL
+  halaman BIASA; extractor navigasi+parse). P3: tombol `Extract` → `Ambil Link`.
+  P4: hijack handling B1+B2 — `petmoniker.com` kembali ke `BakedHosts` **bersama**
+  `ad-restore` (`_lastGoodUrl` diingat tiap nav sukses; restore sekali+cooldown 5s).
+  Bukti: `nav-cancel` → `ad-restore navigated back host=sangetods.net` (tidak stranding).
+- **2026-10-04 18:35** — **P1 DIALOG HARDENING (v3.1.47).** JS `confirm()/alert()`
+  dari halaman iklan (mis. petmoniker "URL copied…") dirender sebagai dialog native
+  MODAL yang memblokir SELURUH UI Citadel. Fix: `AreDefaultScriptDialogsEnabled=false`
+  + handler `ScriptDialogOpening` di core utama DAN popup cores (`DismissScriptDialog`:
+  dismiss semua, `Beforeunload` di-Accept demi navigasi). Terverifikasi: test page
+  lokal → `[dialog-dismiss] kind=Confirm` lalu `kind=Alert`, UI tetap responsif.
+- **2026-10-04 17:41** — **REVERT opsi A.** `petmoniker.com` dicabut dari
+  `RedirectBlockList.BakedHosts`. Alasan: cancel hop-nya menyangkutkan tab di
+  interstitial `google.com/url` → klik jadi susah (net-negatif). `BakedHosts`
+  balik ke 2 host (tsyndicate, marzaent). Perilaku kembali ke v3.1.44.
+- **2026-10-04 17:26** — **Opsi A: `petmoniker.com` masuk `RedirectBlockList.BakedHosts`**
+  — host hijack sangetods.net (bounce-to-home). Hop non-gesture ke host itu kini di-cancel;
+  hop ber-gesture tetap lolos (by design, perlindungan klik normal). Status: mitigasi
+  parsial — lihat §8 #7.
+  **TERVERIFIKASI runtime (v3.1.45):** chain `video page → petmoniker/wp-json → google.com/url
+  → (client redirect) → petmoniker/pet-animal` — hop terakhir `user=False` **dibunuh**
+  (`nav-cancel` + `cancelled-by-guard`), **tanpa bounce-home** (sebelumnya selalu bounce).
+  Tab berhenti di interstitial `google.com/url` (bukan hijack site, bukan home); wall check 0.
+  Sisa: hop final ber-gesture masih lolos (gap terdokumentasi §8 #7).
+- **2026-10-04 17:15** — **FIX wall "Adblocker detected" sangetods.net (end-to-end).**
+  Detektor terbukti: plugin WP `wps-adblocker-detector` → `fetch(HEAD adsbygoogle.js)` +
+  cek `window.adsbygoogle` + bait `.ads`/`#add-image`. Karena `pagead2.googlesyndication.com`
+  diblokir, fetch reject & `adsbygoogle` undefined → wall. Fix: buang 3 host Google dari
+  `BlockedDomains`; tersisa 4 host jahat. Popup policy tidak disentuh. Bukti: HTML via local
+  proxy (149KB, markup wall) + accessibility tree WebView2 memuat "Adblocker detected!".
+  Build menyusul — verifikasi runtime oleh operator.
+  **TERVERIFIKASI runtime (v3.1.44, build 2026-10-04):** dari Yuzvid, sangetods.net
+  memuat **tanpa** teks wall (accessibility tree: 0 match "Adblock", 790 elemen konten
+  render normal). Popup iklan tetap disekap headless (trace: `renamereptiliantrance.com`,
+  `redirect-block playerhit.co/gamazi.com`). Temuan baru saat verifikasi: same-tab ad
+  redirect `petmoniker.com` + dialog `confirm()` lolos guard (gesture-exempt) → §8 #7.
 - **2026-10-04 14:24** — Hapus dokumen lama yang menyesatkan: `docs/architecture/flows-yuzvid.md`
   (baseline 2.8.33), `docs/architecture/yuzvid-overview.md` (2.8.38), dan `docs/work/yuzvid-phase23/`
   (PLAN/REFACTOR_PLAN/TODO). Pointer mati di `docs/operations/handoff.md` + docstring

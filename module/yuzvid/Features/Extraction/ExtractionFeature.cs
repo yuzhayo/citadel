@@ -56,6 +56,12 @@ public sealed class ExtractionFeature
     public event EventHandler? RescanRequested;
 
     /// <summary>
+    /// Manual page-URL extraction requested from the window. The parent
+    /// navigates the browser to the URL and runs extraction again (P2).
+    /// </summary>
+    public event EventHandler<string>? ExtractUrlRequested;
+
+    /// <summary>
     /// Show (or refresh) the feature-owned floating extraction window. The window
     /// is created here — never by the parent — so the shell references no
     /// feature-declared type (guard YUZ-2). Reused on subsequent passes.
@@ -73,11 +79,32 @@ public sealed class ExtractionFeature
             _window.QueueRequested += (_, link) => QueueRequested?.Invoke(this, link);
             _window.QueueSelectionRequested += (_, links) => QueueSelectionRequested?.Invoke(this, links);
             _window.RescanRequested += (_, _) => RescanRequested?.Invoke(this, EventArgs.Empty);
+            _window.ExtractUrlRequested += (_, url) => ExtractUrlRequested?.Invoke(this, url);
         }
 
         _window.ShowResults(result);
         if (!_window.IsVisible) _window.Show();
+        if (_window.WindowState == WindowState.Minimized) _window.WindowState = WindowState.Normal;
         _window.Activate();
+        // Owned + ShowInTaskbar=False windows can fail to come to front via
+        // Activate() alone once the owner regains focus; force it (R2 fix).
+        BringToFront(_window);
+    }
+
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    private static extern bool SetForegroundWindow(IntPtr hWnd);
+
+    private static void BringToFront(Window window)
+    {
+        try
+        {
+            var handle = new System.Windows.Interop.WindowInteropHelper(window).Handle;
+            if (handle != IntPtr.Zero) SetForegroundWindow(handle);
+        }
+        catch
+        {
+            // best effort — never let focus handling break extraction
+        }
     }
 
     public async Task<ExtractionResult> ExtractAsync()

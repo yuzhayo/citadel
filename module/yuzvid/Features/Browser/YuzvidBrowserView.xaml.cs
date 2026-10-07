@@ -36,6 +36,21 @@ public partial class YuzvidBrowserView : UserControl
     // in that micro-window is misattributed as ours (accepted risk, documented).
     private bool _expectSelfNav;
 
+    // P4 (B2): last healthy main-tab URL (non-interstitial, non-blocklisted).
+    // When an ad-redirect hop is cancelled, the tab can be stranded on an
+    // interstitial (google.com/url) or an ad page — we restore to this URL.
+    private string? _lastGoodUrl;
+    private bool _restoreInFlight;
+    private DateTime _lastRestoreUtc = DateTime.MinValue;
+
+    // P4b (R1 fix): the last LEGITIMATE navigation intent — the URL the user
+    // actually aimed at, recorded on the FIRST hop of a NewDocument nav before
+    // any redirect rewrites it. Restore targets THIS (never the previous page),
+    // so a hijacked navigation still reaches its real destination. Bounded by
+    // _restoreAttempts to avoid an ad-redirect loop.
+    private string? _intentUrl;
+    private int _restoreAttempts;
+
     // NavigationIds we cancelled in NavigationStarting: their Completed event
     // must stay silent instead of showing "Navigasi gagal".
     private readonly HashSet<ulong> _cancelledNavIds = new();
@@ -272,6 +287,13 @@ public partial class YuzvidBrowserView : UserControl
         // Set realistic user-agent — default WebView2 UA looks like a bot
         cv2.Settings.UserAgent = SharedUserAgent;
 
+        // Dialog hardening (P1, 2026-10-04): ad pages fire confirm()/alert()
+        // which render as native MODAL dialogs and block the whole app UI
+        // until clicked. With default dialogs disabled, ScriptDialogOpening
+        // lets us auto-dismiss every dialog; page scripts continue unblocked.
+        cv2.Settings.AreDefaultScriptDialogsEnabled = false;
+        cv2.ScriptDialogOpening += (s, e) => DismissScriptDialog(e);
+
         // Register ad-block filter (must be added before event fires)
         cv2.AddWebResourceRequestedFilter("*", CoreWebView2WebResourceContext.All);
 
@@ -321,6 +343,15 @@ public partial class YuzvidBrowserView : UserControl
             PopupTrace.Write("maintab-dedup-skip", "already-here host=" + PopupTrace.HostOf(url) + " path=" + PopupTrace.PathOf(url));
             return;
         }
+        // An ad popup whose target is a blocked redirector never touches the
+        // main tab: load it in a hidden session that auto-closes. Keeps the
+        // visible tab clean without rendering an ad page on it.
+        if (RedirectBlockList.TryGetBlockedHost(url) is { } blockedHost)
+        {
+            PopupTrace.Write("ad-divert", "host=" + blockedHost + " path=" + PopupTrace.PathOf(url));
+            _popupManager?.DivertToHidden(url);
+            return;
+        }
         foreach (var pending in _inflightNavs.Values)
         {
             if (norm is not null && norm == pending)
@@ -340,19 +371,164 @@ public partial class YuzvidBrowserView : UserControl
         return uri.AbsoluteUri.TrimEnd('/').ToLowerInvariant();
     }
 
+    /// <summary>
+    /// P4 (B2): remember the last healthy main-tab URL. Skips search
+    /// interstitials and blocklisted hosts so a hijack chain can never become
+    /// the "good" target we later restore to.
+    /// </summary>
+    private void RememberGoodUrl(string? url)
+    {
+        if (string.IsNullOrEmpty(url)) return;
+        if (!Uri.TryCreate(url, UriKind.Absolute, out var uri)) return;
+        if (uri.Host.Contains("google.", StringComparison.OrdinalIgnoreCase)
+            && uri.AbsolutePath.StartsWith("/url", StringComparison.OrdinalIgnoreCase))
+            return;
+        if (RedirectBlockList.IsBlockedHost(uri.Host)) return;
+        _lastGoodUrl = url;
+    }
+
+    /// <summary>
+    /// P4b (R1): decide whether a URL is a legit navigation intent (the page the
+    /// user actually aimed at) versus an interstitial / search hop we must not
+    /// record as an intent.
+    /// </summary>
+    private static bool IsInterstitial(string? url)
+    {
+        if (!Uri.TryCreate(url, UriKind.Absolute, out var uri)) return false;
+        return uri.Host.Contains("google.", StringComparison.OrdinalIgnoreCase)
+            && uri.AbsolutePath.StartsWith("/url", StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// P4b (R1): record the navigation's intended destination. Called at the
+    /// very first hop of a NewDocument navigation (before redirects), so the
+    /// intent is the page the user asked for — not the ad it bounced to.
+    /// </summary>
+    private void RememberIntent(string? url)
+    {
+        if (string.IsNullOrEmpty(url)) return;
+        if (RedirectBlockList.IsBlockedUri(url)) return;
+        if (IsInterstitial(url)) return;
+        _intentUrl = url;
+    }
+
+    /// <summary>
+    /// P4b (R1): after an ad hop is cancelled OR a nav lands on an interstitial,
+    /// navigate back to the INTENT url (the real destination), not the previous
+    /// page. Bounded by _restoreAttempts so a redirect loop cannot spin forever.
+    /// </summary>
+    private void TryRestoreAfterAdCancel()
+    {
+        var target = _intentUrl;
+        if (string.IsNullOrEmpty(target) || _restoreInFlight) return;
+        if (_restoreAttempts >= 3) return;
+        if (DateTime.UtcNow - _lastRestoreUtc < TimeSpan.FromSeconds(2)) return;
+        var norm = NormalizeNavUrl(target);
+        if (NormalizeNavUrl(Browser.CoreWebView2?.Source) == norm) return;
+
+        _restoreInFlight = true;
+        _restoreAttempts++;
+        PopupTrace.Write("ad-restore", "queued to INTENT host=" + PopupTrace.HostOf(target) + " path=" + PopupTrace.PathOf(target));
+        _ = RestoreIntentAsync(target, norm);
+    }
+
+    private async Task RestoreIntentAsync(string target, string? norm)
+    {
+        try
+        {
+            await Task.Delay(600);
+            if (State != BrowserState.Ready || Browser.CoreWebView2 is null) return;
+            if (NormalizeNavUrl(Browser.CoreWebView2.Source) == norm) return;
+            _expectSelfNav = true;
+            _lastRestoreUtc = DateTime.UtcNow;
+            Browser.CoreWebView2.Navigate(target);
+            PopupTrace.Write("ad-restore", "navigated to intent host=" + PopupTrace.HostOf(target));
+        }
+        catch (Exception ex)
+        {
+            PopupTrace.Write("ad-restore", "failed: " + ex.Message);
+        }
+        finally
+        {
+            _restoreInFlight = false;
+        }
+    }
+
     private readonly Dictionary<ulong, string> _inflightNavs = new();
+
+    // Chain-cut state (v3.1.56): per NavigationId, the FIRST (clean) host and the
+    // hop count. A server redirect keeps the SAME NavigationId, so the 2nd hop
+    // crossing to a different host IS the hijack hop — we cancel exactly there.
+    private readonly Dictionary<ulong, (string FirstHost, int Hops)> _navChain = new();
+    private DateTime _lastChainCutUtc = DateTime.MinValue;
+
+    /// <summary>
+    /// Chain-cut (v3.1.56): a NewDocument redirect (same NavigationId) that hops
+    /// cross-host onto a blocked/ad host is the hijack. Cancel it so the tab never
+    /// leaves the page it was on; the caller then re-opens the intent cleanly.
+    /// A genuinely DIFFERENT NavigationId (user clicked a link to another site)
+    /// is never cut.
+    /// </summary>
+    private bool ShouldCutChain(CoreWebView2NavigationStartingEventArgs e, string? firstHost, int hops)
+    {
+        if (e.NavigationKind != CoreWebView2NavigationKind.NewDocument) return false;
+        if (hops < 2) return false;                 // first hop = the real destination
+        if (_expectSelfNav) return false;           // our own re-navigation
+        if (!Uri.TryCreate(e.Uri, UriKind.Absolute, out var dest)) return false;
+        if (!string.IsNullOrEmpty(firstHost)
+            && dest.Host.Equals(firstHost, StringComparison.OrdinalIgnoreCase))
+            return false;                            // same-host redirect: legit
+        return IsInterstitial(e.Uri) || RedirectBlockList.IsBlockedUri(e.Uri);
+    }
 
     private void Browser_NavigationStarting(object? sender, CoreWebView2NavigationStartingEventArgs e)
     {
         PopupTrace.Write("nav-start", $"id={e.NavigationId} user={e.IsUserInitiated} host={PopupTrace.HostOf(e.Uri)} path={PopupTrace.PathOf(e.Uri)}");
         var norm = NormalizeNavUrl(e.Uri);
         if (norm is not null) _inflightNavs[e.NavigationId] = norm;
+        var host = PopupTrace.HostOf(e.Uri);
+        var hops = _navChain.TryGetValue(e.NavigationId, out var chain) ? chain.Hops + 1 : 1;
+        var firstHost = hops == 1 ? host : chain.FirstHost;
+        _navChain[e.NavigationId] = (firstHost, hops);
+        // P4b (R1): first hop of a NewDocument nav = the intended destination.
+        // Recorded BEFORE any redirect rewrites the URL, so restore targets the
+        // page the user asked for rather than the previous one.
+        if (e.NavigationKind == CoreWebView2NavigationKind.NewDocument && hops == 1)
+            RememberIntent(e.Uri);
+        if (ShouldCutChain(e, firstHost, hops))
+        {
+            e.Cancel = true;
+            _cancelledNavIds.Add(e.NavigationId);
+            _expectSelfNav = false;
+            PopupTrace.Write("chain-cut", $"id={e.NavigationId} hop={hops} first={firstHost} host={host} path={PopupTrace.PathOf(e.Uri)}");
+            _popupManager?.DivertToHidden(e.Uri);
+            NavigationStateChanged?.Invoke(this, false);
+            if (DateTime.UtcNow - _lastChainCutUtc > TimeSpan.FromSeconds(3))
+            {
+                _lastChainCutUtc = DateTime.UtcNow;
+                _restoreAttempts = 0;
+                PopupTrace.Write("chain-cut", "re-open intent host=" + PopupTrace.HostOf(_intentUrl));
+                TryRestoreAfterAdCancel();
+            }
+            return;
+        }
         if (ShouldCancelDocumentNav(e))
         {
             e.Cancel = true;
             _cancelledNavIds.Add(e.NavigationId);
+            // If this hop was ours (explicit navigate to a blocked host), consume
+            // the flag so a later unrelated nav is not misattributed as ours.
+            _expectSelfNav = false;
             PopupTrace.Write("nav-cancel", "host=" + PopupTrace.HostOf(e.Uri) + " path=" + PopupTrace.PathOf(e.Uri));
+            // "redirect -> popup window -> closed": run the killed ad hop in a
+            // hidden session (auto-closes after ~5s) so its own tracking sees a
+            // completed load, while the visible tab never leaves its page.
+            _popupManager?.DivertToHidden(e.Uri);
             NavigationStateChanged?.Invoke(this, false);
+            // Cancelling keeps the tab on the page it was already on — no restore
+            // here. Restore only happens later IF the tab actually lands on an
+            // interstitial (see NavigationCompleted), so we never fight the site's
+            // own same-page redirects.
             return;
         }
         // Symmetric duplicate: another in-flight NewDocument nav already targets
@@ -385,6 +561,12 @@ public partial class YuzvidBrowserView : UserControl
     /// Trade-off, stated plainly: a click handler that JS-redirects to an ad
     /// host passes (it carries the click's gesture). Timer/onload hijacks,
     /// which carry no gesture, still die.
+    /// REVERTED (2026-10-04, v3.1.55): an earlier revision also cancelled the
+    /// google.com/url interstitial even with a gesture — that killed every
+    /// video-card click, because sangetods server-redirects cards THROUGH that
+    /// hop under the SAME NavigationId, so cancelling the hop aborted the whole
+    /// navigation ("cards un-clickable"). Interstitials are handled instead at
+    /// completion (restore to intent) and at popup routing (divert-to-hidden).
     /// </summary>
     private bool ShouldCancelDocumentNav(CoreWebView2NavigationStartingEventArgs e)
     {
@@ -410,6 +592,7 @@ public partial class YuzvidBrowserView : UserControl
     private void Browser_NavigationCompleted(object? sender, CoreWebView2NavigationCompletedEventArgs e)
     {
         _inflightNavs.Remove(e.NavigationId);
+        _navChain.Remove(e.NavigationId);
         if (_dupCancelledNavIds.Remove(e.NavigationId))
         {
             // Symmetric duplicate we cancelled — stay silent.
@@ -430,7 +613,15 @@ public partial class YuzvidBrowserView : UserControl
         NavigationStateChanged?.Invoke(this, false);
         if (e.IsSuccess)
         {
+            RememberGoodUrl(CurrentUrl);
             Navigated?.Invoke(this, CurrentUrl);
+            // P4b (R1): landed on a search interstitial after a hijack — go to
+            // the intended destination instead of leaving the tab on google.com/url.
+            if (IsInterstitial(CurrentUrl))
+            {
+                _restoreAttempts = 0; // fresh interception may retry
+                TryRestoreAfterAdCancel();
+            }
         }
         else
         {
@@ -518,6 +709,19 @@ public partial class YuzvidBrowserView : UserControl
         window.__yuzvid.onCommand = function (cmd) { window.__yuzvid.post({ echo: cmd }); };
     ";
 
+    /// <summary>
+    /// Auto-dismiss one page dialog (P1 hardening 2026-10-04). Ad scripts call
+    /// confirm()/alert() to freeze the tab — we answer "No" and never Accept;
+    /// except beforeunload where Accept lets navigation proceed instead of
+    /// stranding the tab. Host+kind logged, message never (may carry bait text).
+    /// </summary>
+    internal static void DismissScriptDialog(CoreWebView2ScriptDialogOpeningEventArgs e)
+    {
+        PopupTrace.Write("dialog-dismiss", "kind=" + e.Kind + " host=" + PopupTrace.HostOf(e.Uri));
+        if (e.Kind == CoreWebView2ScriptDialogKind.Beforeunload)
+            e.Accept();
+    }
+
     internal static bool IsBlockedDomain(string uri)
     {
         foreach (var domain in BlockedDomains)
@@ -530,15 +734,20 @@ public partial class YuzvidBrowserView : UserControl
 
     // ─── Ad Blocking ──────────────────────────────────────────────────────
 
+    // Only the 4 proven-malicious ad hosts stay blocked. The 3 Google ad hosts
+    // were REMOVED (2026-10-04): the WPS "adblocker-detector" plugin on
+    // sangetods.net does `fetch(HEAD pagead2.googlesyndication.com/.../adsbygoogle.js)`
+    // and checks `window.adsbygoogle` — blocking pagead2 made that fetch reject
+    // and the script never define adsbygoogle, tripping the "Adblocker detected!"
+    // wall. Ads stay OFF: popups from these scripts still route to hidden
+    // SilentPopupHostManager sessions; only inline ad requests flow. Evidence:
+    // module/yuzvid/WIKI.md §5.
     private static readonly string[] BlockedDomains =
     [
         "wearadmiration.com",
         "hikerfaquirs.com",
         "gibbingbegild.qpon",
         "runative-syndicate.com",
-        "ads.google.com",
-        "pagead2.googlesyndication.com",
-        "www.googletagservices.com",
     ];
 
     private void OnAdBlockResourceRequested(object? sender, CoreWebView2WebResourceRequestedEventArgs e)

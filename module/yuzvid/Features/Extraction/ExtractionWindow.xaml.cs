@@ -24,6 +24,9 @@ public partial class ExtractionWindow : Window
     public event EventHandler<IReadOnlyList<VideoLink>>? QueueSelectionRequested;
     public event EventHandler? RescanRequested;
 
+    /// <summary>Manual page URL submitted for navigation + extraction (P2).</summary>
+    public event EventHandler<string>? ExtractUrlRequested;
+
     public ExtractionWindow()
     {
         InitializeComponent();
@@ -45,9 +48,16 @@ public partial class ExtractionWindow : Window
     public void ShowResults(ExtractionResult result)
     {
         _projection.Update(result.Links);
-        EmptyText.Visibility = _projection.Visible.Count == 0
-            ? Visibility.Visible : Visibility.Collapsed;
-        StatusText.Text = result.StaticSkipped ? result.StaticSkipReason ?? string.Empty : string.Empty;
+        var total = _projection.Visible.Count(r => !r.IsGroup);
+        var empty = total == 0;
+        EmptyText.Visibility = empty ? Visibility.Visible : Visibility.Collapsed;
+        // R2 fix: a pass with no links must say WHY (page empty / browser not
+        // ready) instead of silently emptying the table and looking "broken".
+        StatusText.Text = result.StaticSkipped
+            ? result.StaticSkipReason ?? "Tidak ada link."
+            : empty
+                ? "Tidak ada link ditemukan di halaman ini."
+                : $"{total} link · {result.PageUrl}";
         RefreshFooter();
     }
 
@@ -83,6 +93,27 @@ public partial class ExtractionWindow : Window
 
     private void RescanButton_Click(object sender, RoutedEventArgs e)
         => RescanRequested?.Invoke(this, EventArgs.Empty);
+
+    // ─── Manual URL (P2) ─────────────────────────────────────────────────
+
+    private void ManualUrlBox_PreviewKeyDown(object sender, System.Windows.Input.KeyEventArgs e)
+    {
+        if (e.Key == System.Windows.Input.Key.Enter)
+        {
+            e.Handled = true;
+            SubmitManualUrl();
+        }
+    }
+
+    private void ManualUrlGo_Click(object sender, RoutedEventArgs e) => SubmitManualUrl();
+
+    private void SubmitManualUrl()
+    {
+        var url = ManualUrlBox.Text?.Trim() ?? string.Empty;
+        if (url.Length == 0) return;
+        ManualUrlBox.Text = string.Empty;
+        ExtractUrlRequested?.Invoke(this, url);
+    }
 
     // ─── Table row actions ────────────────────────────────────────────────
     private void Expand_Click(object sender, RoutedEventArgs e)

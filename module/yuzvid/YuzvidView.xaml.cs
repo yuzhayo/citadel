@@ -115,6 +115,16 @@ public partial class YuzvidView : UserControl, IRetainedViewModule
 
         _extraction.RescanRequested += async (_, _) => await RunExtractionAsync();
 
+        // P2: manual page URL — navigate there, wait for load, then extract.
+        _extraction.ExtractUrlRequested += async (_, url) =>
+        {
+            _browser.Navigate(url);
+            // Give the page time to load + fire media requests so the Source B
+            // tap captures the CDN before we scan.
+            await Task.Delay(6000);
+            await RunExtractionAsync();
+        };
+
         // Start with buttons disabled (browser initializing)
         UpdateToolbarButtons(false);
         DnsModePicker.SelectedIndex = 0;
