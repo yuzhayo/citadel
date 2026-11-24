@@ -3,6 +3,7 @@ using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using System.Text.RegularExpressions;
 using CitadelBridge;
 
 namespace Module.Agentrouter.Features.Claim;
@@ -74,17 +75,14 @@ internal sealed class AgentRouterLoginService : IDisposable
             lookup.Content,
             lookup.Detail,
             localDate,
-            DateTimeOffset.UtcNow);
+            DateTimeOffset.UtcNow,
+            lookup.RewardUsd);
         if (!_profiles.WriteLogin(profileId, snapshot))
         {
             return new LoginCheckOutcome("failed", "hasil dibaca tetapi gagal disimpan ke JSON");
         }
 
-        return new LoginCheckOutcome(
-            "saved",
-            lookup.Verified
-                ? lookup.Success ? "✓ Login" : "✗ Login"
-                : lookup.Detail);
+        return new LoginCheckOutcome("saved", lookup.Detail);
     }
 
     private static async Task<LoginLookup> RequestAsync(
@@ -166,21 +164,55 @@ internal sealed class AgentRouterLoginService : IDisposable
 
     public void Dispose() => Interlocked.Exchange(ref _disposed, 1);
 
+    // The site's own check-in line, e.g. "每日签到成功，增加额度 ＄25.000000 额度",
+    // where the amount varies. The dollar mark in it is the fullwidth U+FF04,
+    // so it is matched beside the ASCII one; the number after it is what the
+    // check reports as the granted quota.
+    private static readonly Regex RewardPattern = new(
+        @"[$\uFF04]\s*(\d+(?:\.\d+)?)",
+        RegexOptions.Compiled | RegexOptions.CultureInvariant);
+
+    private static decimal? ParseRewardUsd(string? content)
+    {
+        if (string.IsNullOrEmpty(content))
+        {
+            return null;
+        }
+
+        var match = RewardPattern.Match(content);
+        return match.Success
+            && decimal.TryParse(match.Groups[1].Value, NumberStyles.Number,
+                CultureInfo.InvariantCulture, out var value)
+            ? value
+            : null;
+    }
+
+    private static string FormatReward(decimal value)
+        => value.ToString("0.00", CultureInfo.InvariantCulture);
+
     private sealed record LoginLookup(
         bool ProxyUsable,
         bool Verified,
         bool Success,
         string? Content,
-        string Detail)
+        string Detail,
+        decimal? RewardUsd)
     {
         public static LoginLookup Successful(string? content)
-            => new(true, true, content is not null, content,
-                content is not null ? "✓ Login" : "✗ Login");
+        {
+            var reward = ParseRewardUsd(content);
+            var detail = content is null
+                ? "✗ Login"
+                : reward is { } usd
+                    ? $"✓ Login · +${FormatReward(usd)}"
+                    : "✓ Login";
+            return new(true, true, content is not null, content, detail, reward);
+        }
 
         public static LoginLookup ApiRejected(string detail)
-            => new(true, false, false, null, detail);
+            => new(true, false, false, null, detail, null);
 
         public static LoginLookup Failed(string detail)
-            => new(false, false, false, null, detail);
+            => new(false, false, false, null, detail, null);
     }
 }

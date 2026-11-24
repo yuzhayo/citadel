@@ -7,7 +7,14 @@ Dijalankan oleh owner atau lewat sesi run terpisah; hasilnya dicatat di
 
 ## Pra-syarat
 - `dotnet build core/Citadel.Shell/Citadel.Shell.csproj` sukses.
-- Kelima citizen sukses di-build (step CI "Build citizens").
+- Seluruh citizen sukses di-build: `mangareader`, `camoprof`, `proxy`,
+  `agentrouter`, `blank`, `yuzvid`. Langkah CI `Build citizens` mengompilasi lima
+  yang pertama; `yuzvid` belum ada di daftar itu, jadi build manual.
+
+## Cakupan
+Checklist di bawah menguji shell, MangaReader, dan Settings. `camoprof`, `proxy`,
+`agentrouter`, dan `yuzvid` belum punya checklist acceptance live — kelulusan
+checklist ini **tidak** menyatakan mereka sehat.
 
 ## Checklist
 

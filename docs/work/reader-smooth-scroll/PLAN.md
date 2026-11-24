@@ -1,4 +1,8 @@
-# Reader continuous scroll — smoothness
+# Reader continuous scroll - smoothness
+
+Status: sudah diterapkan. `module/mangareader/Reader/Features/ManualScroll/`
+ada dan mengubah scroll yang digerakkan user saja; perilaku baca yang teramati
+tidak berubah.
 
 ## Result
 

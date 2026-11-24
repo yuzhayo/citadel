@@ -22,7 +22,8 @@ public sealed record LoginSnapshot(
     string? Content,
     string Detail,
     string LocalDate,
-    DateTimeOffset CheckedAtUtc);
+    DateTimeOffset CheckedAtUtc,
+    decimal? RewardUsd);
 
 /// <summary>
 /// What one profile's run JSON holds: the account id the flow captured, the
@@ -185,6 +186,10 @@ internal sealed class AgentRouterRunProfileStore
                         .ToUniversalTime()
                         .ToString("yyyy-MM-dd'T'HH:mm:ss'Z'", CultureInfo.InvariantCulture),
                 };
+                if (snapshot.RewardUsd is { } reward)
+                {
+                    document[LoginKey]!["reward_usd"] = reward;
+                }
 
                 Directory.CreateDirectory(_root);
                 var staging = path + ".tmp";
@@ -303,6 +308,7 @@ internal sealed class AgentRouterRunProfileStore
             ReadString(login, "content"),
             ReadString(login, "detail") ?? string.Empty,
             ReadString(login, "local_date") ?? string.Empty,
-            checkedAt);
+            checkedAt,
+            ReadDecimal(login, "reward_usd"));
     }
 }

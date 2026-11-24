@@ -84,7 +84,7 @@ Some skills should activate automatically based on file patterns:
 - Creating new features
 - Modifying feature catalogs
 
-### `test-driven-development` auto-activates when:
+### yuzskill `verification-and-review` auto-activates when:
 - Working in `tests/` folder
 - Fixing reported bugs
 - Adding new logic/behavior
@@ -102,8 +102,8 @@ Before analyzing the task or writing code, list which skills apply:
 ```markdown
 **Skills Activated:**
 - citadel-feature-modularity (modifying Reader features)
-- incremental-implementation (multi-phase refactor)
-- test-driven-development (maintaining test coverage)
+- yuzskill planning-and-delivery (multi-phase refactor)
+- yuzskill verification-and-review (maintaining test coverage)
 ```
 
 ### Step 2: Read Skills
@@ -115,7 +115,7 @@ Use `read_file` on `.agents/skills/<skill-name>/SKILL.md`.
 In your first reply, explicitly state which skills you're using and why:
 
 ```markdown
-I'm using **citadel-feature-modularity** because we're splitting the coordinator into separate features, and **incremental-implementation** because this is a multi-phase refactor that needs to stay green at each step.
+I'm using **citadel-feature-modularity** because we're splitting the coordinator into separate features, and yuzskill **planning-and-delivery** because this is a multi-phase refactor that needs to stay green at each step.
 ```
 
 This creates a record so the next agent (or you after compaction) knows what rules were active.
@@ -179,12 +179,18 @@ Do NOT silently ignore skills. Do NOT skip skills because "this is a special cas
 |-------|---------|----------------|
 | `citadel-shared-ui` | Reuse UI components, get approval for new ones | Any UI work |
 | `citadel-feature-modularity` | Keep features self-contained, parents dumb | Any feature/module work |
-| `incremental-implementation` | Stay green at each step, ship in phases | Refactors, multi-file changes |
-| `test-driven-development` | Write tests first, maintain coverage | Bugs, new logic, behavior changes |
-| `api-and-interface-design` | Design contracts before implementation | New module contracts, public APIs |
-| `planning-and-task-breakdown` | Break work into phases with verification gates | Large features, unclear scope |
-| `code-review-and-quality` | Review against patterns, check for violations | Code review, post-implementation audit |
-| `git-workflow-and-versioning` | Commit conventions, PR structure | Commits, PRs, versioning |
+| yuzskill `planning-and-delivery` | Stay green at each step, ship in phases | Refactors, multi-file changes |
+| yuzskill `verification-and-review` | Write tests first, maintain coverage | Bugs, new logic, behavior changes |
+| yuzskill `architecture-and-contracts` | Design contracts before implementation | New module contracts, public APIs |
+| yuzskill `modular-architecture` | Keep modules and boundaries honest | Splits, moves, refactors |
+| yuzskill `shared-ui` | Shared-component ownership and reuse | UI screens and controls |
+| yuzskill `git-and-release` | Commit conventions, PR structure | Commits, PRs, versioning |
+
+Rows 3-8 are yuzskill names. The local files with the same subject
+(`incremental-implementation`, `test-driven-development`, `api-and-interface-design`,
+`planning-and-task-breakdown`, `code-review-and-quality`,
+`git-workflow-and-versioning`, `mengquality`) are source-only and are not loaded at
+runtime — see the precedence list above.
 
 ---
 

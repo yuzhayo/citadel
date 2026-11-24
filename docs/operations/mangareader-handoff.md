@@ -1,11 +1,12 @@
 # MangaReader handoff
 
-Snapshot: 2026-09-23, branch `main`, commit `ab0f48a`, version/tag `v3.0.17`.
+This document is the operational handoff for the MangaReader citizen.
 
-This document is the operational handoff for the MangaReader citizen. Source is
-authoritative; historical plans under `docs/history/` and the unchecked
-Downloader phases in `module/mangareader/TASKLIST.md` are not reliable progress
-trackers anymore because the corresponding implementation already exists.
+Snapshot: re-verified against the code at `bbc5f9b`; `version.props` read
+`3.1.63` at that point. Source stays authoritative: where this document and the
+code disagree, the code wins. Historical plans under `docs/history/` and the
+unchecked Downloader phases in `module/mangareader/TASKLIST.md` are not reliable
+progress trackers because the corresponding implementation already exists.
 
 ## Entry point and visible product
 
@@ -23,18 +24,30 @@ trackers anymore because the corresponding implementation already exists.
 
 ## Ownership and lifecycle
 
-`MangaReaderModule` implements both `IModule` and `IResidentModule`.
+`MangaReaderModule` implements `IModule` + `IRuntimeModuleLifecycle`
+(`MangaReaderModule.cs:17`). The shell drives that lifecycle around `CreateView`;
+`IResidentModule` is the one-release compatibility bridge and is not implemented
+here.
 
-1. `AttachApplicationLifetime` creates one `DownloaderBackgroundService`.
+1. `StartRuntimeAsync` constructs one `DownloaderBackgroundService` (`:42`) and
+   registers its disposal on the supplied runtime lifetime (`:44-48`). That
+   lifetime is also the ownership boundary for proxy reservations (`:23`).
 2. That service owns the source registry, browser/PyHost client, HTTP transport,
    proxy pool adapter, queue, source index, lister, cover fetcher, and online
    process.
-3. `CreateView` borrows the existing `DownloaderContext`; navigation recreates
-   presentation, not the background runtime.
-4. Queue startup restores persisted in-flight work as **Paused**, so application
-   startup does not automatically generate provider traffic.
-5. Application-lifetime disposal order is online process -> queue -> browser ->
-   HTTP transport -> cover client.
+3. `CreateView` requires a started runtime and passes the borrowed
+   `DownloaderContext` (`:72-80`); navigation recreates presentation, not the
+   background runtime.
+4. `StopRuntimeAsync` awaits `PauseAndDrainAsync` (`:59`) and returns successfully
+   only when neither scheduler has active work; only then may the shell destroy
+   the runtime lifetime.
+5. `ForceStopRuntime` aborts the owned process tree (`:66`); disposal then runs
+   without settlement waits (`DownloaderBackgroundService.cs:112-135`).
+6. Normal disposal order is online process -> queue -> browser -> HTTP transport
+   -> cover client (`DownloaderBackgroundService.cs:138-142`).
+7. Persisted in-flight jobs are restored as **Paused**, so process startup does
+   not automatically generate provider traffic
+   (`DownloaderBackgroundService.cs:73`).
 
 Consequences:
 
@@ -42,20 +55,22 @@ Consequences:
   silently stop active MangaReader work.
 - Presentation code must unsubscribe/dispose its own handlers, but must not
   dispose the borrowed queue/provider runtime.
-- At this snapshot MangaReader runtime is eagerly attached at module
-  registration. The proposed module Start/Stop behavior is **not implemented**.
 
-### Future Start/Stop contract requested by the operator
+### Start/Stop contract
 
-Keep the MangaReader route and sidebar item visible. A stopped module should
-show a lightweight stopped view with a Start button; it must not disappear from
-navigation.
+The route and sidebar item stay visible. A stopped or faulted module keeps a
+host screen with Start/Retry (`Citadel.Shell/Runtime/ModuleRuntimeHost.xaml.cs:15-20`);
+it never disappears from navigation.
 
-- **Start:** construct/attach MangaReader runtime and show the normal view.
-- **Stop:** explicitly pause and persist running queue jobs, then dispose the
-  MangaReader-owned runtime.
-- **Navigate away:** hide/detach presentation only; do not stop MangaReader.
-- **Start after Stop:** recreate runtime and restore persisted jobs as Paused.
+- **Start:** `StartRuntimeAsync` constructs the MangaReader runtime, then the shell
+  calls `CreateView`.
+- **Stop:** `StopRuntimeAsync` pauses and drains the queue, then returns; the shell
+  destroys the runtime lifetime, which disposes the service.
+- **Navigate away:** hide/detach presentation only; the runtime keeps running.
+- **Start after Stop:** a fresh `DownloaderBackgroundService` is constructed and
+  persisted jobs are restored as Paused.
+- **Force Stop:** `ForceStopRuntime` aborts owned children without waiting for
+  settlement.
 
 Do not implement this by unregistering the route, unloading the DLL, or tying
 runtime lifetime to tab navigation.
@@ -118,9 +133,10 @@ is no reflection or filesystem plugin discovery.
 | Drake Scans | JSON catalog/genre API plus Next.js RSC title/chapter/page payloads | Search + advanced filters; genre lookup; chapter listing can span provider pages |
 | AsuraScans | Direct JSON API for catalog/title; title HTML/Astro data for chapters with chapter-sitemap fallback; HTML page manifest | Search, no advanced filters; sitemap result is cached for the adapter instance |
 | ThunderScans | WordPress sitemap for title discovery; title HTML for detail and chapters; chapter HTML for pages | Search, no advanced filters; chapter list is parsed directly from `#chapterlist li[data-num]` |
+| WeebCentral | Server-rendered HTMX endpoints over native HTTP: one GET to `/search/data` for browse/search, one reader fragment carrying the whole chapter for the manifest | Search + advanced filters; no browser session and no `IQueueSourceReadiness`; no page transform |
 | Dynamic manual | Auxiliary source, reachable through Manual URL probing | Not shown as a normal catalog registration |
 
-### ThunderScans invariant fixed in v3.0.17
+### ThunderScans invariants
 
 - Parse chapter rows locally from the returned title-page element; do not issue
   per-chapter requests merely to build the table.
@@ -159,7 +175,11 @@ into Asura without captured Asura evidence.
 - Proxy mode chooses compatible, health-ordered candidates and reserves them so
   simultaneous MangaReader operations do not reuse the same endpoint blindly.
 - Browser session open and HTTP GET paths have bounded failover attempts.
-- The active browser proxy is shown unmasked by `ActiveProxyDisplay`.
+- The active browser proxy is displayed from `ActiveProxyDisplay`
+  (`DownloaderPyHostClient.cs:838` → `CatalogScreen.xaml.cs:608-613`). That value
+  is today the raw canonical endpoint, credentials included, which contradicts the
+  masking rule in `ProxyLeaseRegistry.cs:16-21` and
+  `module/proxy/IMPLEMENTATION-PLAN.md:70` - register A14.
 - **Change proxy** ends/rotates the browser session and skips the current endpoint
   when an alternative is available. It does not mutate an already completed
   response or retroactively change the proxy of an existing request.
@@ -210,8 +230,8 @@ features should be registered through `ReaderDefaultFeatureCatalog`, communicate
 through the command/activity hubs, and avoid adding feature-specific branches to
 `ReaderWindow`.
 
-`Reader/REFACTOR-SPEC.md` is a historical implementation spec. Confirm live code
-before treating any of its phases as pending.
+The Reader contracts and hubs in `Reader/ReaderCore/` are the live specification.
+Confirm live code before treating any Reader work as pending.
 
 ## Library, History, Cover Builder, and updates
 
@@ -290,18 +310,21 @@ require a current, authorized live capture or a recorded fixture matching it.
 
 ## Known handoff risks
 
-1. `module/mangareader/TASKLIST.md` still labels Downloader phases 0-8 as not
-   started even though Downloader is implemented. Treat that section as stale
-   until it is reconciled deliberately.
-2. `docs/architecture/flows-mangareader.md` is a useful architectural snapshot,
-   but it predates some current Library/History/Catalog and provider work.
-3. `Features/Catalog` and `Features/CatalogMirror` are compiled/tested but not
-   wired into the active MangaReader composition root.
-4. Provider HTML/API/RSC contracts are time-dependent. A parser failure should
+1. `docs/architecture/flows-mangareader.md` is a snapshot re-verified against
+   `bbc5f9b`. Its claims carry `file:baris` anchors, so re-check an anchor before
+   trusting it after a refactor moves lines.
+2. `Features/Catalog` and `Features/CatalogMirror` are compiled and tested but not
+   wired into the active MangaReader composition root. Do not diagnose a visible
+   Downloader Catalog bug by editing them.
+3. Provider HTML/API/RSC contracts are time-dependent. A parser failure should
    first be compared with the provider's current response, not patched with extra
    requests or cross-provider assumptions.
-5. MangaReader is resident and currently eager-started. Any future Start/Stop
-   work must preserve paused queue state and keep navigation visible.
+4. `tests/Module.Proxy.Tests` is outside `Citadel.slnx`, so `dotnet test
+   Citadel.slnx` never runs it. `tests/Module.Mangareader.Engines.Tests/` holds
+   only a leftover `bin/`+`obj/` tree with no project file.
+5. The active browser proxy value is displayed unmasked; see register A14 in
+   `docs/governance/violations.md`.
+
 
 ## Safe continuation checklist
 
@@ -321,7 +344,8 @@ require a current, authorized live capture or a recorded fixture matching it.
 
 - General project handoff: `docs/operations/handoff.md`.
 - MangaReader flow analysis: `docs/architecture/flows-mangareader.md`.
-- Reader historical refactor spec: `module/mangareader/Reader/REFACTOR-SPEC.md`.
+- Reader composition and feature catalog: `module/mangareader/Reader/ReaderCore/`
+  and `ReaderDefaultFeatureCatalog`.
 - MangaReader task record: `module/mangareader/TASKLIST.md` (contains stale
   Downloader progress markers; source wins).
 - Historical Downloader plan/research:

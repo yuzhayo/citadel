@@ -304,7 +304,9 @@ Then wait for approval.
 
 ## Example: Reader Module (Reference Implementation)
 
-See `module/mangareader/Reader/REFACTOR-SPEC.md` for the canonical example of this pattern.
+See `module/mangareader/Reader/` for the canonical example of this pattern: a thin
+`ReaderWindow` composition root, infrastructure under `Reader/ReaderCore/`, and
+every ordinary feature registered through `ReaderDefaultFeatureCatalog`.
 
 **Structure:**
 ```

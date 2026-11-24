@@ -298,8 +298,8 @@ Notes:
 | F | HIGH | Yuzvid Start → Stop → Start: **Browser engine failed to initialize** (`0x8007139F` — group/resource not in correct state). Root cause: `YuzvidBrowserController.Dispose` only shut down popups + local proxy; the main WPF `WebView2` control was never disposed, so `msedgewebview2` kept `WebView2ProfileV2` locked. Second `CreateView` → `CreateAsync` same UDF → invalid state. PLAN L579 already required dispose on explicit Stop. | **PASS (SOLID)** — Fixed in 3.0.26. Log proof from `popup-trace.log`: pre-fix storm 19:48–19:50 = 16× `failed: 0x8007139F`; post-fix (shell started 19:56:53 from `artifacts\publish\win-x64`) = **4/4 init cycles reach `ready`, 0 failed** (19:56:59, 19:57:06, 19:59:27, 19:59:35), each with working nav (`nav-done ok=True` on igay69.com) + popups/redirect-block. No `failed to create` for yuzvid in shell `log.txt`. |
 
 Automated tests cannot prove WPF/tray/dialog wiring. Run once on a real shell
-after Phase 4. Record PASS/FAIL per row in this file (or a sibling
-`SMOKE-RESULTS.md`).
+after Phase 4. Record PASS/FAIL per row; hasil yang ada tercatat di bagian
+"Phase 5 results" di bawah.
 
 ### Phase 5 results (2026-09-24, log-derived)
 

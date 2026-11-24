@@ -40,15 +40,62 @@ EGRESS_PROBE_URL = "https://api.ipify.org/"
 BRIDGE_ID = "citadel-downloader-bridge"
 API_PREFIX = "/api/v1"
 
-# Request API Comix wajib lewat instance Axios milik halaman (di chunk env,
-# baseURL "/api/v1") karena chunk secure memasang interceptor token "_" ke
-# instance itu. Fetch mentah dijawab 403 "Missing token.", dan token itu tidak
-# pernah dibuat, disimpan, atau disalin di sini.
+# Request API Comix wajib lewat instance Axios milik halaman karena chunk
+# secure memasang interceptor token "_" ke instance itu. Fetch mentah dijawab
+# 403 "Missing token.", dan token tidak pernah dibuat, disimpan, atau disalin.
 #
 # Playwright/Camoufox mengevaluasi JS di realm yang berbeda (Firefox Xray
 # boundary), jadi skrip ini dipasang lewat page.add_script_tag supaya berjalan
 # di main realm halaman; request dan responsnya lewat atribut DOM, bukan lewat
 # objek JS halaman.
+#
+# Build baru tidak mengekspor instance secara langsung. Capture script memakai
+# page.evaluate (shared module map) untuk menangkap instance saat service object
+# halaman membuat request, lalu bridge membacanya dari window global.
+_API_CAPTURE_JS = r"""
+async (moduleUrl) => {
+    if (window.__citadelApiClient) return true;
+    const mod = await import(moduleUrl);
+    const axios = Object.values(mod).find(v => typeof v?.Axios === 'function'
+        && typeof v.Axios.prototype?.request === 'function');
+    if (!axios) return false;
+    const proto = axios.Axios.prototype;
+    const keys = Object.getOwnPropertyNames(proto)
+        .filter(k => k !== 'constructor' && typeof proto[k] === 'function');
+    const originals = new Map();
+    let captured = null;
+    for (const key of keys) {
+        const orig = proto[key];
+        originals.set(key, orig);
+        proto[key] = function(...args) {
+            if (!captured && this && this.defaults
+                && this.defaults.baseURL === '/api/v1' && this.interceptors) {
+                captured = this;
+            }
+            return orig.apply(this, args);
+        };
+    }
+    try {
+        let btn = null;
+        const waitDeadline = Date.now() + 15000;
+        while (!btn && Date.now() < waitDeadline) {
+            btn = document.querySelector('[aria-label="Next page"]')
+                || document.querySelector('nav[aria-label="Pagination"] button:last-child');
+            if (!btn) await new Promise(r => setTimeout(r, 200));
+        }
+        if (btn) btn.click();
+        const deadline = Date.now() + 8000;
+        while (!captured && Date.now() < deadline) {
+            await new Promise(r => setTimeout(r, 100));
+        }
+    } finally {
+        for (const [key, orig] of originals) proto[key] = orig;
+    }
+    if (captured) { window.__citadelApiClient = captured; return true; }
+    return false;
+}
+"""
+
 _API_BRIDGE_JS = r"""
 (() => {
     const BRIDGE_ID = 'citadel-downloader-bridge';
@@ -69,7 +116,11 @@ _API_BRIDGE_JS = r"""
     function api() {
         if (!apiPromise) {
             apiPromise = (async () => {
-                const instance = Object.values(await import(__ENV_MODULE_URL__)).find(isApi);
+                if (window.__citadelApiClient && isApi(window.__citadelApiClient)) {
+                    return window.__citadelApiClient;
+                }
+                const module = await import(__ENV_MODULE_URL__);
+                const instance = Object.values(module).find(isApi);
                 if (!instance) throw new Error('instance axios baseURL /api/v1 tidak ditemukan');
                 return instance;
             })().catch(error => { apiPromise = null; throw error; });
@@ -151,7 +202,7 @@ _LOCATE_ENV_URL_JS = r"""() => {
         .filter(Boolean);
     const observed = performance.getEntriesByType('resource').map(entry => entry.name);
     return declared.concat(observed)
-        .find(name => /\/env-[^/]*\.js(\?|$)/.test(name)) || null;
+        .find(name => /\/apicore-[^/]*\.js(\?|$)/.test(name)) || null;
 }"""
 
 
@@ -428,7 +479,8 @@ def _valid_api_module_url(page_url, candidate):
             or parsed_candidate.scheme not in ("http", "https")
             or parsed_candidate.scheme != parsed_page.scheme
             or parsed_candidate.netloc != parsed_page.netloc
-            or not re.search(r"/env-[^/]*\.js$", parsed_candidate.path)):
+            or parsed_candidate.port != parsed_page.port
+            or not re.search(r"/apicore-[^/]*\.js$", parsed_candidate.path)):
         return None
     return candidate
 
@@ -467,6 +519,8 @@ async def _ensure_bridge(page, session):
         raise PyhostError(
             "API_CLIENT_UNAVAILABLE",
             "modul API Comix tidak ditemukan pada dokumen aktif")
+
+    await page.evaluate(_API_CAPTURE_JS, env_url)
 
     bridge = _API_BRIDGE_JS.replace(
         "__ENV_MODULE_URL__", json.dumps(env_url))

@@ -23,33 +23,37 @@ screen-nya dari disk saat runtime**: setiap folder di `<output>\module\` yang pu
 `module.json` adalah satu screen ("citizen") yang dimuat ke dalam
 `AssemblyLoadContext` collectible-nya sendiri. Menambah screen = menyalin folder +
 `dotnet build`; tidak ada satu pun file di luar `module/` yang berubah
-(`module/blank/Module.Blank.csproj:9-11`, `module/Citizen.targets:14-16`).
+(`module/blank/Module.Blank.csproj:11`, `core/Citizen.targets`).
 
-## 2. Skala repo (terukur 2026-09-11, tanpa `bin/`, `obj/`, `artifacts/`)
+## 2. Skala repo (terukur, tanpa `bin/`, `obj/`, `artifacts/`)
 
 | Wilayah | file cs/xaml | baris | file py | Peran |
 | --- | --- | --- | --- | --- |
-| `module/mangareader` | 183 | 36.703 | 4 | citizen penuh |
-| `tests` | 108 | 22.896 | 1 | jaring pengaman |
-| `setting` | 46 | 5.698 | 0 | gudang komponen bersama + layar setting |
-| `core/Citadel.Shell` | 19 | 3.471 | 0 | composition root + shell |
-| `module/camoprof` | 26 | 2.972 | 6 | citizen sedang |
-| `core/Citadel.Core` | 16 | 1.959 | 0 | fondasi bebas WPF |
-| `module/Citadel.Searcher` | 5 | 1.358 | 0 | mesin discovery |
-| `module/sharedLogic` | 3 | 1.238 | 11 | payload bersama (cs + python) |
+| `module/mangareader` | 229 | 45.348 | 4 | citizen penuh |
+| `tests` | 143 | 29.627 | 1 | jaring pengaman |
+| `setting` | 50 | 5.989 | 0 | gudang komponen bersama + layar setting |
+| `module/yuzvid` | 26 | 6.051 | 6 | citizen sedang - browser + queue |
+| `core/Citadel.Shell` | 26 | 5.744 | 0 | composition root + shell |
+| `module/agentrouter` | 24 | 3.892 | 4 | citizen sedang - 3 feature |
+| `module/camoprof` | 27 | 3.161 | 6 | citizen sedang |
+| `module/proxy` | 23 | 2.309 | 0 | citizen sedang - 4 feature |
+| `core/Citadel.Core` | 15 | 1.865 | 0 | fondasi bebas WPF |
+| `module/sharedLogic` | 6 | 1.661 | 12 | payload bersama (cs + python) |
+| `core/Citadel.Searcher` | 5 | 1.358 | 0 | mesin discovery |
 | `core/Citadel.Ui` | 12 | 1.172 | 0 | chrome navigasi milik core |
-| `module/ftf` | 3 | 61 | 0 | **kerang kosong** |
-| `module/proxy` | 3 | 61 | 0 | **kerang kosong** |
+| `core/Citadel.Contract` | 9 | 322 | 0 | kontrak citizen |
 | `module/blank` | 3 | 44 | 0 | template |
-| `core/Citadel.Contract` | 5 | 133 | 0 | kontrak citizen |
 | `module/credenz` | 0 | 0 | 0 | **bukan citizen** — vault kredensial ±499 MB |
 | `tools` | 0 | 0 | 1 | rilis |
 
-Total repo: 432 file cs/xaml + 65 file py.
+Total repo: 598 file cs/xaml + 34 file py. Angka `baris` adalah baris fisik file
+(`wc -l`), bukan baris berisi — jadi bisa diverifikasi langsung dengan membuka
+filenya. Cara yang sama dipakai di seluruh `docs/`.
 
-**Yang langsung terbaca dari angka ini:** 63% baris kode produksi citadel ada di
-satu citizen (`mangareader`). `ftf` dan `proxy` masing-masing 61 baris — mereka
-ada sebagai screen terdaftar, tapi tidak punya isi (§6).
+**Yang langsung terbaca dari angka ini:** `mangareader` memuat 45.348 dari 78.916
+baris kode produksi (tanpa `tests/`) — **57%**. Empat citizen sisanya
+(`yuzvid` 6.051, `agentrouter` 3.892, `camoprof` 3.161, `proxy` 2.309) berbagi
+sisanya. `proxy` dan `agentrouter` adalah citizen sedang; keduanya berisi (§6).
 
 ## 3. Peta peran: mana kernel, mana plugin
 
@@ -63,8 +67,8 @@ Ini lensa terpenting, dan ia **tidak** sama dengan pembagian folder di disk.
 │   core/Citadel.Core         fondasi bebas WPF: rpl · crl · tokens · Log│
 │   core/Citadel.Shell        composition root, gate, router, layout    │
 │   core/Citadel.Ui           chrome navigasi + pompa animasi + tema    │
-│   module/Citadel.Searcher   discovery ← TINGGAL DI FOLDER PLUGIN      │
-│   module/Citizen.targets    kontrak build citizen ← JUGA DI module/   │
+│   core/Citadel.Searcher     discovery: watcher, loader, manifest      │
+│   core/Citizen.targets      kontrak build citizen                     │
 └───────────────────────────────┬───────────────────────────────────────┘
                                 │  folder hadir = terdaftar
                                 ▼
@@ -72,10 +76,11 @@ Ini lensa terpenting, dan ia **tidak** sama dengan pembagian folder di disk.
 │ PLUGIN  (screen drop-in; semuanya boleh dihapus bersih)               │
 │                                                                       │
 │   module/blank         template 44 baris                              │
-│   module/mangareader   36.703 baris, 183 file                         │
-│   module/camoprof      2.972 baris, 26 file                           │
-│   module/ftf           61 baris  — kerang                             │
-│   module/proxy         61 baris  — kerang                             │
+│   module/mangareader   45.348 baris, 229 file                         │
+│   module/camoprof      3.161 baris, 27 file                           │
+│   module/agentrouter   3.892 baris, 24 file                           │
+│   module/yuzvid        6.051 baris, 26 file                           │
+│   module/proxy         2.309 baris, 23 file                           │
 └───────────────────────────────────────────────────────────────────────┘
 
 ┌───────────────────────────────────────────────────────────────────────┐
@@ -89,24 +94,22 @@ Ini lensa terpenting, dan ia **tidak** sama dengan pembagian folder di disk.
 │ BUKAN KODE                                                            │
 │   module/credenz      vault kredensial ±499 MB (gitignored, 2 file     │
 │                       ter-track) — TIDAK punya csproj, bukan citizen    │
-│   tests/              11 proyek test                                   │
+│   tests/              13 folder test (11 di antaranya proyek)         │
 │   tools/ · Releases/ · artifacts/ · .github/    kemasan & rilis        │
 └───────────────────────────────────────────────────────────────────────┘
 ```
 
-Catatan penting: **kernel citadel tinggal di dua rumah.** Empat proyek di `core/`,
-tapi mesin discovery (`Citadel.Searcher`) dan kontrak build (`Citizen.targets`)
-tinggal di dalam `module/` — folder yang didokumentasikan sebagai tempat plugin.
-Alasannya tertulis dan masuk akal ("shared by every screen, owned by none",
-`module/Citadel.Searcher/Citadel.Searcher.csproj:4-6`), tapi akibatnya `module/`
-tidak bisa dibaca sebagai "semuanya boleh dihapus" (register D1).
+Catatan: **kernel seluruhnya tinggal di `core/`.** Mesin discovery
+(`core/Citadel.Searcher`) dan kontrak build (`core/Citizen.targets`) ikut pindah ke
+`core/` di commit `a313f06` (step 13 / D1), jadi `module/` murni berisi citizen dan
+payload bersama dan bisa dibaca sebagai "semuanya boleh dihapus".
 
 ## 4. Pohon struktur dengan peran per folder
 
 ```text
 citadel/
 ├─ AGENTS.md                  kontrak agent: skills first, code second
-├─ Citadel.slnx               18 proyek — CITIZEN TIDAK TERMASUK
+├─ Citadel.slnx               17 proyek — CITIZEN TIDAK TERMASUK
 ├─ Directory.Build.props      TargetFramework net10.0-windows + default
 ├─ version.props · global.json
 ├─ .agents/
@@ -132,6 +135,9 @@ citadel/
 │   ├─ Citadel.Ui/            Controls/ (Sidebar, NavEntry, RailButton) ·
 │   │                         Animations/ (Animation, AnimationManager, Easings) ·
 │   │                         Theme/ (ThemeResources) · Themes/Generic.xaml
+│   ├─ Citadel.Searcher/      Watcher (satu-satunya wajah publik) · Reader ·
+│   │                         Loader · ModuleManifest · ModuleFailure
+│   ├─ Citizen.targets        referensi + deploy + verifikasi isolasi citizen
 │   └─ Citadel.Shell/         App (composition root) · Program · ModuleGate ·
 │                             Router · LayoutApplier · BuiltInRoute ·
 │                             ShellSettingHost · MainWindow · SettingsWindow ·
@@ -150,9 +156,6 @@ citadel/
 │   └─ SettingResources.xaml  style/token/template bersama
 │
 ├─ module/
-│   ├─ Citadel.Searcher/      Watcher (satu-satunya wajah publik) · Reader ·
-│   │                         Loader · ModuleManifest · ModuleFailure
-│   ├─ Citizen.targets        referensi + deploy + verifikasi isolasi citizen
 │   ├─ blank/                 TEMPLATE: 6 file, semuanya yang dibutuhkan screen
 │   ├─ mangareader/           Components · CoverBuilder · History · Library
 │   │                         (+Grouping, UpdateChecker) · Reader (+ReaderCore,
@@ -160,16 +163,21 @@ citadel/
 │   │                         Downloader, Rar} · shareLogic/{Sources, Archive}
 │   ├─ camoprof/              Providers(+Google) · Network · Launcher · Runtime ·
 │   │                         Features/{AddProfile, ProfileActions} · sharedLogic
-│   ├─ ftf/                   FtfModule/FtfView + folder feature KOSONG
-│   ├─ proxy/                 ProxyModule/ProxyView + folder feature KOSONG
+│   ├─ agentrouter/           AgentrouterModule/View + Features/{Claim, Proxy,
+│   │                         Shortcuts} + sharedLogic/ + tests/
+│   ├─ yuzvid/                YuzvidModule/View + Features/{Browser, Extraction,
+│   │                         Queue, Runtime} + tests/ + WIKI.md
+│   ├─ proxy/                 ProxyModule/ProxyView + Features/{Pool, Sync,
+│   │                         Webshare, Settings} + sharedLogic/ + tests/
 │   ├─ sharedLogic/           cs/ (di-compile ke citizen) · pyhost/ (+providers) ·
 │   │                         reference/ · tests/
 │   └─ credenz/               VAULT: google/accounts, google/profiles (gitignored)
 │
 ├─ tests/                     Citadel.{Core,Ui,Uia,Uia.Citizen,
 │                             Uia.Citizen.Dependency}.Tests +
-│                             Module.Mangareader.{Archive,Downloader,History,
-│                             Library,Reader}.Tests + Module.Camoprof.Tests
+│                             Module.Mangareader.{Archive,Downloader,Engines,
+│                             History,Library,Reader}.Tests +
+│                             Module.Camoprof.Tests + Module.Proxy.Tests
 └─ tools/ · Releases/ · artifacts/ · .github/workflows/
 ```
 
@@ -216,13 +224,17 @@ Bukti terukur (commit `21977e5`, menambah satu provider manga = **9 file**):
 | --- | --- | --- |
 | file feature itu sendiri | 4 | inilah yang seharusnya |
 | test feature | 1 | sah |
-| registry sumber (daftar `new` eksplisit) | 1 | `MangaSourceRegistry.cs:93-105` |
+| registry sumber (daftar `new` eksplisit) | 1 | `MangaSourceRegistry.cs:110-156` |
 | manifest build citizen (NuGet baru) | 1 | sah untuk dependensi baru |
 | **manifest sumber proyek test (4 entri manual)** | 1 | **overhead enumerasi** |
 | bump versi rilis | 1 | sah |
 
-Dan biaya itu berskala: **149 entri `Compile Include` manual** lintas enam proyek
-test, 66 di antaranya di satu csproj. Setiap file feature baru menuntut entri baru.
+Biaya itu tidak lagi berskala di jalur Downloader: csproj test-nya memakai glob per
+folder feature (`Module.Mangareader.Downloader.Tests.csproj:60-61`), jadi provider
+baru tidak menuntut entri csproj. Yang **masih** manual: **80 entri
+`Compile Include`** lintas tujuh proyek test, terbesar 26 di
+`Module.Mangareader.Library.Tests` (nol wildcard). Di proyek-proyek itu setiap file
+baru masih menuntut entri baru.
 
 **Inilah jawaban atas keluhan owner** ("aku lihat banyak file berubah saat menambah
 fitur, seharusnya cuma file fitur itu sendiri"): bukan saling import antar module —
@@ -235,46 +247,29 @@ Rinci: `CITADEL-VIOLATIONS.md` B1, B2, B3, C3.
 
 | Citizen | Isi nyata | Route | Gate mengompilasi? | Test? |
 | --- | --- | --- | --- | --- |
-| `mangareader` | penuh: 183 file, 36.703 baris, 4 feature + Reader + Library + History | `mangareader` | ya, lewat 5 proyek test yang me-link sumbernya | 5 proyek test |
-| `camoprof` | sedang: 26 file, 2.972 baris, 2 feature + Providers/Launcher/Runtime | `camoprof` | ya, lewat 1 proyek test | 1 proyek test |
-| `blank` | template: 6 file, 44 baris | `blank` | ya, `Citadel.Uia` mereferensikannya | dipakai sebagai citizen uji |
-| `ftf` | **kerang**: 3 file cs/xaml (61 baris), folder `Backend`, `Features/{FaucetRun, GSuite, Profiles, Results}` **kosong di git** | `ftf` | **tidak** | **tidak ada** |
-| `proxy` | **kerang**: 3 file cs/xaml (61 baris), folder `Features/{Pool, Settings, Sync}` **kosong di git** | `proxy` | **tidak** | **tidak ada** |
+| `mangareader` | penuh: 229 file, 45.348 baris, 4 feature + Reader + Library + History | `mangareader` | ya — 6 proyek test me-link sumbernya, 5 di antaranya di `Citadel.slnx` (`Engines.Tests` tidak) | 6 proyek test |
+| `camoprof` | sedang: 27 file, 3.161 baris, 2 feature + Providers/Launcher/Runtime | `camoprof` | ya, lewat `Module.Camoprof.Tests` | 1 proyek test |
+| `blank` | template: 3 file, 44 baris | `blank` | ya, `Citadel.Uia` mereferensikannya | dipakai sebagai citizen uji |
+| `proxy` | sedang: 23 file cs/xaml (2.309 baris), `Features/{Pool, Sync, Webshare, Settings}` + `sharedLogic/` | `proxy` | ya lewat CI `Build citizens`; **tidak** di `Citadel.slnx` | 8 file di `tests/Module.Proxy.Tests`, tapi **tidak** ikut gate |
+| `agentrouter` | sedang: 24 file cs/xaml (3.892 baris) + 4 py, `Features/{Claim, Proxy, Shortcuts}` + `sharedLogic/` | `agentrouter` | ya lewat CI `Build citizens`; **tidak** di `Citadel.slnx` | **tidak ada** proyek test C#; guard python tidak ikut gate |
+| `yuzvid` | sedang: 26 file cs/xaml (6.051 baris) + 6 py, `Features/{Browser, Extraction, Queue, Runtime}` | `yuzvid` | **tidak sama sekali** — tidak di `Citadel.slnx`, tidak di langkah CI | 3 file test python; **tidak** ikut gate |
 | `credenz` | **bukan citizen**: tanpa csproj, tanpa `module.json` | — | — | — |
 
-### Soal `ftf` dan `proxy` — fakta yang perlu owner tahu
+### Soal `proxy`
 
-Yang ter-track git untuk masing-masing hanya 6 file: `*Module.cs`, `*View.xaml`,
-`*View.xaml.cs`, `*.csproj`, `layout.json`, `module.json` (diverifikasi
-`git ls-files`, 2026-09-11). Isi code-behind-nya 9 baris dengan komentar
-"feature behavior belongs in feature folders" (`FtfView.xaml.cs:5-9`,
-`ProxyView.xaml.cs:5-9`) — niatnya benar, foldernya belum ada isinya.
+27 file ter-track. `ProxyView.xaml.cs` 73 baris dan mengimpor empat namespace
+feature (`:3-6`) — composition root, bukan code-behind kosong. Isinya
+`Features/{Pool, Sync, Webshare, Settings}` + `sharedLogic/` (`ProxyPoolStore`,
+`ProxySettings`, `ProxySettingsStore`, `AtomicTextFile`), dan
+`tests/Module.Proxy.Tests` memuat 8 file test termasuk `ProxyLevelBGuardTests` —
+proyek itu tidak ada di `Citadel.slnx`, jadi gate tidak menjalankannya.
 
-Tapi di disk ada **sisa kerja python yang tidak pernah masuk git**:
-
-```text
-module/ftf/Features/FaucetRun/ftf_plugin/__pycache__/adapter.cpython-312.pyc
-module/ftf/Features/FaucetRun/ftf_plugin/__pycache__/pipeline.cpython-312.pyc
-module/ftf/Features/FaucetRun/ftf_plugin/tests/__pycache__/test_pipeline.cpython-312-pytest-8.4.1.pyc
-module/proxy/Features/Pool/proxy_plugin/__pycache__/pool.cpython-312.pyc
-module/proxy/Features/Pool/proxy_plugin/tests/__pycache__/test_pool.cpython-312-pytest-8.4.1.pyc
-```
-
-`.pyc` ada, `.py` sumbernya **tidak ada di disk dan tidak pernah ada di riwayat git**
-(`git log --diff-filter=D -- module/ftf module/proxy` kosong). `.gitignore:52-54`
-mengabaikan `__pycache__/` dan `*.pyc`, dan `.pytest_cache/` mengabaikan dirinya
-sendiri lewat `.gitignore` yang dibuat pytest — itulah sebabnya `git status`
-tampak bersih.
-
-Artinya: ada kerja python untuk FTF faucet-pipeline dan Proxy pool yang pernah
-dijalankan dan diuji di mesin ini, lalu sumbernya hilang; yang tersisa hanya
-cache terkompilasi. **Ini bukan kebocoran rahasia**, tapi ini pekerjaan yang
-hilang dan tidak terlihat dari `git status`. → register D9.
-
-`layout.json` ftf mendeklarasikan slot `LauncherPanel`, `EditorPanel`,
-`RuntimePanel` (`module/ftf/layout.json:1-7`) yang namanya tidak berhubungan dengan
-folder feature-nya (`Backend`, `FaucetRun`, `GSuite`, `Profiles`, `Results`) — jejak
-bahwa layout ditulis untuk rencana yang berbeda dari folder yang akhirnya dibuat.
+Satu bagian plugin python-nya tidak ada di pohon kerja:
+`module/proxy/Features/Pool/proxy_plugin/` hanya menyisakan `__pycache__`, nol file
+`.py`. Sumbernya ada di `artifacts/recovery-ftf-proxy-2.1.3-20260907/proxy_plugin/`
+(`__init__`, `plugin`, `pool`), dan `artifacts/` di-ignore `.gitignore:5` sehingga
+nol file-nya ter-track. Jadi plugin pool yang dipakai saat ini berada di luar
+version control — bisa dipulihkan, tapi butuh keputusan owner. → register D9.
 
 ### Soal `credenz`
 
@@ -292,7 +287,8 @@ dalam folder yang didokumentasikan sebagai tempat screen drop-in → register D1
 | --- | --- | --- | --- |
 | Graf dependensi antar proyek | `.agents/hooks/check-project-refs.mjs` (PostToolUse) | **memblokir** | hanya elemen `ProjectReference` pada csproj yang disunting |
 | Isolasi assembly citizen | `Citizen.targets:142-151` `VerifyCitizenIsolation` | **build gagal** | assembly `Citadel.*` di folder citizen ter-deploy |
-| Regresi C# | `.agents/hooks/gate-on-stop.mjs` (Stop) | melaporkan, tidak memblokir | hanya 18 proyek di `Citadel.slnx` |
+| Regresi C# | `.agents/hooks/gate-on-stop.mjs` (Stop) | melaporkan, tidak memblokir | hanya 17 proyek di `Citadel.slnx` — nol citizen |
+| Kompilasi citizen | `.github/workflows/ci.yml` langkah `Build citizens` | **CI gagal** | lima dari enam citizen; `yuzvid` tidak ada di daftar |
 | Route reserved/duplikat | `ModuleGate.cs:107-118` | runtime, dicatat & ditampilkan di Settings | route |
 | Identitas route vs manifest | `Loader.cs:117-127` | runtime, folder gagal | route |
 | Kontrak perilaku shared UI | `.agents/skills/citadel-shared-ui/SKILL.md` | **prosa** | — |
@@ -331,8 +327,10 @@ adalah persis lapisan tempat gejala owner muncul.
 3. **Kontrak citizen tidak tipis.** `Citadel.Contract` menarik seluruh
    `Citadel.Core` demi satu tipe (`Lifetime`), jadi tidak ada permukaan sempit
    yang bisa jadi satu-satunya pintu — dan hook justru mengesahkan tepi ini.
-4. **Dua citizen berupa kerang** dengan sisa kerja python yang hilang dari git,
-   dan satu folder vault kredensial 499 MB tinggal di dalam `module/`.
+4. **Semua citizen berisi.** `proxy` dan `agentrouter` adalah citizen sedang dengan
+   feature nyata. Dua catatan struktural yang masih terbuka: sumber `proxy_plugin`
+   berada di luar git (`artifacts/`), dan satu folder vault kredensial 499 MB
+   tinggal di dalam `module/`.
 5. **Sejumlah klaim angka di dokumen/komentar sudah basi** (jumlah tipe kontrak,
    jumlah sub-screen Settings, "XAML tidak di-link"), semuanya salah ke arah yang
    sama: fitur masuk tanpa memperbarui klaim di sekitarnya.

@@ -171,28 +171,32 @@ direction and fit modes are explicitly outside this scope.
 - [x] Complete pure behavior, shared-component, regression, and live WPF gates
       before marking this scope implemented.
 
-## Downloader — locked plan; implementation has not started
+## Downloader — implemented
 
-- [x] Record the logged-out Comix/DNS/browser/API/group/descramble/CBZ evidence
-      in `docs/history/2026/research/comix-downloader.md`.
-- [x] Lock the two-screen local-first product, feature ownership, explicit
-      network triggers, provider contract, retry/fallback rules, persistent
-      queue, hybrid transport, and atomic output in
-      `docs/history/2026/plans/mangareader-downloader.md`.
-- [ ] Phase 0: start from a settled Reader worktree, freeze exact live Comix
-      contracts as fixtures, and characterize current CBZ/Library behavior.
-- [ ] Phase 1: implement pure remote identity, source registry, filter/query,
-      queue state, recovery, mapping, and collision policies.
-- [ ] Phase 2: implement backward-compatible PyHost v2 and the direct Camoufox
-      browser backend without depending on `stealthB`.
-- [ ] Phase 3: implement the lazy Comix Browse/detail/group/chapter/page adapter.
-- [ ] Phase 4: implement persistent queue, staging, decoder, failed-page
-      recovery, confirmed whole-chapter source fallback, and atomic publisher.
-- [ ] Phase 5: add only the missing generic shared multi-select/tag components.
-- [ ] Phase 6: integrate the one Downloader tab with Catalog and button-opened
-      Download List routed screens.
-- [ ] Phase 7: integrate safe local-folder mapping, keep successful CBZ
-      publication terminal without Library/Cover Builder chaining, and remove
-      redundant code.
-- [ ] Phase 8: pass pure, PyHost, archive, shared UI, WPF, build/deployment, full
-      regression, and one disposable complete live-chapter validation gate.
+Shipped across v2.x. The plan is `docs/history/2026/plans/mangareader-downloader.md`;
+this section records what exists in the tree now.
+
+- [x] Research recorded in `docs/history/2026/research/comix-downloader.md`.
+- [x] Two-screen local-first product, explicit network triggers, provider
+      contract, retry/fallback rules, persistent queue, hybrid transport, and
+      atomic output, all locked in the plan above.
+- [x] Source registry and per-source adapters:
+      `Features/Downloader/Sources/` — `MangaSourceRegistry`, plus
+      `Comix`, `AsuraScans`, `CucumberManga`, `DrakeScans`, `ThunderScans`,
+      `WeebCentral`, each with its own contract, parser, and manual-URL probe.
+- [x] Python browser backend without `stealthB`:
+      `Features/Downloader/mangareader_downloader/{browser,plugin}.py`.
+- [x] Comix Browse/detail/group/chapter/page adapter:
+      `Sources/Comix/{ComixSource,ComixPageDecoder,ComixManualUrlProbe}.cs`.
+- [x] Persistent queue, staging, decoder, failed-page recovery, and atomic
+      publisher: `Features/Downloader/Queue/` — `DownloadQueueStore`,
+      `QueueScheduler`, `ChapterDownloadPipeline`, `PageTransport`,
+      `CbzChapterPublisher`.
+- [x] One Downloader tab plus the button-opened Download List routed screen:
+      `Queue/DownloadListScreen.xaml(.cs)`.
+- [x] Test coverage: `tests/Module.Mangareader.Downloader.Tests/`.
+
+**Known open item:** Comix under Camoufox. The Axios prototype patch does not
+intercept because the click causes full document navigation, and Camoufox does not
+support SOCKS5-with-auth. Chrome works. See
+`docs/work/comix-downloader-fix/HANDOFF.md`.

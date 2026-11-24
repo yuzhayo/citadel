@@ -7,8 +7,8 @@ Baseline: `main` at `e792b14` / release `v1.3.0`, clean worktree on
 
 This plan replaces the four vague Reader items under
 `module/mangareader/TASKLIST.md`. It is the complete implementation contract for
-the standalone Reader window. Downloader work remains a separate, unapproved
-scope.
+the standalone Reader window. Downloader work was left as a separate scope and has
+since shipped (`module/mangareader/Features/Downloader/`).
 
 ## 1. Goal
 

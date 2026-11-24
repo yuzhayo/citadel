@@ -37,9 +37,9 @@ penuh hijau. Rollback: revert satu commit.
 Metode C6 (citizen tidak dikompilasi CI):
 1. Baca `.github/workflows/ci.yml` dulu; tambahkan SATU step setelah test:
    `dotnet build` untuk kelima csproj citizen
-   (ftf, proxy, blank, camoprof, mangareader) dengan `-v q --nologo`.
+   (proxy, agentrouter, blank, camoprof, mangareader, yuzvid) dengan `-v q --nologo`.
 2. Tidak mengubah slnx (citizen sengaja di luar slnx).
-Verifikasi: jalankan perintah yang sama lokal (sudah OK untuk kelima citizen);
+Verifikasi: jalankan perintah yang sama lokal (sudah OK untuk setiap citizen);
 step CI gagal bila ada citizen rusak. Rollback: revert.
 
 Metode C8 (proyek core/setting baru tidak dijaga hook):

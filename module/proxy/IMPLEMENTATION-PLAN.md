@@ -4,7 +4,14 @@
 
 **Scope:** Proxy pool producer, shared read contract, CamoProf adapter, MangaReader Downloader/Catalog adapters, and focused tests
 
-**Out of scope:** a local HTTP proxy server, Cloudflare bypass, Webshare, scheduled sync, Library/History/Cover Builder traffic, and unrelated shared UI/core changes
+**Out of scope:** a local HTTP proxy server, Cloudflare bypass, scheduled sync, Library/History/Cover Builder traffic, and unrelated shared UI/core changes
+
+**Delivered beyond the original scope:** Webshare import. The plan below rules it
+out as a *pool source* (row "Webshare and manual lists are source inputs"), and that
+still holds — `ProxySourceCatalog` reads only the declared public lists. Webshare
+ships instead as a separate credential-backed import path:
+`Features/Webshare/{WebshareCoordinator,WebshareImportService,WebshareCredentialStore}.cs`
+plus its own tab.
 
 ## 1. Goal
 
@@ -33,9 +40,9 @@ The previous plan must not be implemented as written because it does not match e
 | MangaReader provider rules belong inside Proxy | No such behavior exists in `SCRAPE_PROXY (1).txt`; it is a list fetcher/validator | Keep provider behavior in MangaReader and add only a read-only consumer adapter there |
 | Direct fallback is enabled when proxies fail | This could expose the real IP and is unrelated to pool generation | No fallback behavior is introduced. A future consumer must choose an explicit fail-closed policy |
 | Round-robin/random/least-used selection is producer behavior | The source contains no selector or request routing | Proxy only publishes a snapshot; each consumer adapter owns its small independent cursor and in-memory quarantine |
-| Webshare and manual lists are source inputs | The source uses ProxyScrape and public GitHub-hosted lists | Preserve the actual source catalog only |
+| Webshare and manual lists are source inputs | The source uses ProxyScrape and public GitHub-hosted lists | Preserve the actual source catalog only. Webshare later shipped as a separate credential-backed import path, not as a pool source |
 | Python/PyHost is required for pool generation | The useful source behavior uses standard HTTP, parsing, files, and TCP sockets; the current PyHost v1 has sequential request/response and no progress events | Port pool generation to feature-owned C#. Extend the existing PyHost launch payload only where Camofox already exists |
-| FTF is the implementation reference | The live FTF citizen is also an empty shell | Use the live CamoProf composition/lifetime pattern and shared Setting components as the structural references |
+| FTF is the implementation reference | FTF was an empty shell when this plan was written, and the citizen has since been removed | Use the live CamoProf composition/lifetime pattern and shared Setting components as the structural references |
 | `proxy.txt` belongs in the workspace root | Installed citizens and source folders are not durable state locations | Store state under `%LOCALAPPDATA%\Citadel\Proxy` |
 | Success means Cloudflare is bypassed | A successful TCP connection only proves the proxy endpoint accepts a connection | Report `Reachable`, not “Cloudflare-safe” or “working for Comix” |
 | More than 80% test coverage and real public-proxy integration tests are required | That is broad, flaky, and unrelated to the smallest safe port | Add only focused deterministic tests plus one operator smoke flow |
@@ -426,7 +433,7 @@ restart an existing session.
 | `module/camoprof/Launcher/LauncherView.xaml.cs` | Forward the persisted mode to the adapter and display typed pool errors | Does not select or parse proxies |
 | `tests/Module.Camoprof.Tests/Module.Camoprof.Tests.csproj` | Link the new adapter into the existing focused test assembly | No new test framework/package |
 | `tests/Module.Camoprof.Tests/ProxyPoolAdapterTests.cs` | Snapshot reload, round-robin, quarantine, empty pool, and masked evidence | Filesystem seam uses a temporary root |
-| `tests/Module.Camoprof.Tests/BrowserSessionCoordinatorTests.cs` | Optional proxy payload, direct mode preservation, and failed-launch quarantine | Fake PyHost delegate; no real Camofox |
+| `tests/Module.Camoprof.Tests/BrowserSessionCoordinatorProxyTests.cs` | Optional proxy payload, direct mode preservation, and failed-launch quarantine | Fake PyHost delegate; no real Camofox |
 
 ### MangaReader consumer adapters
 
@@ -471,7 +478,7 @@ restart an existing session.
 ### Files explicitly unchanged
 
 - `module/proxy/module.json`: identity and route are already correct.
-- `module/ftf/**`: not an implementation reference and not edited.
+- `module/ftf/**`: never an implementation reference; the citizen has since been removed.
 - `core/**` and `setting/**`: no new core service, shared UI component, style,
   template, or dependency.
 - MangaReader Library, History, Reader, and Cover Builder features: no proxy

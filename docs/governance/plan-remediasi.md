@@ -1,7 +1,17 @@
 # PLAN REMEDIASI — akses Comix pulih, app berjalan seperti sebelumnya
 
 Ditulis 2026-09-11 setelah regresi safety-net (commit 30dd644) dan block Cloudflare
-terhadap IP owner. Batas tegas: TIDAK ada circumvention WAF (spoofing fingerprint,
+terhadap IP owner.
+
+**Status ringkas:** P1.1 baru terwujud sebagai gerbang kesiapan
+(`QueueSourceReadiness.Blocked`, dipakai `ComixSource.cs:494-495`) dan kebijakan
+"typed 401/403/429/502/503 tidak di-retry" (`CatalogMirrorSyncFeature.cs:377-382`,
+`ComixSource.cs:628`). Detektor halaman block Cloudflare khusus, hard cap volume
+per sesi, dan default auto-sync OFF **tidak** ada sebagai komponen bernama. P2
+adalah tindakan operator di luar repo. P3 adalah verifikasi manual tanpa catatan
+hasil di repo.
+
+Batas tegas: TIDAK ada circumvention WAF (spoofing fingerprint,
 rotasi proxy untuk melewati block, penyaruan UA/header). Semua langkah di bawah
 bersifat protektif, pemulihan lewat jalur sah, atau verifikasi.
 

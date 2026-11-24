@@ -224,17 +224,22 @@ di vault (`GoogleCredentialStore.cs:94`). Guard satu-pakai di python
 
 ---
 
-## 5. Konsumen `CitadelBridge` (13 file)
+## 5. Konsumen `CitadelBridge` (41 file, 5 citizen)
 
 | Citizen | Jumlah | File |
 | --- | --- | --- |
-| camoprof | 8 | `Launcher/LauncherView.xaml.cs:5`, `Runtime/RuntimeView.xaml.cs:4`, `Providers/Google/GoogleCredentialStore.cs:7`, `sharedLogic/BrowserSessionCoordinator.cs:3`, `sharedLogic/ProfileCatalog.cs:3`, `Features/AddProfile/AddProfileCoordinator.cs:2`, `Features/AddProfile/AddProfilePyHostClient.cs:2` (+1 pemakaian ctor) |
-| mangareader | 4 | `Features/Downloader/DownloaderPyHostClient.cs:3`, `Features/Downloader/Sources/Comix/ComixSource.cs:6`, `Features/Catalog/Runtime/CatalogBrowserClient.cs:3`, `Features/Catalog/Sources/Comix/CatalogComixSource.cs:6` |
+| agentrouter | 11 | `Features/Claim/` — `AgentrouterClaimClient`, `AgentRouterLoginService`, `AgentRouterCredentialStore`, `AgentRouterBalanceProbe`, `AgentRouterProxyHttpHandler`, `AgentRouterProxyManager`; `Features/Proxy/` — `ProxyPoolRow`, `ProxyView.xaml.cs`; `sharedLogic/` — `AgentProxyPool`, `ProfileIdentity`, `ShortcutCatalog` |
+| mangareader | 9 | `Features/Downloader/DownloaderPyHostClient`, `Sources/Comix/ComixSource`, `Queue/QueueIndependentSession`, `Queue/QueueManifestSession`; `Features/Catalog/Runtime/CatalogBrowserClient`, `Sources/Comix/CatalogComixSource`; `shareLogic/ProxyHttpTransport`, `ProxyLeaseRegistry`, `ProxyPoolAdapter` |
+| camoprof | 8 | `Features/AddProfile/AddProfileCoordinator`, `AddProfilePyHostClient`; `Launcher/LauncherView.xaml.cs`; `Providers/Google/GoogleCredentialStore`; `Runtime/RuntimeView.xaml.cs`; `sharedLogic/BrowserSessionCoordinator`, `ProfileCatalog`, `ProxyPoolAdapter` |
+| proxy | 8 | `Features/Pool/PoolHealthCoordinator`, `PoolView.xaml.cs`; `Features/Sync/ProxyReachabilityProbe`, `ProxySyncService`; `Features/Webshare/WebshareCredentialStore`, `WebshareImportService`; `sharedLogic/ProxyPoolStore`, `ProxySettingsStore` |
+| yuzvid | 4 | `Features/Browser/LocalProxyServer`, `YuzvidBrowserController`, `YuzvidProxyPoolAdapter`; `Features/Queue/QueueDownloaderClient` |
 | tests | 1 | `tests/Module.Camoprof.Tests/AddProfileCoordinatorTests.cs:3` |
 
-`ftf`, `proxy`, dan `blank` **tidak** memakai `sharedLogic/cs` — cocok dengan
-temuan bahwa keduanya kerang (§STRUCTURE 6) dan bahwa hanya 2 dari 6 citizen yang
-me-link `cs/`.
+`blank` tidak memakai `sharedLogic/cs`. Cara me-link-nya berbeda: `camoprof`,
+`agentrouter`, dan `yuzvid` mengambil seluruh folder
+(`<Compile Include="..\sharedLogic\cs\**\*.cs" />`), sedangkan `proxy` mengambil
+empat file spesifik (`ProxyPoolContract`, `ProxyPoolHealthContract`,
+`ProxyPoolOriginContract`, `CredenzPath`) di `Module.Proxy.csproj:6-9`.
 
 ---
 

@@ -80,7 +80,14 @@ Metode (satu commit per pemindahan agar rollback sempit):
    (sharedLogic bukan citizen karena tanpa csproj).
 Rollback: revert per commit.
 
-## Step 14 — sisa C14: pisahkan komposisi dari view (katalog wiring)
+## Step 14 - sisa C14: pisahkan komposisi dari view (katalog wiring)
+
+**Status: dieksekusi dengan bentuk berbeda.** Tidak ada file
+`MangaReaderComposition.cs`. Komposisi Downloader pindah ke
+`MangaReaderModule.cs:42` (`DownloaderBackgroundService`) dan
+`Features/Downloader/DownloaderBackgroundService.cs`, sementara kebijakan
+lintas-feature tinggal di `MangaReaderHandoffs.cs`. View tinggal host XAML,
+navigasi tab, dan lifecycle. Rinciannya di `flows-mangareader.md` §10.
 
 Analisa: tab adalah elemen XAML bernama (LibraryTab, HistoryTab, dst.), jadi
 "feature mendaftar ke katalog" tidak bisa menggantikan XAML tanpa menulis ulang
@@ -88,15 +95,15 @@ seluruh view. Yang BISA dipisah adalah *wiring komposisi* yang kini berada di
 konstruktor view.
 
 Metode:
-1. File BARU `module/mangareader/MangaReaderComposition.cs`: memindahkan seluruh
-   badan konstruktor view (pembuatan queue/sources/lister/autoCover/catalogMirror
-   dst.) menjadi satu method `Compose(...)` yang menerima aksesors tab dan
-   mengembalikan objek pemegang referensi yang dibutuhkan view/dispose.
-2. `MangaReaderView.xaml.cs` konstruktor menjadi: InitializeComponent + panggil
-   composition + simpan referensi + daftarkan dispose. View tinggal host XAML +
+1. Komposisi dipisah ke `module/mangareader/MangaReaderModule.cs` +
+   `Features/Downloader/DownloaderBackgroundService.cs`: pembuatan
+   queue/sources/lister/autoCover/catalogMirror keluar dari konstruktor view.
+2. `MangaReaderView.xaml.cs` konstruktor menjadi: `InitializeComponent` + ambil
+   konteks yang disuntikkan module + daftarkan dispose. View tinggal host XAML +
    navigasi + lifecycle (target ±120 baris).
-3. Ulangi pola yang sama untuk `camoprof/CamoprofComposition.cs` (parent camoprof
-   meng-hardwire 9 subsistem; setelah dipisah, parent = host + navigasi).
+3. Ulangi pola yang sama untuk camoprof: `CamoprofView.xaml.cs` (116 baris)
+   masih meng-hardwire sembilan subsistem di konstruktor (`:32-51`); target
+   bentuknya parent = host + navigasi, dengan komposisi di `CamoprofModule.cs`.
 4. Tidak ada perubahan interface feature, delegate contract, atau perilaku.
 5. Verifikasi: suite penuh hijau + guard Level-B hijau + SMOKE CHECKLIST lulus penuh
    (step ini refactor perilaku-UI, jadi smoke wajib sebagai syarat keluar).

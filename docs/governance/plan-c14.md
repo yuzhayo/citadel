@@ -1,6 +1,6 @@
 # PLAN C14/D22 — koreksi diagnosa + pemisahan aturan koordinasi
 
-**Status: METODE TERTULIS. Eksekusi hanya setelah dokumen ini ada (aturan pelaksanaan 2026-09-11).**
+**Status: SELESAI.** Aturan koordinasi lintas-feature sudah keluar dari file komposisi ke `module/mangareader/MangaReaderHandoffs.cs` (194 baris), dan `MangaReaderView.xaml.cs` turun dari 412 ke 171 baris. Angka 412/116-160/219-256/329-379 di bawah adalah pembacaan sebelum pemisahan; simpan sebagai bukti diagnosa, bukan keadaan sekarang.
 
 ## 1. Analisa (membaca `MangaReaderView.xaml.cs` penuh, 412 baris)
 

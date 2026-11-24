@@ -1,6 +1,6 @@
 # CITADEL-FLOWS-MANGAREADER — citizen terbesar
 
-183 file, 36.703 baris = 63% seluruh kode produksi citadel. Ditulis 2026-09-11 dari
+229 file, 45.348 baris = 57% seluruh kode produksi citadel. Ditulis 2026-09-11 dari
 kode. Klaim bertanda `file:baris`. Kontrak yang mengadili:
 `.agents/skills/citadel-feature-modularity/SKILL.md` (FM-1..FM-5) dan
 `.agents/skills/citadel-shared-ui/SKILL.md` (SU-1..SU-5).
@@ -9,19 +9,20 @@ kode. Klaim bertanda `file:baris`. Kontrak yang mengadili:
 bertolak belakang di dalam satu citizen**.
 
 - `Reader/` adalah **implementasi referensi yang klaimnya terbukti**: composition
-  root 165 baris yang tidak menyebut satu pun tipe feature konkret, nol tepi
+  root 168 baris yang tidak menyebut satu pun tipe feature konkret, nol tepi
   feature→feature, semua lalu lintas lewat empat hub. Menambah feature drawer-card
   atau visual = **nol edit di host**.
 - `Features/Downloader/` + `Features/Catalog/` memakai pola lain: registrasi `new`
   eksplisit, panggilan konkret antar sibling, dan **dua provider Comix yang
-  diduplikasi hampir utuh** (1.606 + 1.537 baris).
+  diduplikasi hampir utuh** (1.621 + 1.503 baris).
 
 Jadi keluhan owner bukan seragam: ia benar untuk sisi Downloader/Catalog, dan
 **tidak** benar untuk sisi Reader.
 
-Bagian yang sudah terdokumentasi: Reader (§1–§4), Downloader (§5–§8), Components
-dan CoverBuilder (§9). Library, History, CatalogMirror, dan parent module
-(`MangaReaderView`) menyusul.
+Bagian yang terdokumentasi di sini: Reader (§1–§5), Downloader (§6–§9),
+parent module (§10), Library/Grouping/UpdateChecker (§11), History (§12),
+CatalogMirror (§13–§14), shareLogic (§15), tepi lintas subsistem (§16),
+duplikasi (§17), dan rujukan register (§18).
 
 ---
 
@@ -32,25 +33,25 @@ Klaimnya ada di `SKILL.md:262-297`, dengan bentuk yang dijanjikan:
 `Features/<nama>/` (feature pluggable).
 
 **Bentuk nyata cocok, dengan satu drift nama:** yang ada adalah pasangan WPF
-`Reader/ReaderWindow.xaml` (178 baris) + `ReaderWindow.xaml.cs` (165 baris), bukan
+`Reader/ReaderWindow.xaml` (170 baris) + `ReaderWindow.xaml.cs` (168 baris), bukan
 `ReaderWindow.cs` tunggal seperti ditulis `SKILL.md:269`.
 
-### 1.1 Composition root: 165 baris, nol tipe feature
+### 1.1 Composition root: 168 baris, nol tipe feature
 
 `ReaderWindow.xaml.cs` hanya menyebut **infrastruktur**:
 
 | Baris | Infrastruktur |
 | --- | --- |
 | `:31` | `CbzReaderChapterLoader` |
-| `:48` | `ReaderSessionState` |
-| `:53-55` | `ReaderCommandHub`, `ReaderNotificationHub`, `ReaderActivityHub` |
-| `:56-57` | `FrameContentHost`, `ReaderStatusHost` |
-| `:65` | `ReaderChapterNavigationHub` |
-| `:68-69` | `ReaderInputRouter`, `ReaderFeatureContext` |
-| `:89` | `ReaderFeatureHost` |
+| `:50-53` | `ReaderSessionState` |
+| `:56-58` | `ReaderCommandHub`, `ReaderNotificationHub`, `ReaderActivityHub` |
+| `:59-67` | `FrameContentHost`, `ReaderStatusHost` |
+| `:68` | `ReaderChapterNavigationHub` |
+| `:71-82` | `ReaderInputRouter`, `ReaderFeatureContext` |
+| `:92-99` | `ReaderFeatureHost` |
 
-Keduabelas tipe feature konkret muncul **hanya** di
-`Reader/ReaderDefaultFeatureCatalog.cs:18-29`. Window tidak pernah menyentuhnya.
+Kelima belas tipe feature konkret muncul **hanya** di
+`Reader/ReaderDefaultFeatureCatalog.cs:18-32`. Window tidak pernah menyentuhnya.
 
 ### 1.2 Vonis per aturan FM
 
@@ -59,8 +60,8 @@ Keduabelas tipe feature konkret muncul **hanya** di
 | **FM-1** parent tak tahu internal feature | **PATUH** | grep repo-wide: tidak ada tipe internal feature (`ChapterCoordinator`, `ChapterPreloader`, `ChapterNavigator`, `IChapterLoadingRuntime`, `ReaderDrawerPolicy`, `ReaderAutoScrollPolicy`, `ReaderFullscreenGeometry`) yang muncul di luar foldernya pada kode produksi. Kecocokan hanya di folder sendiri, katalog, test, dan dokumen |
 | **FM-2** komunikasi lewat event/hub | **PATUH** | Reset menjangkau Zoom/Dim/AutoScroll/Pin **hanya** lewat perintah hub (`ReaderResetController.cs:46-53`); tidak ditemukan satu pun panggilan langsung feature→feature |
 | **FM-3** parent tak cek "feature X ada?" | **PATUH** | host hanya menegakkan invarian bentuk: tepat satu `IReaderDrawerContributionHost` (`ReaderFeatureHost.cs:42-47`), key/name cocok (`:31-35`). Registrasi lewat katalog terpusat, sesuai `SKILL.md:277` ("ideally via a catalog") — bukan self-registration |
-| **FM-4** state bersama lewat context | **CAMPURAN** | **Untuk:** `ReaderFeatureContext` adalah service container (`ReaderFeatureContract.cs:241-280`), feature menarik saat Attach (`ChapterLoadingFeature.cs:93-98`, `ReaderOverlay.xaml.cs:19-24`). **Melawan:** 8 dari 12 feature menerima `ReaderSessionState` + `ReaderCommandHub` konkret yang **diantar tangan** lewat closure konstruktor di katalog (`ReaderDefaultFeatureCatalog.cs:20,24-29`); `Attach(context)` milik Drawer mengabaikan parameter context-nya sama sekali (`ReaderDrawer.xaml.cs:53-59`) |
-| **FM-5** parent hanya koordinasi | **SEBAGIAN BESAR PATUH** | window = bangun infrastruktur (`:47-96`), route (`:102-107`), lifecycle (`:122-164`). **Melawan (ringan):** window menduplikasi pekerjaan judul milik feature Chrome (`ReaderWindow.xaml.cs:138-139` vs `ReaderChromeController.cs:29-33`), dan XAML parent memiliki template render halaman termasuk transform ZoomScale (`ReaderWindow.xaml:48-97`, `:55-58`) |
+| **FM-4** state bersama lewat context | **CAMPURAN** | **Untuk:** `ReaderFeatureContext` adalah service container (`ReaderFeatureContract.cs:250-288`), feature menarik saat Attach (`ChapterLoadingFeature.cs:93-98`, `ReaderOverlay.xaml.cs:19-24`). **Melawan:** 8 dari 15 feature menerima `ReaderSessionState` + `ReaderCommandHub` konkret yang **diantar tangan** lewat closure konstruktor di katalog (`ReaderDefaultFeatureCatalog.cs:20,24-30`); `Attach(context)` milik Drawer mengabaikan parameter context-nya sama sekali (`ReaderDrawer.xaml.cs:53-59`) |
+| **FM-5** parent hanya koordinasi | **SEBAGIAN BESAR PATUH** | window = bangun infrastruktur (`:47-99`), wiring permukaan (`:101-103`), lifecycle (`:125-167`). **Melawan (ringan):** window menduplikasi pekerjaan judul milik feature Chrome (`ReaderWindow.xaml.cs:141-142` vs `ReaderChromeController.cs:29-33`), dan XAML parent memiliki template render halaman termasuk transform ZoomScale (`ReaderWindow.xaml:50-89`, `:57-61`) |
 
 ### 1.3 Peta feature Reader
 
@@ -76,6 +77,9 @@ Semua mengimplementasikan `IReaderFeature` (`ReaderFeatureContract.cs:10-14`).
 | `ChapterNavigation` | pemilih + kartu drawer prev/next | `IReaderDrawerContributionProvider` | tidak ada |
 | `Fullscreen` | fullscreen monitor + restore | provider | `Geometry` publik, dikonsumsi hanya di dalam folder (`:84`) + test |
 | `AutoScroll` | gulir berbasis waktu | provider | `Policy` di dalam folder (`:179,192`) + test |
+| `ManualScroll` | gulir manual + momentum | provider | `Policy` di dalam folder (`:16`, `:70`) + test |
+| `ResumePosition` | simpan/pulihkan posisi baca | `IReaderFeature` biasa | tidak ada |
+| `Diagnostics` | statistik frame + kontinuitas gulir | `IReaderFeature` biasa | `Policy` di dalam folder (`:41`, `:88`) + test |
 | `Pin` / `Zoom` / `Dim` / `Reset` | pin toggle / pemilik zoom / overlay+slider dim / reset global | provider (keempatnya) | tidak ada |
 
 ### 1.4 Mekanisme registrasi dan biaya menambah feature
@@ -83,10 +87,10 @@ Semua mengimplementasikan `IReaderFeature` (`ReaderFeatureContract.cs:10-14`).
 Katalog statis eksplisit, **tanpa refleksi dan tanpa self-registration**:
 
 ```text
-ReaderDefaultFeatureCatalog.cs:12-29    12 panggilan .Add(nama, factory)
+ReaderDefaultFeatureCatalog.cs:12-32    15 panggilan .Add(nama, factory)
         │  menyebut dirinya "single explicit registration point" (:6-9)
         ▼
-ReaderWindow.xaml.cs:89-96              dikonsumsi di sini
+ReaderWindow.xaml.cs:92-99              dikonsumsi di sini
         ▼
 ReaderFeatureHost.cs:27-40              loop attach
         :49-63   kartu drawer diagregasi otomatis
@@ -100,10 +104,10 @@ ReaderFeatureHost.cs:27-40              loop attach
 | Langkah | Wajib? |
 | --- | --- |
 | buat folder `Reader/Features/<Nama>/` + kelas `IReaderFeature` | ya |
-| satu baris di `ReaderDefaultFeatureCatalog.cs:17-29` | ya |
-| entri `Compile`/`Page` di `tests/Module.Mangareader.Reader.Tests.csproj:33-104` | hanya bila ingin ter-cover test |
-| edit `IReaderCommands` + `ReaderCommandHub` (`ReaderFeatureContract.cs:51-105`) | **hanya bila** butuh perintah baru |
-| edit `ReaderLayer` (`ReaderFeatureCatalog.cs:3-11`), XAML ContentControl (`ReaderWindow.xaml:101-134`), peta host (`ReaderWindow.xaml.cs:80-88`) | **hanya bila** butuh lapisan baru |
+| satu baris di `ReaderDefaultFeatureCatalog.cs:18-32` | ya |
+| entri `Compile`/`Page` di csproj test | **tidak perlu** — `tests/Module.Mangareader.Reader.Tests/Module.Mangareader.Reader.Tests.csproj:43-44` memakai glob `Reader\**` |
+| edit `IReaderCommands` + `ReaderCommandHub` (`ReaderFeatureContract.cs:51-108`) | **hanya bila** butuh perintah baru |
+| edit `ReaderLayer` (`ReaderFeatureCatalog.cs:3-11`), XAML ContentControl (`ReaderWindow.xaml:93-122`), peta host (`ReaderWindow.xaml.cs:83-91`) | **hanya bila** butuh lapisan baru |
 | edit host untuk feature drawer-card / visual | **NOL** |
 
 Ini kontras tajam dengan Downloader (§6) dan camoprof. **Reader membuktikan bentuk
@@ -113,10 +117,10 @@ yang owner inginkan sudah mungkin di repo ini.**
 
 | Hub | Pemilik | Contoh lalu lintas |
 | --- | --- | --- |
-| `ReaderCommandHub` | `ReaderFeatureContract.cs:70-105` | Overlay→Drawer (`ReaderOverlay.xaml.cs:40`); Reset→AutoScroll/Zoom/Dim/Pin (`ReaderResetController.cs:46-53`); InputRouter→Fullscreen/Dim/Zoom (`ReaderInputRouter.cs:93-138`) |
-| `ReaderNotificationHub` | `ReaderFeatureContract.cs:113-123` | Fullscreen (`ReaderFullscreenController.cs:126`), peringatan prefs window (`ReaderWindow.xaml.cs:141-142`) → Toast (`ReaderToast.xaml.cs:24`) |
+| `ReaderCommandHub` | `ReaderFeatureContract.cs:71-109` | Overlay→Drawer (`ReaderOverlay.xaml.cs:40`); Reset→AutoScroll/Zoom/Dim/Pin (`ReaderResetController.cs:42-60`); InputRouter→Fullscreen/Dim/Zoom (`ReaderInputRouter.cs:93-138`) |
+| `ReaderNotificationHub` | `ReaderFeatureContract.cs:117-127` | Fullscreen (`ReaderFullscreenController.cs:126`), peringatan prefs window (`ReaderWindow.xaml.cs:144-145`) → Toast (`ReaderToast.xaml.cs:24`) |
 | `ReaderActivityHub` | `ReaderCore/ReaderActivityHub.cs:27-38` | Drawer melapor `DrawerOpened` (`ReaderDrawer.xaml.cs:85`); AutoScroll berhenti saat aktivitas manual (`ReaderAutoScrollController.cs:111,190-193`) |
-| `ReaderChapterNavigationHub` | `ReaderCore/ReaderChapterNavigationHub.cs:15-17` | ChapterLoading mendaftar (`ChapterLoadingFeature.cs:132-136`); Chrome (`:23`), ChapterNavigation (`:86,121`), Zoom (`:174`), AutoScroll (`:135,187`) mengonsumsi |
+| `ReaderChapterNavigationHub` | `ReaderCore/ReaderChapterNavigationHub.cs:15-24` | ChapterLoading mendaftar (`ChapterLoadingFeature.cs:132-136`); Chrome (`:23`), ChapterNavigation (`:86,121`), Zoom (`:174`), AutoScroll (`:135,187`) mengonsumsi |
 
 Satu jalur tidak langsung yang tetap patuh FM-2: AutoScroll bereaksi terhadap
 `IsDrawerOpen` milik Drawer lewat `PropertyChanged`
@@ -129,21 +133,22 @@ di folder sendiri, katalog, test, atau dokumen).
 
 | File | Pekerjaan |
 | --- | --- |
-| `FrameContentHost.cs` | adapter `IReaderViewport` di atas ScrollViewer/ItemsControl (`:15-111`) — **dan** kelas kedua `ReaderStatusHost` (`:114-190`) di file yang sama |
+| `FrameContentHost.cs` | adapter `IReaderViewport` di atas ScrollViewer/ItemsControl (`:14-110`) |
+| `ReaderStatusHost.cs` | panel loading/error + fasad `IReaderStatusHost` (`:1-89`) |
 | `ReaderActivityHub.cs` | satu stream activity-origin bertipe (`:27`) |
-| `ReaderChapterNavigationHub.cs` | fasad navigasi late-bound + registri (`:15-17`) |
+| `ReaderChapterNavigationHub.cs` | fasad navigasi late-bound + registri (`:15-24`) |
 | `ReaderDrawerContributions.cs` | kontrak kartu drawer opaque bersama + factory kartu bergaya Setting (`:15`, `:34-53`) |
 | `ReaderInputRouter.cs` | satu-satunya pemilik preview-input tingkat window (`:11`) |
-| `ReaderPreferencesStore.cs` | persistensi tervalidasi, atomik, ter-debounce + seam FileIO (`:26`, `:357-382`) |
-| `ReaderSessionState.cs` | state sesi observable; baca publik `IReaderStateView` (`:5`), tulis internal (`:57-88`) |
+| `ReaderPreferencesStore.cs` | persistensi tervalidasi, atomik, ter-debounce + seam FileIO (`:29`, `:371-390`) |
+| `ReaderSessionState.cs` | state sesi observable; baca publik `IReaderStateView` (`:5`), tulis internal (`:62-98`) |
 
 Context bersama (FM-4) adalah `ReaderFeatureContext` di
-`ReaderFeatureContract.cs:241-280` — **tinggal di root Reader, bukan di
-`ReaderCore/`**. Tempat feature menarik: `ChapterLoadingFeature.cs:96-97`,
-`ReaderOverlay.xaml.cs:22-23`, `ReaderZoomController.cs:87-98`,
+`ReaderFeatureContract.cs:250-288` — **tinggal di root Reader, bukan di
+`ReaderCore/`**. Tempat feature menarik: `ChapterLoadingFeature.cs:93-98`,
+`ReaderOverlay.xaml.cs:19-24`, `ReaderZoomController.cs:87-98`,
 `ReaderChromeController.cs:21-23`, `ReaderToast.xaml.cs:23-24`,
 `ReaderChapterNavigation.cs:31-86`. Catatan: `SessionState` pada context bersifat
-`internal` (`:269`), jadi sisi tulis state sampai ke feature lewat injeksi
+`internal` (`:278`), jadi sisi tulis state sampai ke feature lewat injeksi
 konstruktor katalog — itulah sisi "melawan" pada FM-4.
 
 ---
@@ -151,12 +156,12 @@ konstruktor katalog — itulah sisi "melawan" pada FM-4.
 ## 2. Flow Reader (untuk diagram)
 
 ```text
-ReaderWindow (composition root, 165 baris)
+ReaderWindow (composition root, 168 baris)
 │  bangun: SessionState · CommandHub · NotificationHub · ActivityHub ·
 │          FrameContentHost · StatusHost · ChapterNavigationHub · InputRouter ·
 │          FeatureContext · CbzReaderChapterLoader
 ▼
-ReaderDefaultFeatureCatalog.cs:12-29   ← 12 feature, SATU-SATUNYA tempat namanya disebut
+ReaderDefaultFeatureCatalog.cs:18-32   ← 15 feature, SATU-SATUNYA tempat namanya disebut
 ▼
 ReaderFeatureHost.cs:27-40  attach → :49-63 kartu drawer → :72-84 visual
                             → :92-97 start → :104-105 dispose terbalik
@@ -175,14 +180,13 @@ ReaderInputRouter  ← satu-satunya pemilik preview-input tingkat window
 | Temuan | Bukti |
 | --- | --- |
 | **Logika feature tinggal di luar folder feature.** `ReaderViewportNavigator.cs:8` ("Coalesced 90%-viewport **Overlay** navigation") dan `ReaderViewportStepPolicy.cs` ada di root Reader; satu-satunya konsumen adalah Overlay (`ReaderOverlay.xaml.cs:22`) | FM-5 / ST-1 |
-| **Dua kelas dalam satu file.** `FrameContentHost.cs` = adapter viewport (`:15`) + adapter status-host (`:114`) | ST-1 |
-| **`ReaderFeatureContract.cs` 280 baris memuat ±15 tipe**, termasuk dua hub konkret (`:70`, `:113`). `SKILL.md:270` menempatkan "hubs" di `ReaderCore/`, tapi 2 dari 4 hub tinggal di root Reader | ST-1 + drift dari bentuk yang dijanjikan skill |
-| **Judul window ditulis dua kali.** `ReaderWindow.xaml.cs:138-139` vs `ReaderChromeController.cs:32` | duplikasi |
+| **`ReaderFeatureContract.cs` 289 baris memuat ±15 tipe**, termasuk dua hub konkret (`:71`, `:117`). `SKILL.md:270` menempatkan "hubs" di `ReaderCore/`, tapi 2 dari 4 hub tinggal di root Reader | ST-1 + drift dari bentuk yang dijanjikan skill |
+| **Judul window ditulis dua kali.** `ReaderWindow.xaml.cs:141-142` vs `ReaderChromeController.cs:32` | duplikasi |
 | **Zoom mengekspor ulang konstanta `ReaderValuePolicy`** (`ReaderZoomController.cs:15-18`) | duplikasi ringan |
 | **Klaim komentar tidak umum.** `ChapterLoadingFeature.cs:66-68` "all dependencies arrive through Attach" — benar hanya untuk feature ini; Drawer/Pin/Reset memakai injeksi ctor dan mengabaikan/memakai sebagian context (`ReaderDrawer.xaml.cs:53-59`, `ReaderPinController.cs:55-60`, `ReaderResetController.cs:41-42`) | A-kategori |
 | **Klaim katalog TERBUKTI benar.** `ReaderDefaultFeatureCatalog.cs:7-8` dan `ChapterLoadingFeature.cs:33-35` — diverifikasi grep | positif |
-| **`CoverBuilderView.xaml.cs` 352 baris** membawa logika alur di luar wiring: orkestrasi batal/sibuk (`:262-281`), pemuatan preview (`:289-340`), penyusunan teks status (`:192-208`, `:230-243`) | ST-1 |
-| **`ReaderPreferencesStore.cs`** = store + 3 record + `IReaderPreferencesFileIO` + implementasi (`:9-23`, `:357-382`) — kohesif tapi多 tipe | ST-1 ringan |
+| **`CoverBuilderView.xaml.cs` 440 baris** membawa logika alur di luar wiring: orkestrasi batal/sibuk (`UpdateAvailability :297`, `EndOperation :325`), pemuatan preview (`LoadSelectedCover :342`, `LoadCoverAsync :384`), penyusunan teks status (`BakeSkippedDetail :282`) | ST-1 |
+| **`ReaderPreferencesStore.cs`** = store + 3 record + `IReaderPreferencesFileIO` + implementasi (`:9-23`, `:371-390`) — kohesif tapi ±4 tipe | ST-1 ringan |
 
 ---
 
@@ -205,6 +209,8 @@ reusabel-nya nyata. Penilaiannya tergantung tafsir: bukan penyalinan (SU-2 aman)
 tapi bukan combo murni (SU-4 abu-abu). → register C11, dicatat sebagai abu-abu,
 bukan pelanggaran tegas.
 
+---
+
 ## 5. CoverBuilder
 
 | File | Baris | Pekerjaan |
@@ -212,10 +218,10 @@ bukan pelanggaran tegas.
 | `CoverSourceReference.cs` | 21 | input bertipe LocalPath/RemoteUrl (`:12-20`) |
 | `CoverSourceLoader.cs` | 217 | muat/fetch/konversi-PNG/cache (`:16`) |
 | `CoverBuilderService.cs` | 86 | **satu-satunya pemilik bake**, kebijakan fetch-sebelum-bake (`:10-19`, `:34-51`) |
-| `CoverBuilderView.xaml(.cs)` | 122 / 352 | UI: `setting:SettingViewport` (`xaml:7`), `SettingField` (`:67`), `SettingButton` (`:71,79,110`) |
+| `CoverBuilderView.xaml(.cs)` | 147 / 440 | UI: `setting:SettingViewport` (`xaml:7`), `SettingField` (`:67`), `SettingButton` (`:71,79,110`) |
 
 Konsumen: `MangaReaderView.xaml:26` (tab module); test lewat
-`tests/Module.Mangareader.Downloader.Tests.csproj:157-162`.
+`tests/Module.Mangareader.Downloader.Tests/Module.Mangareader.Downloader.Tests.csproj:45-50`.
 
 ---
 
@@ -225,95 +231,95 @@ Konsumen: `MangaReaderView.xaml:26` (tab module); test lewat
 
 | Folder | file | Pekerjaan | Kontrak |
 | --- | --- | --- | --- |
-| `Downloader/` (root) | 6 | komposisi + plumbing bersama | `DownloaderContext` = container yang dihadapi child (`DownloaderContract.cs:16`); `DownloaderView.xaml.cs:13` host route (Catalog ↔ ManualUrl, **hanya meneruskan event**); `DownloaderPyHostClient.cs:26` pemilik host browser python; `DownloadSourceIndex.cs:33` pemetaan judul→folder + catatan chapter terbit; `DownloaderPathContainment.cs` penjaga path-traversal |
-| `Catalog/` | 5 | layar jelajah/detail online | `CatalogState` (`CatalogFeature.cs:10`), `CatalogFeature` (`:76`); adapter presentasi `RemoteTitleCardModel.cs:16`, `RemoteTitleDetailAdapter.cs:16` |
-| `Queue/` | 8 | state job, penjadwalan, staging halaman, terbit CBZ | `DownloadQueueFeature` (`:29`), record di `DownloadQueueModels.cs:11-165`, `PageTransport`/`PageFetchResult` (`PageTransport.cs:60,37`), `PipelineResult` (`ChapterDownloadPipeline.cs:29`), `PublicationOutcome` (`CbzChapterPublisher.cs:48`), `DownloadQueueStore` (`:151`); UI `DownloadListScreen.xaml.cs:15` **hanya mengikat snapshot** |
-| `Sources/` | 12 | registri + 3 folder provider | `MangaSourceRegistry`/`MangaSourceRegistration`/`IRemoteFilterContribution`/`IRemoteFilterState` (`MangaSourceRegistry.cs:53,40,11,25`), `IQueueSourceReadiness` (`QueueSourceReadiness.cs:8`) |
-| `ManualUrl/` | 8 | resolusi URL tempel | `IManualUrlProbe` (`ManualUrlContracts.cs:10`), `ManualUrlResolution` (`:45`), `ManualUrlFeature` (`:7`); plus provider bantu `DynamicManualSource` (`:18`) |
-| `FilterSearch/` | 9 | panel filter per provider (Comix 3, CucumberManga 2, DrakeScans 3) | `FilterSearchFeature.cs:11` memegang kontribusi aktif, membangun snapshot jelajah immutable |
-| `Lister/` | 1 | probe ketersediaan lokal, read-only | `ListerFeature.cs:36`, `ListerResult:12` |
+| `Downloader/` (root) | 7 | komposisi + plumbing bersama | `DownloaderContext` = container yang dihadapi child (`DownloaderContract.cs:18`); `DownloaderView.xaml.cs:13` host route (Catalog ↔ ManualUrl, **hanya meneruskan event**); `DownloaderPyHostClient.cs:46` pemilik host browser python; `DownloadSourceIndex.cs:33` pemetaan judul→folder + catatan chapter terbit; `DownloaderPathContainment.cs` penjaga path-traversal |
+| `Catalog/` | 6 | layar jelajah/detail online | `CatalogState` (`CatalogFeature.cs:10`), `CatalogFeature` (`:76`); adapter presentasi `RemoteTitleCardModel.cs:16`, `RemoteTitleDetailAdapter.cs:16` |
+| `Queue/` | 14 | state job, penjadwalan, staging halaman, terbit CBZ | `DownloadQueueFeature` (`:29`), record di `DownloadQueueModels.cs:11-165`, `PageTransport`/`PageFetchResult` (`PageTransport.cs:62,38`), `PipelineResult` (`ChapterDownloadPipeline.cs:30`), `PublicationOutcome` (`CbzChapterPublisher.cs:48`), `DownloadQueueStore` (`:151`); UI `DownloadListScreen.xaml.cs:16` **hanya mengikat snapshot** |
+| `Sources/` | 27 | registri + 6 folder provider (AsuraScans, Comix, CucumberManga, DrakeScans, ThunderScans, WeebCentral) | `MangaSourceRegistry`/`MangaSourceRegistration`/`IRemoteFilterContribution`/`IRemoteFilterState` (`MangaSourceRegistry.cs:55,42,13,27`), `IQueueSourceReadiness` (`QueueSourceReadiness.cs:8`) |
+| `ManualUrl/` | 8 | resolusi URL tempel | `IManualUrlProbe` (`ManualUrlContracts.cs:10`), `ManualUrlResolution` (`:45`), `ManualUrlFeature` (`:7`); plus provider bantu `DynamicManualSource` (`:19`) |
+| `FilterSearch/` | 12 | panel filter per provider (Comix 3, CucumberManga 2, DrakeScans 3, WeebCentral 2) | `FilterSearchFeature.cs:11` memegang kontribusi aktif, membangun snapshot jelajah immutable |
+| `Lister/` | 1 | probe ketersediaan lokal, read-only | `ListerFeature.cs:36`, `ListerResult` (`:12`) |
 | `AutoCover/` | 1 | menulis `cover.png` | `AutoCoverFeature.cs:55`, `CoverCandidate:13`, `AutoCoverOutcome:37` |
-| `mangareader_downloader/` | 2 py | plugin pyhost | perintah `downloader.open/api/fetch/close` (`plugin.py:17-21`) |
+| `mangareader_downloader/` | 2 py | plugin pyhost | perintah `downloader.open/api/fetch/render/close/egress` (`plugin.py:17-24`) |
 
 ### 6.2 Flow unduh end-to-end
 
 ```text
-[1]  Catalog/CatalogScreen.xaml.cs:368   _context.Queue.QueueChapters(...)
-     (ada juga handoff lewat parent: MangaReaderView.xaml.cs:245,355)
-[2]  Queue/DownloadQueueFeature.cs:108-226   admission · dedupe · persist
-     commit durable lewat DownloadQueueStore.Commit (:1020-1032)
-[3]  :224 → EnsureStarted :476 → RunSchedulerAsync :492
-     PARALELISME #1: JobConcurrency = 2 chapter (:31, worker task :515-519)
-     ← inilah perubahan "run queue jobs in parallel" (commit 172f193)
-[4]  per job: containment path :588 · cari source _sources.FindSource :609
-     gerbang readiness opsional lewat INTERFACE IQueueSourceReadiness :616
-[5]  source.GetManifestAsync :646
-     Comix = python: ComixSource.cs:1480 → DownloaderPyHostClient.ApiAsync
-             → downloader.api (DownloaderPyHostClient.cs:153-157, plugin.py:19)
+[1]  Catalog/CatalogScreen.xaml.cs:444   _context.Queue.QueueChapters(...)
+     (handoff lewat parent: MangaReaderHandoffs.cs:54 EnqueueUpdate / :160 QueueHandoff)
+[2]  Queue/DownloadQueueFeature.cs:168   QueueChapters — admission · dedupe · persist
+[3]  EnsureStarted :851 · RunDownloadClaimedAsync :879
+     PARALELISME #1: JobConcurrency = 4 (:31)
+[4]  per job: cari source _sources.FindSource :915
+     gerbang readiness opsional lewat INTERFACE IQueueSourceReadiness :931
+[5]  source.GetManifestAsync :954
+     Comix = python: ComixSource.cs:1489 → DownloaderPyHostClient.ApiAsync :415
+             → "downloader.api" (DownloaderPyHostClient.cs:444, plugin.py:19)
      CucumberManga / DrakeScans / DynamicManual = C# murni HttpClient
-             (CucumberMangaSource.cs:119, DrakeScansSource.cs:12, DynamicManualSource.cs:22)
-[6]  ChapterDownloadPipeline.RunAsync :675-687
-     PARALELISME #2: PageConcurrency = 2 halaman via Parallel.ForEachAsync
-             (ChapterDownloadPipeline.cs:105, 273-279)
-     retry 1/2/4 detik (:97-102) · pass pemulihan :178-213 · jurnal staging job.json :511-537
-[7]  PageTransport.FetchAsync :79-102
-     C# native HTTP streaming DULU (FetchNativeAsync :104-223)
-     fallback browser HANYA untuk NetworkFailed/Rejected/Challenge (:49-51)
-       → FetchThroughBrowserAsync :225 → DownloaderPyHostClient.FetchToStagingAsync
-         :168-179 → python downloader.fetch (plugin.py:20)
+             (CucumberMangaSource.cs:119, DrakeScansSource.cs:11, DynamicManualSource.cs:19)
+[6]  ChapterDownloadPipeline.RunAsync :154 (dibangun DownloadQueueFeature.cs:1045,
+     dipanggil :1051)
+     PARALELISME #2: DirectPageConcurrency = 2 · ProxyPageConcurrency = 8
+             (:112-113) lewat Parallel.ForEachAsync (:320)
+     retry 1/2/4 detik (:105-109) · pass pemulihan :212 · jurnal staging job.json (:91-92, :114)
+[7]  PageTransport.FetchNativeAsync :147
+     C# native HTTP streaming DULU
+     fallback browser HANYA untuk NetworkFailed/Challenge (:51-53)
+       → FetchBrowserFallbackAsync :286 → DownloaderPyHostClient.FetchToStagingAsync
+         :454 → "downloader.fetch" (:466, plugin.py:20)
      python menulis byte ke staging; HANYA bukti yang kembali
-       (PageTransport.cs:56-58 doc, :245-257)
-[8]  deteksi format gambar dari byte (PageTransport.cs:322-349)
-     transform milik provider (ChapterDownloadPipeline.cs:399)
-       → IMangaSource.TransformPageAsync (MangaSourceContracts.cs:241)
+       (PageTransport.cs:56-60 doc, :294-349)
+[8]  deteksi format gambar dari byte (PageTransport.cs:408)
+     transform milik provider (ChapterDownloadPipeline.cs:511)
+       → IMangaSource.TransformPageAsync (MangaSourceContracts.cs:267)
        mis. Comix/ComixPageDecoder.cs, CucumberManga/CucumberMangaHtmlParser.cs
-[9]  CbzChapterPublisher.PublishAsync / PublishIncompleteAsync
-     (DownloadQueueFeature.cs:717-737; CbzChapterPublisher.cs:87,115)
+[9]  CbzChapterPublisher.PublishAsync / PublishIncompleteAsync (:87,115)
      atomik temp→final · provenance META-INF/citadel-source.json (:70)
      memakai shareLogic ArchiveValidator / IArchiveLockCoordinator /
      LatestCoverBackupStore (:73-85)
-[10] commit selesai DownloadQueueFeature.cs:754-766 · catat index :768
-     refresh Library SENGAJA tidak dirantai (Lister/ListerFeature.cs:25-28)
+[10] catat index DownloadQueueFeature.cs:1171 (TryRecordPublished)
+     refresh Library SENGAJA tidak dirantai (Lister/ListerFeature.cs:24-29)
      reader nanti membuka CBZ lewat shareLogic/CbzChapterLoader.cs:11
-       → shareLogic/Archive/ArchivePageReader.cs:34-53 · scanner Library/LibraryScanner.cs:17
-[11] cabang sampul: CatalogScreen.xaml.cs:414 menaikkan CoverCandidateAvailable
+       → shareLogic/Archive/ArchivePageReader.cs:33-51
+     scanner yang menemukan folder baru: Library/LibraryIndexCoordinator.cs:109
+       (Reconcile) + Library/LibraryIndexWatcher.cs:72,80
+[11] cabang sampul: CatalogScreen.xaml.cs:490 menaikkan CoverCandidateAvailable
      → DownloaderView.xaml.cs:97-113 → AutoCoverFeature.SaveCoverAsync (:78)
 ```
 
 ### 6.3 Mekanisme plugin provider
 
-**Interface utama:** `IMangaSource` di `shareLogic/Sources/MangaSourceContracts.cs:201-255`
+**Interface utama:** `IMangaSource` di `shareLogic/Sources/MangaSourceContracts.cs:227-294`
 (Browse, Lookup, GetTitle, GetGroups, GetChapters, GetManifest, TransformPage,
 FindAlternateGroups). Facet opsional: `IQueueSourceReadiness`
 (`Sources/QueueSourceReadiness.cs:8`), `ICatalogSnapshotSource`
 (`shareLogic/Sources/CatalogSnapshotContracts.cs:123`), `IManualUrlProbe`
 (`ManualUrl/ManualUrlContracts.cs:10`), `IRemoteFilterContribution`
-(`Sources/MangaSourceRegistry.cs:11`).
+(`Sources/MangaSourceRegistry.cs:13`).
 
 **Tempat registrasi:** `MangaSourceRegistry.CreateDefault` di
-`Sources/MangaSourceRegistry.cs:108-129` — `new` eksplisit tiap source (`:111-114`)
-dan tiap lambda kontribusi filter (`:117-127`). Tanpa refleksi/discovery **secara
-sengaja** (`:50-52`).
+`Sources/MangaSourceRegistry.cs:110-156` — `new` eksplisit tiap source (`:118-136`)
+dan tiap lambda kontribusi filter (`:139-155`). Tanpa refleksi/discovery **secara
+sengaja** (`:51-54`).
 
 **Biaya menambah SATU provider:**
 
 | Tindakan | File |
 | --- | --- |
-| BUAT | `Sources/<P>/<P>Source.cs` (+ parser/kontrak; DrakeScans 5 file, CucumberManga 2 file) |
+| BUAT | `Sources/<P>/<P>Source.cs` (+ parser/kontrak; DrakeScans 5 file, CucumberManga 3 file) |
 | BUAT | `FilterSearch/<P>/<P>FilterContribution.cs` + `<P>FilterPanel.xaml` (+ `.xaml.cs` bila perlu — CucumberManga tidak punya, DrakeScans punya) |
 | BUAT (opsional) | `Sources/<P>/<P>ManualUrlProbe.cs` |
-| **EDIT** | `Sources/MangaSourceRegistry.cs:108-129` — **dua tempat**: `new` + entri registrasi |
-| **EDIT (opsional)** | `ManualUrl/ManualUrlProbeRegistry.cs:10-28` — hanya bila provider mau dukungan manual-URL (CucumberManga melewatinya) |
-| **EDIT** | `tests/Module.Mangareader.Downloader.Tests.csproj` — entri `Compile`/`Page` manual per file (bukti: `:93-119` untuk Cucumber/DrakeScans) |
+| **EDIT** | `Sources/MangaSourceRegistry.cs:110-156` — **dua tempat**: `new` + entri registrasi |
+| **EDIT (opsional)** | `ManualUrl/ManualUrlProbeRegistry.cs:12-48` — hanya bila provider mau dukungan manual-URL (CucumberManga punya, DrakeScans punya) |
+| tidak perlu | `tests/Module.Mangareader.Downloader.Tests/Module.Mangareader.Downloader.Tests.csproj` — `Compile`/`Page` memakai glob `Features\Downloader\**` (`:60-61`) |
 | **EDIT** | `version.props` |
 | tidak perlu | `Module.Mangareader.csproj` — SDK globbing; csproj hanya memuat payload Rar/pyhost/sqlite (`:9-79`) |
 
 **Kontribusi UI:** ya. `IRemoteFilterContribution.CreatePanel()` mengembalikan
-`FrameworkElement` (`MangaSourceRegistry.cs:11-16`); file registri meng-import
+`FrameworkElement` (`MangaSourceRegistry.cs:13-18`); file registri meng-import
 `System.Windows` (`:1`) dan record registrasinya menyimpan
-`Func<IRemoteFilterContribution>` (`:40-42`). Yang dibangun registri adalah
+`Func<IRemoteFilterContribution>` (`:42-44`). Yang dibangun registri adalah
 **objek kontribusi** (pemilik UI), bukan panelnya; panel dibangun malas oleh layar
-(`CatalogScreen.xaml.cs:163`, lewat `FilterSearchFeature.SelectSource`,
+(`CatalogScreen.xaml.cs:160-167`, lewat `FilterSearchFeature.SelectSource`,
 `FilterSearchFeature.cs:17-21`).
 
 **Isolasi provider: bersih.** Tidak ada folder provider yang mereferensikan folder
@@ -322,21 +328,22 @@ FilterSearch tiap provider hanya meng-import namespace Sources-nya sendiri
 (`CucumberMangaFilterContribution.cs:5`, `ComixFilterPanel.xaml.cs:7`,
 `DrakeScansFilterPanel.xaml.cs:4`). Kode bersama hanya tingkat kontrak.
 **Satu-satunya titik agregasi** yang menyentuh beberapa provider konkret di luar
-registri adalah `ManualUrlProbeRegistry.cs:2-3,14-25` (Comix + DrakeScans +
-DynamicManual sebagai tipe konkret).
+registri adalah `ManualUrlProbeRegistry.cs:2-7,18-45` (Comix + CucumberManga +
+DrakeScans + AsuraScans + ThunderScans + WeebCentral + DynamicManual sebagai tipe
+konkret).
 
 ### 6.4 Tepi antar sub-folder di dalam Downloader
 
 | Tepi | Jenis | Bukti |
 | --- | --- | --- |
-| Queue → Sources | **campuran**: konkret `MangaSourceRegistry` + interface `IQueueSourceReadiness` | `DownloadQueueFeature.cs:3,34,609` vs `:616` |
-| Catalog(screen) → Queue/AutoCover/Lister/Index/ManualUrl | **konkret** via `DownloaderContext`; panggilan metode langsung, bukan event | `CatalogScreen.xaml.cs:14-17,368,766,432,719`; field context `DownloaderContract.cs:36-48` |
-| Catalog(screen) → parent | **event** | `OpenDownloadList`, `CoverCandidateAvailable` (`CatalogScreen.xaml.cs:111,414,419`), ditangani `DownloaderView.xaml.cs:41-46` |
+| Queue → Sources | **campuran**: konkret `MangaSourceRegistry` + interface `IQueueSourceReadiness` | `DownloadQueueFeature.cs:3,38,915` vs `:931` |
+| Catalog(screen) → Queue/AutoCover/Lister/Index/ManualUrl | **konkret** via `DownloaderContext`; panggilan metode langsung, bukan event | `CatalogScreen.xaml.cs:444,508,825,872`; field context `DownloaderContract.cs:44-60` |
+| Catalog(screen) → parent | **event** | `OpenDownloadList` (`CatalogScreen.xaml.cs:108`), `CoverCandidateAvailable` (`:121`, dinaikkan `:490`), `OpenDownloadList` dinaikkan `:495`; ditangani `DownloaderView.xaml.cs:41-46` |
 | CatalogFeature → FilterSearch | konkret | `CatalogFeature.cs:3,80,160` |
 | AutoCover → Lister | konkret | `AutoCoverFeature.cs:3,60,112` |
-| ManualUrl → Sources | tipe provider konkret | `ManualUrlProbeRegistry.cs:14-25`; `ManualUrlFeature` sendiri interface-only atas `IManualUrlProbe` (`ManualUrlFeature.cs:9`) |
+| ManualUrl → Sources | tipe provider konkret | `ManualUrlProbeRegistry.cs:18-45`; `ManualUrlFeature` sendiri interface-only atas `IManualUrlProbe` (`ManualUrlFeature.cs:9`) |
 | Lister → (dalam Downloader) | tidak ada | memakai `shareLogic/LocalTitleProbe` (`ListerFeature.cs:3,38`) |
-| event yang dipakai | `QueueSummaryChanged` (`DownloadQueueFeature.cs:67` → `DownloadListScreen.xaml.cs:40`), `StateChanged` (CatalogFeature/ManualUrlFeature → layarnya) |
+| event yang dipakai | `QueueSummaryChanged` (`DownloadQueueFeature.cs:119` → `DownloadListScreen.xaml.cs:60`), `StateChanged` (CatalogFeature/ManualUrlFeature → layarnya) |
 
 **Pola yang terlihat:** event untuk **notifikasi perubahan state**, panggilan
 konkret untuk **perintah**. FM-2 menghendaki komunikasi lewat event/hub; Downloader
@@ -344,83 +351,82 @@ memakai event setengah jalan.
 
 Dua klaim komentar yang perlu dikoreksi:
 
-- `DownloaderContract.cs:12-14` — "no child reaches into a sibling's mutable state
+- `DownloaderContract.cs:11-17` — "no child reaches into a sibling's mutable state
   through this". Tidak ditemukan pembacaan mutable state, **tapi** child memanggil
-  perintah sibling pada tipe konkret (`CatalogScreen.xaml.cs:368,766`), yaitu
+  perintah sibling pada tipe konkret (`CatalogScreen.xaml.cs:444,872`), yaitu
   panggilan langsung, bukan pola event/hub yang diminta skill.
-- `MangaSourceRegistry.cs:104-107` — "The one explicit registration point… the
+- `MangaSourceRegistry.cs:105-109` — "The one explicit registration point… the
   Downloader parent and Catalog composition are never edited". Benar untuk parent
-  dan Catalog, **tapi** `ManualUrlProbeRegistry.cs:10-28` adalah titik registrasi
-  per-provider **kedua** (diedit untuk probe DrakeScans), dan csproj test menuntut
-  edit per file (`Downloader.Tests.csproj:93-119`). → register A10.
+  dan Catalog, **tapi** `ManualUrlProbeRegistry.cs:12-48` adalah titik registrasi
+  per-provider **kedua** (diedit untuk probe DrakeScans). → register A10.
 
 ### 6.5 Duplikasi terbesar di citadel: dua provider Comix
 
 | Aspek | `Features/Downloader/Sources/Comix/ComixSource.cs` | `Features/Catalog/Sources/Comix/CatalogComixSource.cs` |
 | --- | --- | --- |
-| Ukuran | **1.606 baris** | **1.537 baris** |
-| Kontrak sendiri | `ComixContract` (`:26`) | `ComixContract` sendiri juga (`:27`) |
-| `ICatalogSnapshotSource` | logika snapshot/`ReadSnapshotItem` paralel (`:514,752`) | logika paralel (`:514,683`) |
+| Ukuran | **1.621 baris** | **1.503 baris** |
+| `ComixOptions` | `:10` | `:11` |
+| `ComixContract` | `:153` | `:153` |
+| `ComixBrowseQuery` | `:323` | `:313` |
+| `ComixContractException` | `shareLogic/Sources/MangaSourceContracts.cs:26` — **satu** definisi dipakai keduanya | idem |
 | Decoder halaman | `Comix/ComixPageDecoder.cs` | `Catalog/Sources/Comix/CatalogComixPageDecoder.cs` |
 
-±3.100 baris yang mendefinisikan provider yang sama dua kali, dengan kontrak dan
-decoder masing-masing. Ini **satu pekerjaan, dua pemilik** dalam skala terbesar di
-repo. → register C12.
+3.124 baris yang mendefinisikan provider yang sama dua kali. Tiga tipe
+(`ComixOptions`, `ComixContract`, `ComixBrowseQuery`) masih punya dua definisi
+hampir identik, dan decoder halaman masih terpisah. Ini **satu pekerjaan, dua
+pemilik** dalam skala terbesar di repo. → register C12.
+
+Yang **sudah** tidak terduplikasi: exception-nya. Satu `ComixContractException`
+di `shareLogic/Sources/MangaSourceContracts.cs:26` dipakai kedua provider, dan
+`LevelBGuardTests` menahannya dari dua arah —
+`NoSameNamedPublicTypeInTwoFeatureFolders` (`:111-150`) gagal bila muncul nama
+tipe duplikat baru di luar tiga di atas, dan `FixedCouplingsStayRemoved`
+(`:153-172`) gagal bila `CatalogMirrorSyncFeature` meng-import Downloader lagi.
 
 ### 6.6 Duplikasi lain
 
 | Temuan | Bukti |
 | --- | --- |
-| Cek magic-byte PNG ditulis dua kali | `PageTransport.cs:324-327` dan `AutoCoverFeature.cs:224-227` |
-| Dua sanitizer nama file dengan **aturan berbeda** untuk pekerjaan mirip | `DownloadQueueFeature.SanitizeFolder :1091` vs `ChapterDownloadPipeline.Sanitize :491` |
-| `MangaSourceRegistry.cs` memuat 2 interface UI + record registrasi + registri + factory dalam satu file | `:11,25,40,53,108` |
-| `CucumberMangaSource.cs` memuat kontrak, exception, enum, options, record query, dan source | `:11-116` |
-| `ComixSource.cs` serupa | `:26-513` |
-| `DownloadQueueStore.cs` juga menjadi rumah helper JSON generik `DownloaderJson` (`:39`) yang dipakai `DownloadSourceIndex.cs:43` dan `MangaReaderView.xaml.cs:49` | helper bersama tinggal di dalam satu feature |
+| Cek magic-byte PNG ditulis **delapan** kali, bukan dua | `PageTransport.cs:411`, `AutoCoverFeature.cs:225`, `ComixSource.cs:1597`, `CatalogComixSource.cs:1479`, `DynamicManualSource.cs:272`, `CucumberMangaSource.cs:573`, `DrakeScansSource.cs:340`, `WeebCentralSource.cs:342`. Satu-satunya yang terpusat: `shareLogic/Archive/CoverArchiveWriter.cs:26` (`PngSignature`) |
+| Dua sanitizer nama file dengan **aturan berbeda** untuk pekerjaan mirip | `DownloadQueueFeature.SanitizeFolder :1656` vs `ChapterDownloadPipeline.Sanitize :595` |
+| `MangaSourceRegistry.cs` memuat 2 interface UI + record registrasi + registri + factory dalam satu file | `:13,27,42,55,110-113` |
+| `CucumberMangaSource.cs` memuat kontrak, exception, enum, options, record query, dan source | `:13-119` |
+| `ComixSource.cs` serupa | `:10-472` |
+| `DownloadQueueStore.cs` juga menjadi rumah helper JSON generik `DownloaderJson` (`:39`) yang dipakai `DownloadSourceIndex.cs:43` dan `DownloaderBackgroundService.cs:36` | helper bersama tinggal di dalam satu feature |
 
 ---
 
 ## 7. shareLogic (milik module, ejaan kecil) vs sharedLogic (milik repo)
 
-`module/mangareader/shareLogic/` (namespace `Module.Mangareader.*`) adalah kode
-bersama **tingkat module**, bukan Downloader-only — berbeda dari
+`module/mangareader/shareLogic/` (namespace `Module.Mangareader.ShareLogic`) adalah
+kode bersama **tingkat module**, bukan Downloader-only — berbeda dari
 `module/sharedLogic/` yang di-compile masuk lewat `Module.Mangareader.csproj:10`.
 
 | File | Konsumen |
 | --- | --- |
-| `Sources/MangaSourceContracts.cs` | Downloader (registri, queue, semua provider) **dan** Library UpdateChecker (`MangaReaderView.xaml.cs:79-88`) **dan** Features/Catalog (`CatalogSourceDirectory.cs:3`). Alasannya tertulis di header (`:3-11`) |
-| `Sources/CatalogSnapshotContracts.cs` | `Features/Catalog/Sources/Comix/CatalogComixSource.cs:514`, `Features/Downloader/Sources/Comix/ComixSource.cs:514`, `Features/CatalogMirror/*` (`CatalogSnapshotStore.cs:46`, `CatalogMirrorSyncFeature.cs:17`), `MangaReaderView.xaml.cs:107` |
-| `Archive/` (9 file) | terbit Downloader (`CbzChapterPublisher.cs:6,73-85`), CoverBuilder (`CoverBuilderService.cs:23` → `ArchiveReplacementTransaction.cs:49`), muat reader/library (`CbzChapterLoader.cs:11`, `MangaCoverLoader.cs:20`, `LibraryScanner.cs:17` → `ArchivePageReader`), probe (`LocalTitleProbe.cs:102`) |
+| `Sources/MangaSourceContracts.cs` | Downloader (registri, queue, semua provider), Library UpdateChecker (`MangaReaderView.xaml.cs:56-66`), `Features/Catalog/CatalogSourceDirectory.cs:3`, seluruh `Features/CatalogMirror/*`. Alasannya tertulis di header (`:3-11`) |
+| `Sources/ComixContracts.cs` | `Features/Downloader/Sources/Comix/ComixSource.cs`, `Features/Catalog/Sources/Comix/CatalogComixSource.cs`, CatalogMirror |
+| `Sources/CatalogSnapshotContracts.cs` | kedua provider Comix, `Features/CatalogMirror/*` (`CatalogSnapshotStore.cs`, `CatalogMirrorSyncFeature.cs`) |
+| `Archive/` (10 file) | terbit Downloader (`CbzChapterPublisher.cs`), CoverBuilder (`CoverBuilderService.cs` → `ArchiveReplacementTransaction.cs:49`), muat reader/library (`CbzChapterLoader.cs`, `MangaCoverLoader.cs` → `ArchivePageReader`), probe (`LocalTitleProbe.cs:102`) |
 
-### Ekstraksi arsip: satu pekerjaan, dua pemilik, dengan **siklus dependensi**
+### Ekstraksi arsip: satu pemilik, dan dijaga mesin
 
 | Bagian | Pemilik |
 | --- | --- |
-| Pemanggilan proses RAR (extract `ReadPages :41-71`, tulis-ulang sampul `WriteCover :73-117`, spawn `Rar.exe` arg `x/a/t` `:54-56,95-98,129-160`) | `Features/Rar/RarArchiveFeature.cs:13` |
-| Ekstraksi ZIP + dispatch format | `shareLogic/Archive/ArchivePageReader.cs:34-53` |
-| Bake sampul | `CoverArchiveWriter.cs:22` |
-| Penggantian aman | `ArchiveReplacementTransaction.cs:49` |
-| Pelepasan lock (Windows Restart Manager) | `ArchiveLockCoordinator.cs:15-32` |
+| Pemanggilan proses RAR (`Rar.exe` arg `x/a/t`) | `shareLogic/Archive/RarArchiveEngine.cs` |
+| Ekstraksi ZIP + dispatch format | `shareLogic/Archive/ArchivePageReader.cs` |
+| Bake sampul | `shareLogic/Archive/CoverArchiveWriter.cs:26` |
+| Penggantian aman | `shareLogic/Archive/ArchiveReplacementTransaction.cs:49` |
+| Pelepasan lock (Windows Restart Manager) | `shareLogic/Archive/ArchiveLockCoordinator.cs` |
 
-**Siklus:** `shareLogic/Archive/ArchivePageReader.cs:3` meng-import `Features.Rar`,
-sementara `Features/Rar/RarArchiveFeature.cs:3,80,90` meng-import `shareLogic`.
-Jadi folder "bersama" bergantung pada satu feature, dan feature itu bergantung
-balik ke folder bersama. Ini **saling import literal** di dalam satu citizen —
-persis bentuk yang dikeluhkan owner, dan tidak terlihat gate mana pun.
-→ register C13.
-
-### `Rar.exe` dan `rarreg.key` — fakta provenance
-
-- Tidak ada kode C# yang membaca `rarreg.key` (grep: nol rujukan kode). Ia hanya
-  disalin di sebelah `Rar.exe` saat build (`Module.Mangareader.csproj:66-68,76-78`;
-  proyek test melakukan hal sama).
-- `RarArchiveFeature.cs:134` menyetel `WorkingDirectory` ke folder exe, jadi
-  `Rar.exe` menemukannya secara implisit — ini pola file lisensi WinRAR standar.
-- Apakah `Rar.exe` benar-benar mengonsumsinya: **unverified** dari kode.
-
-Dicatat apa adanya karena owner peduli provenance aset/biner pihak ketiga: ini
-biner komersial pihak ketiga (WinRAR) + file kunci lisensi yang ikut ter-deploy ke
-folder runtime citizen dan ke installer rilis.
+`module/mangareader/Features/Rar/` tinggal berisi `Rar.exe` dan `rarreg.key` — tidak
+ada satu pun `.cs` di sana. Seluruh logika arsip ada di satu folder, jadi siklus
+`shareLogic ↔ Features/Rar` tidak bisa terbentuk lagi. Yang menahannya sekarang
+bukan disiplin, tapi build:
+`LevelBGuardTests.NoCrossFeatureImportBeyondAcceptedDebtAndNoSharedToFeatureImport`
+(`tests/Module.Mangareader.Downloader.Tests/Architecture/LevelBGuardTests.cs:65-108`)
+gagal bila file mana pun di bawah `shareLogic/` meng-import folder feature.
+→ register C13 (selesai).
 
 ---
 
@@ -428,120 +434,98 @@ folder runtime citizen dan ke installer rilis.
 
 `Features/Catalog` (4 file root + `Runtime/`, `Sources/Comix/`, paket python)
 adalah **pemilik runtime tab Catalog**: klien browser sendiri
-(`CatalogBrowserClient.cs:26`, plugin pyhost `mangareader_catalog` `:37,396`,
-perintah `catalog.*` `plugin.py:17-21`), direktori provider tertutup sendiri
+(`CatalogBrowserClient.cs:27`, plugin pyhost `mangareader_catalog` `:38,498`,
+perintah `catalog.*` `plugin.py:17-22`), direktori provider tertutup sendiri
 (`CatalogSourceDirectory.cs:11-19`, satu `CatalogComixSource`), context/lifetime
-sendiri (`CatalogContext.cs:12`).
+sendiri (`CatalogContext.cs:13`).
 
-**Tepinya dua arah:** Catalog → CatalogMirror (`CatalogContext.cs:2,13,19`
+**Tepinya dua arah:** Catalog → CatalogMirror (`CatalogContext.cs:2,13,18`
 membungkus `CatalogMirrorFeature`; `CatalogView.xaml.cs:2`), dan CatalogMirror →
-Catalog (`CatalogMirrorView.xaml.cs:11,48,79` menerima `CatalogContext`).
+Catalog (`CatalogMirrorView.xaml.cs:51,88,94` menerima `CatalogContext`). Kedua
+ujungnya ada sebagai tipe, tapi belum dipasang di aplikasi - lihat §13.
 
-**Pemisahan dari Downloader terverifikasi di sisi C#:** kelas klien terpisah, nama
-plugin terpisah (`DownloaderPyHostClient.cs:40` vs `CatalogBrowserClient.cs:37`),
-proses `PyHost.Start` terpisah (`:409` vs `:396`), root staging terpisah
-(`MangaReaderView.xaml.cs:49-50` vs `:96-104`). `CatalogSourceDirectory.cs:8-9`
+**Pemisahan dari Downloader terverifikasi di sisi C#:** kelas klien terpisah
+(`DownloaderPyHostClient.cs:46` vs `CatalogBrowserClient.cs:27`), nama plugin
+terpisah (`"mangareader_downloader"` `:69` vs `"mangareader_catalog"` `:38`),
+proses `PyHost.Start` terpisah (`:944` vs `:498`). `CatalogSourceDirectory.cs:8-9`
 mendokumentasikan tidak meng-impor registri Downloader, dan tidak ada `using`
 Downloader di `CatalogComixSource.cs:1-8`. Klaim csproj bahwa kedua paket "never
-share a browser/session host" (`Module.Mangareader.csproj:48-50`) **terbukti**.
+share a browser/session host" (`Module.Mangareader.csproj:45-47`) **terbukti**.
 
 ---
 
 ## 9. Rujukan register dari slice ini
 
-A10 (klaim "satu-satunya titik registrasi" vs `ManualUrlProbeRegistry` + csproj test) ·
+A10 (klaim "satu-satunya titik registrasi" vs `ManualUrlProbeRegistry`) ·
 C11 (`MangaMultiSelectFilter` abu-abu terhadap SU-4) ·
-C12 (dua provider Comix, ±3.100 baris duplikat) ·
-C13 (siklus import `shareLogic/Archive` ↔ `Features/Rar`) ·
+C12 (dua provider Comix, 3.124 baris; tiga nama tipe masih duplikat) ·
+C13 (siklus import `shareLogic/Archive` ↔ `Features/Rar`) — **selesai**, dijaga
+`LevelBGuardTests` ·
 B3 (registri sumber = daftar `new` eksplisit, sudah dicatat slice 2) ·
 B6 (biaya menambah feature Downloader vs Reader berbeda jauh) ·
-D17 (`FrameContentHost.cs` dua kelas; `ReaderFeatureContract.cs` ±15 tipe; hub
-tinggal di luar `ReaderCore/`) ·
+D17 (`ReaderFeatureContract.cs` ±15 tipe; hub tinggal di luar `ReaderCore/`) ·
 D18 (logika feature Overlay tinggal di root Reader) ·
-D19 (dua sanitizer nama file dengan aturan berbeda; cek magic-byte PNG ganda) ·
-D20 (`CoverBuilderView.xaml.cs` 352 baris; `DownloadQueueStore.cs` menjadi rumah
+D19 (dua sanitizer nama file dengan aturan berbeda; cek magic-byte PNG ganda di
+delapan tempat) ·
+D20 (`CoverBuilderView.xaml.cs` 440 baris; `DownloadQueueStore.cs` menjadi rumah
 helper JSON bersama).
 
 Detail dan bentuk lurusnya: `CITADEL-VIOLATIONS.md`.
 
 ---
 
-## 10. Parent module — `MangaReaderView` (sisi yang TIDAK seperti Reader)
+## 10. Parent module - `MangaReaderView` dan `MangaReaderModule`
 
-File root: `MangaReaderModule.cs` (12 baris), `MangaReaderView.xaml` (45),
-`MangaReaderView.xaml.cs` (**412**), `MangaTitleCard.xaml` (108)/`.cs` (8).
+File root: `MangaReaderModule.cs` (82 baris), `MangaReaderHandoffs.cs` (194),
+`MangaReaderView.xaml` (45), `MangaReaderView.xaml.cs` (171),
+`MangaTitleCard.xaml` (108)/`.cs` (8).
 
 **Tidak ada file katalog/registry feature di tingkat module.**
 `MangaSourceRegistry` dan `CatalogSourceDirectory` mendaftarkan **sumber manga**,
-bukan feature. Jadi di tingkat module, registrasi feature sepenuhnya manual.
+bukan feature. Jadi di tingkat module, registrasi feature masih manual.
 
-### 10.1 Sembilan subsistem disebut dengan tipe konkret
+### 10.1 Pembagian pekerjaan: module, view, handoffs
 
-`MangaReaderView.xaml.cs` menyebut: History, Library, Downloader (+Queue/Lister/
-AutoCover), Sources, UpdateChecker, Catalog, CatalogMirror, Reader, CoverBuilder.
-
-Tidak ada katalog — yang ada adalah urutan `new XFeature()` eksplisit di konstruktor
-(`:36-186`):
-
-| Baris | Konstruksi |
+| Berkas | Pekerjaan |
 | --- | --- |
-| `:50` | `new DownloaderPyHostClient` |
-| `:53` | `new DownloadQueueFeature(...)` |
-| `:63` | `new ListerFeature(...)` |
-| `:71` | `new AutoCoverFeature(...)` |
-| `:79-88` | `new UpdateCheckerFeature(new SourceBindingStore(), new UpdateMatcher(...))` |
-| `:101-105` | `new CatalogMirrorPaths / CatalogSnapshotStore / CatalogBrowserClient / CatalogSourceDirectory` |
-| `:109` | `new CatalogMirrorSyncFeature` |
-| `:112-114` | `new CatalogGenreSyncFeature(new CatalogGenreStore(catalogStore.Database))` |
-| `:162-169` | `new CatalogMirrorDetailFeature / LoadFeature / Feature` |
-| `:170` | `new CatalogContext(...)` |
-| `:307` | `new ReaderWindow` |
+| `MangaReaderModule.cs` | `IModule` + `IRuntimeModuleLifecycle`. Memegang pemilik berumur-panjang (`ReadingHistory`, `LibraryRootContext`, `ProxyLeaseRegistry`), mengonstruksi `DownloaderBackgroundService` di `StartRuntimeAsync` (`:42`), mendaftarkan dispose ke runtime lifetime (`:44-48`), menjalankan pause-and-drain di `StopRuntimeAsync` (`:59`), abort di `ForceStopRuntime` (`:66`) |
+| `MangaReaderView.xaml.cs` | komposisi view + navigasi tab. Menerima seluruh konteks lewat konstruktor (`:26-31`): `Lifetime`, `ReadingHistory`, `LibraryRootContext`, `DownloaderContext`, `ProxyLeaseRegistry`. Tidak mengonstruksi Downloader maupun CatalogMirror |
+| `MangaReaderHandoffs.cs` | lima method statis untuk kebijakan lintas-feature: `ReadConfirmedMapping` (`:34`), `EnqueueUpdate` (`:54`), `CheckCatalogAvailability` (`:93`), `ConfirmQueueTarget` (`:127`), `QueueHandoff` (`:160`) |
+| `DownloaderBackgroundService.cs` (144 baris, di dalam `Features/Downloader/`) | pemilik runtime Downloader: `ProxyPoolAdapter`, `ProxyHttpTransport`, `DownloaderPyHostClient`, `MangaSourceRegistry.CreateDefault`, `DownloadSourceIndex`, queue, cover client |
 
-### 10.2 Parent memuat logika feature (uji FM-5 gagal)
+Komposisi Downloader dan CatalogMirror karena itu **tinggal di dalam folder
+feature-nya sendiri**, bukan di parent. Yang masih dikonstruksi view adalah internal
+UpdateChecker: `LocalTitleProbe`, `SourceBindingStore`, `UpdateMatcher`,
+`UpdateCheckerFeature` (`MangaReaderView.xaml.cs:56-66`).
 
-Empat blok yang bisa dijelaskan **tanpa menyebut feature lain** — artinya itu logika
-feature, bukan koordinasi:
+### 10.2 Yang masih terbuka di parent
 
-| Blok | Baris | Isi |
-| --- | --- | --- |
-| `CheckCatalogAvailability` | `:116-137` | menghitung verdict ketersediaan-lokal per chapter; memanggil `lister.ListAsync` (`:125`) dan `ListerFeature.IsLocallyAvailable` (`:129`). Ini logika detail CatalogMirror, tinggal di parent |
-| `ConfirmQueueTarget` | `:139-160` | resolusi tabrakan folder + `DownloadQueueFeature.SanitizeFolder` (`:148`) + `SettingDialog.Confirm` (`:151`). Aturan bisnis di parent |
-| `EnqueueUpdate` | `:349-379` | **menjumlah ulang** dua pencacah skip milik queue (`:367-370`) — parent menafsirkan ulang hasil feature lain |
-| `ReadConfirmedMapping` | `:329-342` | membaca `index.Load().Mappings` (`:333`), yaitu store internal Downloader |
+| Temuan | Bukti |
+| --- | --- |
+| Internal UpdateChecker dikonstruksi view | `MangaReaderView.xaml.cs:56-66` - empat tipe konkret milik `Library/UpdateChecker/` |
+| Kebijakan lintas-feature tinggal di file module, bukan di feature | `MangaReaderHandoffs.cs` - lima method. FM-5 menempatkan kalkulasi satu-feature di feature dan kebijakan lintas-feature di composition root; bentuk ini adalah composition root, bukan pelanggaran FM-5 |
+| Tidak ada katalog feature | menambah tab tetap berarti menyunting dua berkas parent (lihat §10.3) |
 
-### 10.3 Parent menjangkau internal feature (FM-1)
+### 10.3 Biaya menambah satu tab tingkat atas
 
-- CatalogMirror: **10 tipe internal konkret** (`:101-169`), termasuk
-  `catalogStore.Database` (`:114`).
-- Downloader: `DownloadQueueFeature`, `DownloadSourceIndex`, `DownloadQueueStore`,
-  `ListerFeature`, `AutoCoverFeature`, `DownloaderContext`, `DownloaderJson`
-  (`:49-91`), plus static `ListerFeature.IsLocallyAvailable` (`:129`) dan static
-  `DownloadQueueFeature.SanitizeFolder` (`:148`).
-- UpdateChecker: `SourceBindingStore`, `UpdateMatcher`, `UpdateCheckerFeature`
-  (`:79-88`).
-- Reader: `new ReaderWindow` (`:307`).
+**Dua file parent harus diedit:**
 
-### 10.4 Biaya menambah satu tab tingkat atas
+1. `MangaReaderView.xaml` - tambah xmlns, `TabItem`, dan view;
+2. `MangaReaderView.xaml.cs` - wiring di konstruktor plus teardown di `DisposeView`
+   (`:146-170`).
 
-**Tepat dua file parent harus diedit:**
+Ini masih melanggar FM-3 ("adding/removing a feature touches only that feature's
+folder", `SKILL.md:299-300`). **Bandingkan dengan Reader:** menambah feature
+drawer-card/visual di Reader = **nol** edit host (§1.4). Dua pola, dua biaya, satu
+citizen.
 
-1. `MangaReaderView.xaml` — tambah xmlns + `<TabItem>` + view (di `:14-43`);
-2. `MangaReaderView.xaml.cs` — konstruksi/wiring di konstruktor (`:36-186`) +
-   teardown di `DisposeView` (`:381-411`).
+### 10.4 Navigasi tab dimiliki view, tanpa router
 
-State bersama apa pun (root/queue/sources) memaksa wiring konstruktor tambahan.
-Ini melanggar FM-3 ("adding/removing a feature touches only that feature's
-folder", `SKILL.md:299-300`).
-
-**Bandingkan dengan Reader:** menambah feature drawer-card/visual di Reader =
-**nol** edit host (§1.4). Dua pola, dua biaya, satu citizen.
-
-### 10.5 Navigasi tab dimiliki parent, tanpa router
-
-`setting:SettingTabs` (`MangaReaderView.xaml:14`) dengan **6 `<TabItem>` hardcoded**
-(`:16-42`), dan perpindahan dilakukan dengan menyetel `TabItem.IsSelected` secara
-programatik — bukan router atau switch:
-`QueueTabItem.IsSelected = true` (`:204`, `:246`), `DownloaderTabItem.IsSelected = true` (`:209`).
+`setting:SettingTabs` (`MangaReaderView.xaml:14`) dengan **lima tab** (Library,
+History, CoverBuilder, Downloader, Queue), dan perpindahan dilakukan dengan menyetel
+`TabItem.IsSelected` secara programatik - bukan router atau switch:
+`QueueTabItem.IsSelected = true` (`:107`), `DownloaderTabItem.IsSelected = true`
+(`:112`).
 
 ---
 
@@ -549,30 +533,41 @@ programatik — bukan router atau switch:
 
 | File | Baris | Pekerjaan |
 | --- | --- | --- |
-| `LibraryView.xaml.cs` | 466 | layar Library; memiliki scan, grid/list, sort |
-| `LibraryScanner.cs` | 77 | scan folder → `MangaTitle` |
+| `LibraryView.xaml.cs` | 894 | layar Library; grid/list, sort, filter grup, kartu |
+| `LibraryIndex.cs` | 42 | `LibraryIndexEntry`/`LoadResult`/`SaveResult` murni data + seam `ILibraryCoverThumbnails` |
+| `LibraryIndexCoordinator.cs` | 309 | reconcile root → entri; satu gerbang serialisasi |
+| `LibraryIndexStore.cs` | 296 | persistensi indeks, atomik |
+| `LibraryIndexWatcher.cs` | 213 | `FileSystemWatcher` → `TitleChanged` / `ResyncRequested` |
+| `LibraryTitleLoader.cs` | 145 | entri indeks → `MangaTitle` lengkap saat dibutuhkan |
+| `LibraryCoverCache.cs` | 180 | thumbnail sampul (implementasi `ILibraryCoverThumbnails`) |
 | `LibraryRootContext.cs` | 98 | satu pemilik root seumur module + `RootChanged` |
 | `LibraryPathStore.cs` | 213 | persistensi atomik `library-path.txt` + seam `ILibraryPathFileIO` |
 | `LibraryScanPersistence.cs` | 48 | aturan capture-awal / persist-bila-sukses |
 | `LibraryViewModeFeature.cs` | 84 | preferensi Grid/List |
 | `LocalTitleDetailAdapter.cs` | 51 | title → `MangaDetailPresentation` |
-| `ChapterSelectorView.xaml.cs` | 125 | overlay pemilih chapter |
+| `ChapterSelectorView.xaml.cs` | 186 | overlay pemilih chapter |
 
 ### Flow scan
 
 ```text
-[1] LibraryView_Loaded                     LibraryView.xaml.cs:108 → _root.Restore() :118
-[2] ScanLibraryAsync                       :151 → _root.BeginScan :167
-[3] _scanner.ScanAsync                     :180 → LibraryScanner.Scan (LibraryScanner.cs:31)
-       enum dir :40 · natural sort :42 · bangun MangaTitle :63
-       AddedUtc = GetCreationTimeUtc :71
-[4] bangun MangaTitleCardModel             :186
-[5] NotifyTitlesChanged → TitlesChanged    :188 / :317
-[6] CompleteSuccessfulScan :245 → _root.CompleteScan :252
-       → LibraryScanPersistence.CompleteScan (LibraryScanPersistence.cs:35)
-       → LibraryPathStore.Save (LibraryPathStore.cs:143)
-[7] LoadCoversAsync → MangaCoverLoader.LoadAsync   :278
-[8] UpdateGroupFilter → _titlesView.Refresh        :346
+[1] LibraryView_Loaded                  LibraryView.xaml.cs:120 → _root.Restore() :130
+[2] RefreshLibraryAsync(path, manual)   :176
+[3] _coordinator.Reconcile(path)        :248-249 → LibraryIndexCoordinator.Reconcile :109
+                                           ReconcileLocked :117
+[4] entri → kartu                       FillCards :526 / FillCardsAsync :540
+[5] NotifyTitlesChanged → TitlesChanged :735-736 (event :114)
+[6] CompleteSuccessfulScan :636 → _root.CompleteScan :643
+       → LibraryScanPersistence.CompleteScan :35 → LibraryPathStore.Save :143
+[7] LoadCachedCoversAsync :565 → LibraryCoverCache
+[8] UpdateGroupFilter :756 → _titlesView.Refresh
+```
+
+### Watcher: jalur kesegaran kedua
+
+```text
+Watcher_TitleChanged      :367 → SyncCardsFromWatcher :488
+Watcher_ResyncRequested   :404 → Reconcile :414 → SyncCardsFromResync :464
+RestartWatcher            :338
 ```
 
 ### Cara keduanya menempel — dan statusnya sebagai feature
@@ -581,14 +576,14 @@ programatik — bukan router atau switch:
 feature tingkat atas. Cara menempelnya berbeda:
 
 - **Grouping: konstruksi langsung + event.** `new GroupingFeature(_groupingStore)`
-  (`LibraryView.xaml.cs:41`), `Grouping.UseGrouping` (`:57`),
-  `_grouping.Changed += Grouping_Changed` (`:61`), filter `_grouping.IsVisible` (`:49`).
+  (`LibraryView.xaml.cs:47`), `Grouping.UseGrouping` (`:63`),
+  `_grouping.Changed += Grouping_Changed` (`:69`), filter `_grouping.IsVisible` (`:56`).
   Ia memasang dirinya sendiri.
-- **UpdateChecker: disuntik parent.** `UseUpdateChecker(feature)` (`:89`) →
-  `new UpdateCheckerEntry(feature).Install(...)` (`:94-97`); feature menaikkan
-  `Changed`, dan enqueue dirutekan balik lewat delegate parent `EnqueueUpdate`
-  (parent `:88`, `:349`). Ia di-wire parent karena butuh rute lintas feature
-  (queue, `IMangaSourceDirectory`, library root).
+- **UpdateChecker: disuntik parent.** `UseUpdateChecker(feature)` (`:97`) →
+  `new UpdateCheckerEntry(feature).Install(...)` (`:102-103`); feature menaikkan
+  `Changed`, dan enqueue dirutekan balik lewat delegate parent
+  (`MangaReaderHandoffs.cs:54`, `EnqueueUpdate`). Ia di-wire parent karena butuh
+  rute lintas feature: queue, `IMangaSourceDirectory`, dan library root.
 
 ---
 
@@ -597,31 +592,31 @@ feature tingkat atas. Cara menempelnya berbeda:
 | File | Baris | Pekerjaan |
 | --- | --- | --- |
 | `ReadingHistory.cs` | 68 | pemilik pencatatan, satu jalur mutasi, menaikkan `Changed` |
-| `ReadingHistoryStore.cs` | 185 | `history.json` durable, tulis atomik (`:164`), retensi 15 non-pin (`:26`, `:127`) |
-| `HistoryView.xaml.cs` | 329 | presentasi |
+| `ReadingHistoryStore.cs` | 185 | `history.json` durable, tulis atomik (`:173`), retensi 15 non-pin (`:26`, `:127`) |
+| `HistoryView.xaml.cs` | 410 | presentasi |
 | `HistoryCardModel.cs` | 85 | VM kartu |
 | `ClearHistoryFeature.cs` | 72 | perintah clear lewat satu pemilik |
 | `PinnedHistoryFeature.cs` | 63 | perintah pin lewat satu pemilik |
 | `HistoryViewModeFeature.cs` | 83 | preferensi Grid/List |
 
 **Siapa menulis history: READER, dirutekan parent.** Parent memiliki `_history`
-(parent `:27`), menyuntik `HistoryTab.UseHistory(_history)` (parent `:42`);
-`OpenReader` memanggil `_history.Record` (parent `:305`) dan
-`reader.ActiveChapterChanged → _history.Record` (parent `:311-313`).
-Bukan Library, bukan Downloader.
+(`MangaReaderView.xaml.cs:20`), menyuntik `HistoryTab.UseHistory(_history)`
+(`:42`); `OpenReader` memanggil `_history.Record` (`:127`) dan
+`reader.ActiveChapterChanged → _history.Record` (`:133-136`). Bukan Library, bukan
+Downloader.
 
 Persistensi: `%LocalAppData%\Citadel\MangaReader\history.json`
 (`ReadingHistoryStore.cs:33-37`).
 
-Tepi: parent→History `UseHistory` (`:42`), `SetLibrary` (`:190`;
-`HistoryView.xaml.cs:73`), `Refresh` (`:285`, `:297`); History→parent
-`OpenChapterRequested` (`HistoryView.xaml.cs:48,134`, disambung
-`MangaReaderView.xaml:23`); Library→History lewat parent
-(`LibraryTab_TitlesChanged → HistoryTab.SetLibrary`, parent `:188-190`).
+Tepi: parent→History `UseHistory` (`:42`), `SetLibrary` (`:80`;
+`HistoryView.xaml.cs:86`), `Refresh` (`:119`, `:93`); History→parent
+`OpenChapterRequested` (`HistoryView.xaml.cs:56,212-214`, disambung
+`MangaReaderView.xaml:23-24`); Library→History lewat parent
+(`LibraryTab_TitlesChanged → HistoryTab.SetLibrary`, parent `:78-80`).
 
 ---
 
-## 13. Features/CatalogMirror — feature terbesar (6.104 baris, 16 file)
+## 13. Features/CatalogMirror — feature terbesar (6.197 baris, 16 file)
 
 | File | Baris | Pekerjaan |
 | --- | --- | --- |
@@ -632,26 +627,26 @@ Tepi: parent→History `UseHistory` (`:42`), `SetLibrary` (`:190`;
 | `CatalogMirrorQuery.cs` | 319 | search/filter/sort/page lokal, terparameterisasi |
 | `CatalogEnrichmentStore.cs` | 121 | `metadata.json` per judul, atomik |
 | `CatalogGenreStore.cs` | 255 | taksonomi genre + keanggotaan (SQLite) |
-| `CatalogMirrorCoverCache.cs` | 200 | fetch/decode/cache sampul, terbatas |
-| `CatalogMirrorSyncFeature.cs` | 519 | mesin keadaan traversi 4-partisi |
+| `CatalogMirrorCoverCache.cs` | 224 | fetch/decode/cache sampul, terbatas |
+| `CatalogMirrorSyncFeature.cs` | 487 | mesin keadaan traversi 4-partisi |
 | `CatalogGenreSyncFeature.cs` | 279 | loop pengayaan genre per judul |
 | `CatalogMirrorDetailFeature.cs` | 419 | muat title/group/chapter + bangun handoff |
 | `CatalogMirrorLoadFeature.cs` | 139 | pilih generasi DB→display |
 | `CatalogMirrorFeature.cs` | 461 | koordinator tipis: gabung state, teruskan intent |
 | `CatalogMirrorCardModel.cs` | 75 | VM kartu |
-| `CatalogMirrorView.xaml(.cs)` | 405 / 968 | wiring UI, Dispatcher, render |
+| `CatalogMirrorView.xaml(.cs)` | 468 / 1.006 | wiring UI, Dispatcher, render |
 
 ### Flow sync
 
 ```text
-[1] trigger   CatalogMirrorFeature.StartSyncAsync  CatalogMirrorFeature.cs:262 → _sync.StartAsync
-[2]           CatalogMirrorSyncFeature.RunAsync    SyncFeature.cs:157 (seed :169 / clear :183)
-[3] paging    :224-360 · FetchWithBackoffAsync :257 / :391 → _source.GetSnapshotPageAsync :409
-[4] dedupe    _store.AppendPageAsync :293 → CatalogSnapshotStore.AppendPageAsync :45
-                 upsert last-wins :817 · loop-guard sidik jari :136-142 · checkpoint :156
-[5] partisi   CompletePartitionAsync :343 / CatalogSnapshotStore.cs:407
-[6] aktivasi  _store.ActivateAsync :370 / CatalogSnapshotStore.cs:459
-                 balik active_generation :500 · retensi active+previous :525
+[1] trigger   CatalogMirrorFeature.StartSyncAsync  CatalogMirrorFeature.cs:262 → _sync.StartAsync :270
+[2]           CatalogMirrorSyncFeature.RunAsync    SyncFeature.cs:148 (clear staging :174, refresh :178-183)
+[3] paging    RefreshPartitionsAsync :431 · FetchPageAsync :385 → _source.GetSnapshotPageAsync :398
+[4] dedupe    _store.AppendPageAsync :285 → CatalogSnapshotStore.AppendPageAsync :45
+                 upsert :150 · loop-guard sidik jari :136-142 · checkpoint :156
+[5] partisi   CompletePartitionAsync :335 / CatalogSnapshotStore.cs:407
+[6] aktivasi  _store.ActivateAsync :362 / CatalogSnapshotStore.cs:459
+                 balik active_generation :498-501 · retensi active+previous :526-535
 [7] query     CatalogMirrorFeature.QueryAsync :202 → LoadFeature.QueryAsync :96
                  → CatalogMirrorQuery.Execute :55
 ```
@@ -662,107 +657,109 @@ Referensi keluar folder:
 
 | Ke | Bukti |
 | --- | --- |
-| `Module.Mangareader.Sources` (kernel kontrak) | Contracts `:4`, Feature `:4`, Sync `:5`, Query `:6`, SnapshotStore `:9`, Detail `:4`, GenreStore `:2`, GenreSync `:1`, CardModel `:5`, View.cs `:13` |
+| `Module.Mangareader.Sources` (kernel kontrak) | Contracts `:4`, Feature `:4`, Sync `:4`, Query `:6`, SnapshotStore `:9`, Detail `:4`, GenreStore `:2`, GenreSync `:1`, CardModel `:5`, View.cs `:13` |
 | `Citadel.Setting.Components` | View.cs `:9` |
 | `Module.Mangareader.Components` | View.cs `:10` |
 | `Module.Mangareader.ShareLogic` | CardModel `:4`, View.cs `:12` |
 | `Module.Mangareader.Features.Catalog` | View.cs `:11` (memakai `CatalogContext`) |
-| **`Features.Downloader.Sources.Comix`** | **SyncFeature.cs `:4`** ← pelanggaran lintas feature, lihat §14 |
 
-Referensi dari LUAR ke internalnya: parent mengonstruksi ±10 internal
-(`MangaReaderView.xaml.cs:101-169`, plus `catalogStore.Database` `:114`);
-`CatalogContext.cs:2,13` mengonsumsi `CatalogMirrorFeature`;
-`CatalogView.xaml:12` meng-host `<mirror:CatalogMirrorView>`.
+**Referensi dari LUAR ke internalnya hampir nol — karena CatalogMirror tidak
+dipasang di aplikasi.** `MangaReaderView.xaml` hanya punya lima tab (Library,
+History, CoverBuilder tersembunyi, Downloader, Queue); tidak ada tab Catalog.
+`CatalogView` tidak pernah di-instantiate di kode produksi mana pun, dan
+`CatalogContext` tidak pernah dikonstruksi di luar test. Yang tersisa hanya dua
+seam tanpa pemanggil: `CatalogView.UseContext` (`CatalogView.xaml.cs:23`) dan
+`CatalogMirrorView.UseFeature` (`CatalogMirrorView.xaml.cs:103`). Di dalam
+foldernya sendiri `CatalogContext.cs:2,13` masih mengonsumsi
+`CatalogMirrorFeature`, dan `CatalogView.xaml:12` masih meng-host
+`<mirror:CatalogMirrorView>`.
 
 ### Komposisi view: PATUH shared-UI
 
 `CatalogMirrorView.xaml` memakai `setting:SettingViewport / ActionCard / Field /
-Button / Toggle / Table` (`:16,26,35,42,68,350`) dan style bersama lewat
+Button / Toggle / Table` (`:16,26,35,42,71,269`) dan style bersama lewat
 `DynamicResource SettingComboBoxStyle / SettingCardStyle / SettingScrollViewerStyle`
-(`:61,161,240`), plus komponen module `mangacompons:MangaDetailView /
-MangaMultiSelectFilter` dan `manga:MangaTitleCard`. **Tidak ada template/primitif
-yang disalin lokal** — komentar `:11-15` cocok dengan kode.
+(`:61,173,252`), plus komponen module `mangacomponents:MangaMultiSelectFilter`
+(`:177-197`), `mangacomponents:MangaDetailView` (`:370`) dan
+`manga:MangaTitleCard` (`:261`). **Tidak ada template/primitif yang disalin lokal**
+— komentar `:11-15` cocok dengan kode.
 
 ---
 
-## 14. BUG: `catch` yang tidak pernah cocok, akibat provider Comix ganda
+## 14. Batas CatalogMirror dan provider: satu kontrak bersama
 
-**Ini temuan paling serius dalam seluruh dokumentasi, dan ia terverifikasi baris
-per baris olehku sendiri (bukan hanya laporan agent).**
+`CatalogMirrorSyncFeature.cs` hanya mengimpor `Module.Mangareader.Sources` (`:4`),
+bukan namespace Downloader. `ComixContractException` dideklarasikan **sekali** di
+`shareLogic/Sources/MangaSourceContracts.cs:26` dan dipakai kedua provider
+(`Features/Downloader/Sources/Comix/ComixSource.cs`,
+`Features/Catalog/Sources/Comix/CatalogComixSource.cs`); tidak ada definisi lokal di
+masing-masing provider.
 
-Rantai buktinya:
+Exception itu membawa `HttpStatus` (`MangaSourceContracts.cs:29`) supaya UI bisa
+membedakan "bentuk provider berubah" dari "jaringan mati". Sync sendiri **tidak**
+bercabang pada status itu: satu percobaan, lalu kegagalan terpropagasi dan traversal
+berhenti.
 
-| # | Fakta | Bukti |
+**Kenapa tidak ada retry otomatis - ini aturan, bukan kelalaian.** Provider Comix
+punya toggle sumber dan challenge yang diselesaikan manual lewat headed browser.
+Otomatisasi yang berhenti saat di-throttle justru yang menyerahkan kendali ke
+manusia. Retry otomatis terhadap 429/502/503 sudah pernah dicoba dan menghasilkan
+hammering berkelanjutan; test kini menegaskan satu percobaan lalu berhenti.
+
+### 14.1 Duplikasi yang masih nyata
+
+Dua provider Comix tetap ada, dan keduanya masih besar:
+
+| Provider | File | Baris |
 | --- | --- | --- |
-| 1 | Ada **dua** tipe `ComixContractException`, keduanya `sealed : InvalidOperationException`, nama sama, namespace berbeda | `Features/Downloader/Sources/Comix/ComixSource.cs:195` (namespace `…Features.Downloader.Sources.Comix`, `:9`) dan `Features/Catalog/Sources/Comix/CatalogComixSource.cs:196` (namespace `…Features.Catalog.Sources.Comix`, `:10`) |
-| 2 | Sumber snapshot yang benar-benar dipakai CatalogMirror adalah `CatalogComixSource` | `Features/Catalog/CatalogSourceDirectory.cs:18` `_sources = [new CatalogComixSource(browser)]`, dengan `using …Features.Catalog.Sources.Comix` di `:2` |
-| 3 | `CatalogComixSource` melempar exception dari namespace-**nya sendiri**, dengan `HttpStatus` terisi | `CatalogComixSource.cs:198` (`public int? HttpStatus { get; set; }`), lemparan di `:619,628,664,805,861,1104,1114,1128`; `GetSnapshotPageAsync` di `:568`, bahkan punya `catch (ComixContractException …) when (HttpStatus is 401 or 403)` di `:597` |
-| 4 | Tapi `CatalogMirrorSyncFeature` meng-import namespace **Downloader** | `Features/CatalogMirror/CatalogMirrorSyncFeature.cs:4` `using Module.Mangareader.Features.Downloader.Sources.Comix;` |
-| 5 | Sehingga `catch` di sana mengikat ke tipe Downloader | `CatalogMirrorSyncFeature.cs:416-418` `catch (ComixContractException exception) when (exception.HttpStatus is 429 or 502 or 503)` |
-| 6 | Kedua tipe `sealed` dan tidak saling menurunkan → exception bertipe Catalog **tidak mungkin** tertangkap | fakta 1 |
+| Downloader | `Features/Downloader/Sources/Comix/ComixSource.cs` | 1.621 |
+| Catalog | `Features/Catalog/Sources/Comix/CatalogComixSource.cs` | 1.503 |
 
-**Akibat:** retry backpressure bertipe untuk HTTP 429/502/503 — backoff eksponensial
-`wait × 2^attempt` dengan cap 30 detik plus jitter (`:419-425`) — adalah **kode mati**
-pada sync CatalogMirror. Exception penyedia jatuh ke handler generik, sehingga
-sinkronisasi ±90 ribu judul tidak melakukan backoff bertipe saat provider
-throttling.
-
-Komentarnya justru menjelaskan niat yang benar: "Typed backpressure only: v1 serves
-one source, so its contract exception is the only throttle signal. Never
-message-sniffed; a second source would bring its own typed signal here"
-(`:413-415`). Niatnya tepat; tipe yang diimpor salah.
-
-**Klaim yang ikut gugur:** `docs/history/2026/reports/catalog-mirror-handoff.md:47`
-mencatat "backoff typed 429/502/503 (2 dtk ×2ⁿ, cap 30 dtk, maks 4 percobaan)"
-sebagai keputusan terkunci yang terverifikasi. Mekanisme itu ada di kode tapi tidak
-pernah aktif untuk sumber yang benar.
-
-**Akar penyebabnya adalah C12** (dua provider Comix yang diduplikasi) **ditambah C3**
-(tidak ada penegak untuk import lintas feature). Satu `using` yang salah arah tidak
-terdeteksi gate apa pun: compiler senang (tipe itu ada), test hijau (tidak ada test
-yang melempar 429 dari sumber Catalog ke sync), dan review sulit menemukannya karena
-kedua tipe bernama identik.
-
-**Bentuk lurusnya nanti:** satu `ComixContractException` di tempat netral
-(`shareLogic/Sources/`, tempat `MangaSourceContracts.cs` dan
-`CatalogSnapshotContracts.cs` sudah tinggal), dipakai kedua provider; atau — lebih
-baik dan sekaligus menghapus C12 — satu provider Comix, bukan dua.
+Tiga nama tipe masih duplikat dan ter-enumerasi sebagai debt di
+`tests/Module.Mangareader.Downloader.Tests/Architecture/LevelBGuardTests.cs`
+(`AcceptedDuplicateTypeNames`): `ComixContract`, `ComixOptions`, `ComixBrowseQuery`.
+Guard gagal bila muncul nama duplikat baru di luar daftar itu. → register C12
+(sebagian), C3.
 
 ---
 
 ## 15. shareLogic (root module) — kernel bersama, dengan tiga file nyasar
 
-16 file, 1.488 baris. Sebagian besar memang kernel bersama (jumlah folder konsumen):
+34 file, 4.811 baris (21 di antaranya di akar folder, sisanya di `Archive/` dan
+`Sources/`). Sebagian besar memang kernel bersama (jumlah folder konsumen):
 
 | File | Konsumen |
 | --- | --- |
-| `MangaLibrary.cs` (`MangaTitle`/`ChapterInfo`) | hampir semua folder (27 file) |
-| `NaturalStringComparer.cs` | Library, Downloader/Queue, shareLogic/Archive (4) |
-| `ChapterNumberText.cs` | Library/UpdateChecker ×2, Downloader/Catalog, Downloader/Lister (4) |
-| `LocalTitleProbe.cs` | parent, Library/UpdateChecker ×2, Downloader/Lister (4) |
-| `MangaCardPresentation.cs` | History, CatalogMirror, Downloader/Catalog, shareLogic (4) |
-| `MangaDetailPresentation.cs` | Components, Library, Downloader/Catalog (3) |
-| `MangaViewMode.cs` | Library, History, Components (3) |
-| `MangaCoverLoader.cs` | Library, History, CoverBuilder (3) |
-| `MangaReaderEvents.cs` | parent, Library, CoverBuilder (3) |
+| `MangaLibrary.cs` (`MangaTitle`/`ChapterInfo`) | hampir semua folder |
+| `NaturalStringComparer.cs` | Library, Downloader/Queue, shareLogic/Archive |
+| `ChapterNumberText.cs` | Library/UpdateChecker, Downloader/Catalog, Downloader/Lister |
+| `LocalTitleProbe.cs` | Library/UpdateChecker, Downloader/Lister |
+| `MangaCardPresentation.cs` | History, CatalogMirror, Downloader/Catalog, shareLogic |
+| `MangaDetailPresentation.cs` | Components, Library, Downloader/Catalog |
+| `MangaViewMode.cs` | Library, History, Components |
+| `MangaCoverLoader.cs` | Library, History, CoverBuilder |
+| `MangaReaderEvents.cs` | parent, Library, CoverBuilder |
 | `OpenChapterRequestedEventArgs.cs` | Library, History, parent, Reader |
-| `ViewModePreferenceStore.cs` | Library, History (2) |
-| `MangaTitleCardModel.cs` | Library ×3, CoverBuilder |
+| `ViewModePreferenceStore.cs` | Library, History |
+| `MangaTitleCardModel.cs` | Library, CoverBuilder |
+| `ProxyPoolAdapter.cs` / `ProxyHttpTransport.cs` / `ProxyLeaseRegistry.cs` | adapter mangareader ke pool proxy: Downloader (Queue, ManualUrl), Catalog/CatalogMirror, parent (`MangaReaderModule.cs:23`) |
+| `ReadingPositionStore.cs` | Reader (`ResumePositionFeature`), Library (`ChapterSelectorView`), parent (`MangaReaderView.xaml.cs:98`) |
+| `TitleCoverFiles.cs` | Library (`LibraryCoverCache`, `LibraryTitleLoader`), shareLogic (`MangaCoverLoader`) |
 
 **Tiga file dengan SATU konsumen — kandidat pindah ke dalam konsumennya:**
 
 | File | Baris | Satu-satunya konsumen |
 | --- | --- | --- |
-| `CbzChapterLoader.cs` | 296 | `Reader/CbzReaderChapterLoader.cs` |
-| `ChapterSurfaceModel.cs` | 65 | Reader (5 file, semuanya di `Reader/`) |
-| `ChapterLoadingContracts.cs` | 63 | Reader |
+| `CbzChapterLoader.cs` | 293 | `Reader/ReaderCore/CbzReaderChapterLoader.cs:13` |
+| `ChapterSurfaceModel.cs` | 97 | Reader (6 file, semuanya di `Reader/`) |
+| `ChapterLoadingContracts.cs` | 84 | Reader (`PageRenderQuality`, `ChapterRenderRequest`, `LoadedPage`, `LoadedChapter`, `ChapterLoadProgress`) |
 
-Ketiganya ±424 baris kontrak chapter-loading milik Reader yang tinggal di folder
+Ketiganya 474 baris kontrak chapter-loading milik Reader yang tinggal di folder
 "bersama". Jadi `shareLogic/` bukan dumping ground, tapi **sebagian** isinya adalah
 internal Reader yang salah alamat. → register D21.
 
 (`ChapterRenderCache.cs` 195 baris **bukan** single-consumer: konsumen langsungnya
-`History/HistoryView.xaml.cs:20`, tapi ia menjangkau Reader/Library/CoverBuilder
+`History/HistoryView.xaml.cs:21`, tapi ia menjangkau Reader/Library/CoverBuilder
 lewat `CbzChapterLoader`/`MangaCoverLoader`.)
 
 ---
@@ -771,31 +768,40 @@ lewat `CbzChapterLoader`/`MangaCoverLoader`.)
 
 | Dari → Ke | Jenis | Bukti |
 | --- | --- | --- |
-| parent → Library | konkret | `MangaReaderView.xaml.cs:28,47,284` |
-| parent → History | konkret | `:27,42,190,285,305,313` |
-| parent → Downloader | konkret | `:49-91,148,245,349` |
-| parent → Catalog | konkret | `:103,105,170` |
-| parent → CatalogMirror | **konkret, internal** (10 tipe) | `:101-169`, `catalogStore.Database` `:114` |
-| parent → Reader | konkret | `:307,311` |
-| parent → UpdateChecker | konkret | `:79-88` |
-| parent → shareLogic | konkret | `:64,78` |
-| parent → Components/Setting | xaml + konkret | `xaml:14`; `cs:151,260` |
-| Library → Grouping | konkret + event | `LibraryView.xaml.cs:41,57,61,49` |
-| Library → UpdateChecker | konkret, disuntik | `:89,94` |
-| Library → shareLogic | kontrak | `LibraryScanner.cs:3`, `LibraryView.xaml.cs:12,27,31` |
-| UpdateChecker → shareLogic | konkret | `UpdateMatcher.cs:3,74,368` |
-| UpdateChecker → Sources | kontrak | `UpdateCheckerFeature.cs:2,67` |
-| UpdateChecker → Downloader | kontrak-saja, lewat delegate parent | `UpdateCheckerFeature.cs:52`; jembatan parent `:88,349` |
-| History → shareLogic | kontrak | `ReadingHistory.cs:2`, `HistoryView.xaml.cs:19-20`, `HistoryCardModel.cs:43` |
-| History → parent | event | `HistoryView.xaml.cs:48,134` |
-| CatalogMirror → Sources | kontrak | `Contracts.cs:4` dll. |
-| **CatalogMirror → Downloader** | **konkret, pelanggaran** | `SyncFeature.cs:4,416` |
-| CatalogMirror → Catalog | konkret (host) | `View.xaml.cs:11,48` |
-| CatalogMirror → Components | konkret | `View.xaml.cs:10`, `View.xaml:165,307` |
+| `MangaReaderModule` → Downloader | konkret (pemilik runtime) | `MangaReaderModule.cs:4,24,42` |
+| `MangaReaderModule` → Library | konkret | `MangaReaderModule.cs:6,20` |
+| `MangaReaderModule` → History | konkret | `MangaReaderModule.cs:5,19` |
+| `MangaReaderModule` → shareLogic | konkret | `MangaReaderModule.cs:7,23` |
+| `MangaReaderView` → Library | konkret | `MangaReaderView.xaml.cs:12,47` |
+| `MangaReaderView` → History | konkret | `MangaReaderView.xaml.cs:11,42` |
+| `MangaReaderView` → Downloader | konkret | `MangaReaderView.xaml.cs:5-10,68,72` |
+| `MangaReaderView` → UpdateChecker | konkret | `MangaReaderView.xaml.cs:13,56-66` |
+| `MangaReaderView` → shareLogic | konkret | `MangaReaderView.xaml.cs:14,98` |
+| `MangaReaderView` → Components/Setting | xaml | `MangaReaderView.xaml:7,13` |
+| `MangaReaderHandoffs` → CatalogMirror | **kontrak-saja** (record murni) | `MangaReaderHandoffs.cs:6,93,127` |
+| `MangaReaderHandoffs` → Downloader | konkret | `MangaReaderHandoffs.cs:7-9,34,54,127` |
+| `MangaReaderHandoffs` → Library + UpdateChecker | konkret | `MangaReaderHandoffs.cs:10-11` |
+| `MangaReaderHandoffs` → Components/Setting | konkret | `MangaReaderHandoffs.cs:5` |
+| Library → Grouping | konkret | `LibraryView.xaml.cs:12,33-34,47,63,69` |
+| Library → UpdateChecker | konkret, disuntik | `LibraryView.xaml.cs:13,97-103` |
+| Library → shareLogic | kontrak | `LibraryTitleLoader.cs:117`, `LibraryCoverCache.cs:159`, `LibraryView.xaml.cs:12` |
+| UpdateChecker → shareLogic | konkret | `UpdateMatcher.cs:3,368,437` |
+| UpdateChecker → Sources | kontrak | `UpdateCheckerFeature.cs:2,67,87` |
+| UpdateChecker → Downloader | **tidak ada** — lewat delegate `EnqueueUpdateChapters` | `UpdateCheckerFeature.cs:52,69,89` |
+| History → shareLogic | kontrak | `ReadingHistory.cs:2`, `ReadingHistoryStore.cs:3`, `HistoryCardModel.cs:4`, `HistoryView.xaml.cs:8` |
+| History → parent | event | `HistoryView.xaml.cs:56` (`OpenChapterRequested`) |
+| CatalogMirror → Sources | kontrak | `CatalogMirrorContracts.cs:4` dll. |
+| CatalogMirror → Catalog | konkret (host) | `CatalogMirrorView.xaml.cs:11,51,88` |
+| CatalogMirror → Components/Setting | konkret | `CatalogMirrorView.xaml.cs:9-10` |
 | Catalog → CatalogMirror | xaml + konkret (host) | `CatalogView.xaml:12`, `CatalogContext.cs:2` |
 | Components → shareLogic | kontrak | `MangaDetailView.xaml.cs`, `MangaViewModeSelector.xaml.cs` |
-| Reader → shareLogic | konkret | `CbzReaderChapterLoader.cs`, `Reader/Features/ChapterLoading/*` |
-| **shareLogic/Archive ↔ Features/Rar** | **siklus** | `ArchivePageReader.cs:3` ↔ `RarArchiveFeature.cs:3,80,90` |
+| Reader → shareLogic | konkret | `CbzReaderChapterLoader.cs:13`, `Reader/Features/ChapterLoading/*` |
+
+**Dua tepi yang dulu ada dan sekarang hilang, dijaga test:**
+`CatalogMirror → Downloader` (BUG-1) dan `shareLogic/Archive → Features/Rar` (C13)
+di-assert tidak ada oleh
+`LevelBGuardTests.FixedCouplingsStayRemoved`
+(`tests/Module.Mangareader.Downloader.Tests/Architecture/LevelBGuardTests.cs:153-172`).
 
 ---
 
@@ -803,31 +809,29 @@ lewat `CbzChapterLoader`/`MangaCoverLoader`.)
 
 | Temuan | Bukti |
 | --- | --- |
-| **Dua provider Comix** ±3.100 baris, masing-masing dengan `ComixContractException` sendiri | §6.5, §14 |
+| **Dua provider Comix** 3.124 baris; tiga nama tipe masih duplikat | §6.5, §14 |
+| Cek magic-byte PNG ditulis delapan kali | §6.6 |
 | `LibraryViewModeFeature.cs` dan `HistoryViewModeFeature.cs` hampir identik (pemilik pref Grid/List di atas `ViewModePreferenceStore`) — sengaja, kunci berbeda `Library.ViewMode` / `History.ViewMode` | duplikasi yang dibenarkan |
-| Pola tulis-JSON-atomik (tmp→move) diulang di empat store | `LibraryPathStore`, `GroupingStore`, `SourceBindingStore`, `ReadingHistoryStore` |
-| Komentar parent `:75-77` "The root only translates record shapes and forwards results: it never interprets provider behavior and owns no update-checking rule" — **dibantah**: parent mengonstruksi `UpdateMatcher`/`UpdateCheckerFeature` (`:79-88`) dan mengimplementasi `ReadConfirmedMapping` (`:329`) yang membaca `index.Load().Mappings` (`:333`) | A-kategori |
-| Komentar parent `:93-95` "Catalog Mirror composes … through its neutral projection, plus its own snapshot store" — **dibantah**: parent, bukan CatalogMirror, yang mengonstruksi setiap internal (`:101-169`) | A-kategori |
-| Komentar parent `:216-218` "the queue's own answer is returned as-is … never reinterpreted here" — **dibantah** oleh `EnqueueUpdate` yang menjumlah ulang pencacah skip (`:367-370`) | A-kategori |
-| `UpdateCheckerFeature.cs:35-37` "Update Checker never calls a queue itself — the composition root supplies the route" — **akurat**, tapi rute yang disediakan parent menafsirkan ulang hasil queue | lihat baris di atas |
-| `CatalogMirrorView.xaml.cs` 968 baris: render + navigasi + bangun opsi filter + paginasi + host detail + batching sampul | besar, tapi komposisi/wiring |
+| Pola tulis-JSON-atomik (tmp→move) diulang di 20+ tempat, termasuk lima store preferensi/path | `LibraryPathStore.cs:160`, `LibraryIndexStore.cs:183`, `GroupingStore.cs:140`, `SourceBindingStore.cs:169`, `ReadingHistoryStore.cs:173`, `ReaderPreferencesStore.cs:219`, `ReadingPositionStore.cs:118`, `ViewModePreferenceStore.cs:117` |
+| `MangaReaderHandoffs.cs:22-25` "one file holds composition and one file holds coordination" — **tidak akurat**: komposisi tersebar di dua file (`MangaReaderModule.cs` untuk runtime Downloader, `MangaReaderView.xaml.cs` untuk view), dan koordinasi di file ketiga | A-kategori (ringan) |
+| `MangaReaderHandoffs.cs:69-71` — penjumlahan dua pencacah skip queue **dijelaskan inline**, jadi bukan lagi penafsiran ulang tanpa dokumentasi | A13 turun jadi catatan, bukan pelanggaran |
+| `CatalogMirrorView.xaml.cs` 1.006 baris: render + navigasi + bangun opsi filter + paginasi + host detail + batching sampul | besar, tapi komposisi/wiring |
 | `CatalogSnapshotStore.cs` 1.273 baris: staging + checkpoint + dedupe + aktivasi + retensi dalam satu tipe | kohesif tapi sangat besar |
 
 ---
 
 ## 18. Rujukan register tambahan dari bagian ini
 
-**BUG-1** (`catch` mati di CatalogMirrorSyncFeature, §14) — dicatat sebagai entri
-tersendiri di puncak register karena ini defek nyata, bukan penyimpangan struktur.
-
-A11 (klaim parent "never interprets provider behavior" vs kode) ·
-A12 (klaim "Catalog Mirror composes its own snapshot store" vs parent yang
-mengonstruksi) ·
-A13 (klaim "queue's answer returned as-is" vs penjumlahan ulang pencacah) ·
+A13 (klaim "queue's answer returned as-is" vs penjumlahan ulang pencacah) —
+**turun jadi catatan**: penjumlahan itu sekarang dijelaskan inline
+(`MangaReaderHandoffs.cs:69-71`) ·
 B7 (biaya tambah tab module = 2 file parent, vs Reader = nol) ·
-C14 (parent menjangkau 10 internal CatalogMirror + static milik Downloader) ·
+C12 (dua provider Comix, 1.621 + 1.503 baris; tiga nama tipe masih duplikat) ·
+C14 (parent masih mengonstruksi internal UpdateChecker —
+`MangaReaderView.xaml.cs:56-66`; jangkauan ke internal CatalogMirror sudah hilang,
+sisa kebijakan koordinasi tinggal di `MangaReaderHandoffs.cs`) ·
 D21 (tiga file Reader-only tinggal di `shareLogic/`) ·
-D22 (`MangaReaderView.xaml.cs` 412 baris memegang komposisi + logika availability +
-aturan tabrakan folder + translasi queue + navigasi + disposal).
+D22 (`MangaReaderView.xaml.cs` 168 baris; komposisi Downloader sudah pindah ke
+`MangaReaderModule.cs` + `DownloaderBackgroundService`).
 
 Detail dan bentuk lurusnya: `CITADEL-VIOLATIONS.md`.

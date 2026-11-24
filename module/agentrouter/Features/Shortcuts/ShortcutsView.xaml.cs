@@ -370,8 +370,14 @@ public partial class ShortcutsView : UserControl, IDisposable
         SetStatus($"Claiming {row.Account}…");
         try
         {
-            var result = await _claims.ClaimAsync(row.ProfileId, headless, proxy);
-            SetStatus(result.Describe());
+            // One call: claim, then read the login state and the balance the
+            // claim was meant to produce. Those reads still run when the claim
+            // reports failure - a run that failed late has already written the
+            // credentials they use, so "Claim failed" alone would hide whether
+            // the login took and whether quota was granted.
+            var result = await _claims.ClaimAndVerifyAsync(
+                row.ProfileId, headless, proxy, () => _claimStopRequested);
+            SetStatus($"{row.Account}: {result.Describe()}");
         }
         catch (Exception ex)
         {
@@ -388,6 +394,10 @@ public partial class ShortcutsView : UserControl, IDisposable
             _claimRunning = false;
             StopClaimButton.IsEnabled = false;
         }
+
+        // The follow-up reads wrote into the profile JSON; re-reading it is what
+        // puts the new key, the login mark and the balance on the row.
+        if (!_disposed) Refresh();
     }
 
     private void StopClaimButton_Click(object sender, RoutedEventArgs e)

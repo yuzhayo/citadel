@@ -118,8 +118,8 @@ implementer produksi adalah `module/mangareader/Components/MangaMultiSelectFilte
 (implementasi event eksplisit di `:95`) — persis seperti klaim
 `SHARED-UI-BEHAVIOR.md:155-157`.
 
-Konsumen yang memakai `setting:UiPreference.Key` (terverifikasi 2026-09-11):
-`module/proxy/ProxyView.xaml:11`, `module/ftf/FtfView.xaml:11`,
+Konsumen yang memakai `setting:UiPreference.Key`:
+`module/proxy/ProxyView.xaml:11`, `module/agentrouter/AgentrouterView.xaml:15`,
 `module/camoprof/CamoprofView.xaml:11`, `Launcher/LauncherView.xaml:25,60`, dan di
 mangareader: `MangaReaderView.xaml:15`, `LibraryView.xaml:59,101`,
 `HistoryView.xaml:103`, `UpdateCheckerDialog.xaml:71`, `CatalogScreen.xaml:35,71,237`,
@@ -127,8 +127,8 @@ mangareader: `MangaReaderView.xaml:15`, `LibraryView.xaml:59,101`,
 `CucumberMangaFilterPanel.xaml` (8 kunci), `ComixFilterPanel.xaml` (9 kunci);
 plus di dalam setting sendiri: `Screens/SettingsScreen.cs:45`.
 
-Catatan: `proxy` dan `ftf` — dua citizen kerang (§STRUCTURE 6) — tetap memakai
-kunci preferensi di view-nya, jadi mekanisme ini hidup bahkan tanpa feature.
+Catatan: `proxy` dan `agentrouter` memakai kunci preferensi di view-nya untuk
+mengingat tab aktif.
 
 ---
 

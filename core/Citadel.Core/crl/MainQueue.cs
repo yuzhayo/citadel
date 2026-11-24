@@ -9,7 +9,7 @@ namespace Citadel.Core.Crl;
 /// injects the wake delegate (e.g. Dispatcher.BeginInvoke), which is
 /// what keeps Citadel.Core free of WPF types.
 ///
-/// Semantics that must not drift (wiki/Crl.md):
+/// Semantics that must not drift (docs/architecture/flows-core.md §1.3):
 ///  - never inline: a post from the main thread still defers to the next drain;
 ///  - wake coalescing: one gate flag, one wake per non-empty batch;
 ///  - generation-batched drain: posts enqueued during a drain run in the

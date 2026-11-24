@@ -29,7 +29,7 @@ Perbaikan bukan merintis, melainkan memindahkan.
 ```text
 TINGKAT 1 — app ↔ module            SUDAH berbentuk kernel   ✅ dijaga mesin
    kernel: Core + Contract + Shell + Searcher + Citizen.targets
-   plugin: blank · mangareader · camoprof · ftf · proxy
+   plugin: blank · mangareader · camoprof · agentrouter · proxy · yuzvid
    bukti:  CITADEL-FLOWS-CROSS.md §1, §2.3, §2.4
    penjaga: check-project-refs.mjs (memblokir) · VerifyCitizenIsolation (build gagal)
 
@@ -64,7 +64,7 @@ TINGKAT 3 — feature ↔ feature       CAMPURAN                 ❌ tidak dijag
 | ESLint memaksa matriks import | `check-project-refs.mjs` — **hanya tingkat `ProjectReference`** | sebagian (C1, C2, C8) |
 | satu file = satu pekerjaan | dilanggar luas di tingkat module (D22, D20, D17, D12) | sebagian |
 | children mendaftar dengan ada | **hanya di lapisan python**: `install(host)` + `register_commands` | terbukti di pyhost, tidak di C# (B5) |
-| deploy matrix sebagai acceptance | citizen di luar `.slnx` + `Build-Release.ps1` membangun tiap citizen | **ada**, tapi gate Stop tidak menutupi `ftf`/`proxy`/`blank` (C6) |
+| deploy matrix sebagai acceptance | citizen di luar `.slnx` + `Build-Release.ps1` membangun tiap citizen | **ada**, tapi gate Stop tidak menutupi `proxy`/`agentrouter`/`blank` (C6) |
 
 ---
 
@@ -78,20 +78,21 @@ TINGKAT 3 — feature ↔ feature       CAMPURAN                 ❌ tidak dijag
 | `core/Citadel.Contract` | kontrak citizen — **seharusnya daun sejati**, kini menarik Core (D6) |
 | `core/Citadel.Shell` | composition root, gate, router, layout applier, resident/tray, update |
 | `core/Citadel.Ui` | chrome navigasi milik kernel: sidebar, rail button, pompa animasi, jembatan tema |
-| **`module/Citadel.Searcher`** | **kernel** — mesin discovery. Kini tinggal di folder plugin (D1) |
-| **`module/Citizen.targets`** | **kernel** — kontrak build plugin. Kini tinggal di folder plugin (D1) |
-| **`module/sharedLogic/pyhost/`** | **kernel runtime kedua** — host plugin python. Kini tinggal di folder plugin, dan di-deploy sebagai sibling `module\` justru supaya tidak terlihat sebagai citizen (`Citizen.targets:87-94`) |
+| **`core/Citadel.Searcher`** | **kernel** - mesin discovery (dipindah dari `module/` di `a313f06`) |
+| **`core/Citizen.targets`** | **kernel** - kontrak build plugin (dipindah dari `module/` di `a313f06`) |
+| **`module/sharedLogic/pyhost/`** | **kernel runtime kedua** - host plugin python. Tinggal di dalam `module/`, dan di-deploy sebagai sibling `module\` justru supaya tidak terlihat sebagai citizen (`Citizen.targets:87-94`) |
 | `setting/` | **bukan kernel**: gudang bersama. Ia setara `plugins/display` dalam hal "dipakai semua", tapi ia tidak menemukan atau memuat apa pun |
 
-**Catatan penting:** tiga bagian kernel tinggal di dalam `module/`, folder yang
-didokumentasikan sebagai tempat plugin. Itulah sebabnya `module/` tidak bisa dibaca
-sebagai "semuanya boleh dihapus" (D1). Dalam istilah yuz-ui: `core/` dan `plugins/`
-harus **saudara**, bukan induk-anak.
+**Catatan:** `core/` dan `module/` sekarang **saudara**, bukan induk-anak: seluruh
+proyek kernel ada di `core/`, dan `module/` hanya berisi citizen plus payload
+bersama. Satu pengecualian tinggal: `module/sharedLogic/pyhost/` adalah host plugin
+python - mekanisme, bukan payload - dan sengaja di-deploy sebagai sibling `module\`
+supaya tidak terbaca sebagai citizen.
 
 ### 4.2 Plugin (screen drop-in)
 
-`module/blank`, `module/mangareader`, `module/camoprof`, `module/ftf`,
-`module/proxy`. Semuanya boleh dihapus bersih — **kecuali** bahwa menghapus
+`module/blank`, `module/mangareader`, `module/camoprof`, `module/agentrouter`,
+`module/proxy`, `module/yuzvid`. Semuanya boleh dihapus bersih - **kecuali** bahwa menghapus
 camoprof/mangareader juga menuntut bersih-bersih di `module/sharedLogic/tests/`
 (C10) dan, untuk camoprof, di `sharedLogic/BrowserSessionCoordinator.cs:399` (D23).
 
@@ -109,7 +110,7 @@ mendaftar:
 | plugin python | `_Host` pyhost | **mendaftar lewat `install(host)`** ✅ (`pyhost.py:155-171`) |
 | feature Reader | `ReaderFeatureHost` | **katalog eksplisit, 1 baris, host menegakkan bentuk** ◐ (`ReaderDefaultFeatureCatalog.cs:12-29`) |
 | provider manga | `MangaSourceRegistry` | **daftar `new` eksplisit, 2 tempat, plus registri probe kedua** ❌ (`MangaSourceRegistry.cs:108-129`, `ManualUrlProbeRegistry.cs:10-28`) |
-| feature tingkat module | `MangaReaderView` / `CamoprofView` | **tidak ada katalog sama sekali**; parent meng-hardwire di konstruktor ❌ (`MangaReaderView.xaml.cs:36-186`, `CamoprofView.xaml.cs:32-49`) |
+| feature tingkat module | `MangaReaderView` / `CamoprofView` | **tidak ada katalog sama sekali**; parent meng-hardwire di konstruktor ❌ (`MangaReaderView.xaml.cs:26-76`, `CamoprofView.xaml.cs:32-51`) |
 | format arsip (RAR/ZIP) | `ArchivePageReader` | **siklus**: dispatcher meng-import feature, feature meng-import dispatcher ❌ (C13) |
 
 ---
@@ -242,12 +243,12 @@ tanpa perubahan kode sampai owner memerintahkan.
 | 2 | **C12** — dua provider Comix | akar BUG-1; ±3.100 baris duplikat; selama dua `ComixContractException` ada, bug sejenis akan terulang | C12 |
 | 3 | **C3** — tidak ada penegak tepi internal citizen | satu-satunya celah yang sudah terbukti menghasilkan kerusakan; dua pola penegak sudah ada di repo (hook csproj, guard ARCH python) | C3, C9 |
 | 4 | **C13** — siklus `shareLogic/Archive ↔ Features/Rar` | saling import literal; pola children-mendaftar sudah terbukti di Reader dan pyhost | C13 |
-| 5 | **B2** — 149 entri manifest test | sumber terbesar "banyak file tersentuh"; pola wildcard sudah dipakai di repo yang sama | B2, B1 |
+| 5 | **B2** - 80 entri manifest test | sumber terbesar "banyak file tersentuh"; pola wildcard sudah dipakai di repo yang sama | B2, B1 |
 | 6 | **C14 + D22** — parent mangareader menjangkau internal | 412 baris, enam pekerjaan; bentuk targetnya sudah ada 300 baris lebih tipis di module yang sama (`ReaderWindow`) | C14, D22, B7 |
-| 7 | **D9** — pekerjaan python ftf/proxy yang hilang | keputusan owner: lanjut atau pensiun; `.pyc` dan folder recovery masih ada dan mungkin bisa dipulihkan | D9 |
+| 7 | **D9** - sumber python `proxy_plugin` di luar version control | salin `artifacts/recovery-ftf-proxy-2.1.3-20260907/proxy_plugin/*.py` ke `module/proxy/Features/Pool/proxy_plugin/` lalu commit | D9 |
 | 8 | **D6** — Contract tidak tipis | menyentuh `IModule` yang ditandai "Verbatim from v0 — do not alter"; keputusan owner, bukan refactor | D6 |
-| 9 | **C6, C8** — lubang gate | `ftf`/`proxy`/`blank` tak terkompilasi gate; proyek baru tak dijaga hook | C6, C8 |
-| 10 | **D1** — `module/` memegang empat peran | murni navigasi; tidak ada perilaku yang berubah | D1 |
+| 9 | **C6, C8** - lubang gate | `proxy`/`agentrouter`/`blank` tak terkompilasi gate; proyek baru tak dijaga hook | C6, C8 |
+| 10 | **D1** - `module/` memegang dua peran (`sharedLogic` + vault `credenz`) | murni navigasi; tidak ada perilaku yang berubah | D1 |
 | 11 | A1–A13, D2–D26 | akurasi dokumen dan satu-file-satu-pekerjaan; murah, tapi tidak mendesak | — |
 
 ---
@@ -291,7 +292,7 @@ Phase 1-4 dari §8 **SELESAI** dan terverifikasi: `dotnet test Citadel.slnx` hij
 | 1 | BUG-1 catch mati | **DIPERBAIKI** | `CatalogMirrorSyncFeature.cs` menangkap tipe bersama; regression test `ContractExceptionIsTheSingleSharedModuleType` menegaskan hanya ada SATU `ComixContractException` dan ia milik `Module.Mangareader.Sources` |
 | 2 | Guard test Level-B | **ADA** | `tests/Module.Mangareader.Downloader.Tests/Architecture/LevelBGuardTests.cs` (3 test): tepi lintas feature di luar allow-list = gagal; shareLogic→feature = gagal; tipe bernama sama baru = gagal; coupling yang sudah diperbaiki tidak boleh kembali |
 | 3 | C12 minimal | **SELESAI** | satu `ComixContractException` di `shareLogic/Sources/MangaSourceContracts.cs`; definisi lokal di kedua provider dihapus |
-| 4 | C13 siklus | **PUTUS** | mekanisme pindah ke `shareLogic/Archive/RarArchiveEngine.cs`; `Features/Rar/RarArchiveFeature.cs` dihapus; arah dependensi kini feature→shared satu arah |
+| 4 | C13 siklus | **PUTUS secara struktural** | `Features/Rar/` hanya berisi payload `Rar.exe` + `rarreg.key`, nol `.cs`; seluruh mekanisme ada di `shareLogic/Archive/RarArchiveEngine.cs`; arah dependensi feature→shared satu arah, dan guard Level-B menolak tepi balik |
 
 **Debt yang kini TERENUMERASI oleh guard** (allow-list; tujuan akhirnya menyusut):
 
@@ -304,15 +305,19 @@ Phase 1-4 dari §8 **SELESAI** dan terverifikasi: `dotnet test Citadel.slnx` hij
 
 **Belum dikerjakan:** C12 penuh, C14+D22, B2, D9, C6/C8, D1, D6.
 
-### Catatan B2 (2026-09-11)
+### Catatan B2
 
-Konversi manifest test per-file menjadi wildcard DICOBALALU DI-REVERT: proyek test WPF
-membutuhkan pasangan Page untuk setiap code-behind .xaml.cs (bentuk tiga baris
-DependentUpon), sehingga wildcard buta menghasilkan duplikasi atau kekurangan item.
-B2 tetap terbuka sebagai langkah tersendiri yang harus menangani bentuk DependentUpon
-secara eksplisit. Ia optimasi (mengurangi jumlah file yang tersentuh saat menambah
-feature), bukan perbaikan, jadi tidak menghalangi langkah lain.
-Keadaan repo = checkpoint 9bc33ac; suite 929 test hijau; working tree bersih.
+Bentuk yang berhasil: pisahkan glob `Compile` dan glob `Page` per folder feature
+(`Module.Mangareader.Downloader.Tests.csproj:60-61`,
+`Module.Mangareader.Reader.Tests.csproj:43-44`,
+`Module.Mangareader.Archive.Tests.csproj:21`,
+`Module.Camoprof.Tests.csproj:29`). Wildcard buta tunggal memang gagal: proyek test
+WPF butuh pasangan `Page` untuk setiap code-behind `.xaml.cs`.
+
+Tiga proyek masih manual sepenuhnya: `Module.Mangareader.Library.Tests` (26 entri
+`Compile Include`, nol wildcard), `Module.Proxy.Tests` (10, 1 wildcard), dan
+`Module.Mangareader.History.Tests` (8, nol wildcard).
+
 
 ### Step 6 (2026-09-11) - SELESAI
 
@@ -321,3 +326,4 @@ module/mangareader/MangaReaderHandoffs.cs sesuai docs/governance/plan-c14.md.
 MangaReaderView.xaml.cs 412 menjadi 289 baris; perilaku identik; suite 929 hijau.
 Framing lama C14 dikoreksi di CITADEL-VIOLATIONS.md (kebijakan lintas-feature sah
 di composition root; yang tersisa terbuka adalah ketiadaan katalog/gate seragam).
+

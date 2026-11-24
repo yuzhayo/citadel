@@ -7,7 +7,8 @@ contract cutover R-05 digabung ke inc 3 (1 subscriber, History + CoverBuilder
 lazy dalam satu increment agar tidak ada interim rusak), cover cache di inc 6
 dengan `ILibraryCoverThumbnails` seam + `LibraryCoverCache` produksi.
 `LibraryScanner` dihapus; tidak ada perilaku yang diregresi.
-Sumber: plan awal operator + review terhadap kode (`Library/LibraryScanner.cs`,
+Sumber: plan awal operator + review terhadap kode saat itu
+(`Library/LibraryScanner.cs` - pratinjau sebelum refactor, sudah dihapus,
 `Library/LibraryView.xaml.cs`, `shareLogic/MangaTitleCardModel.cs`,
 `shareLogic/MangaReaderEvents.cs`, `Library/LibraryScanPersistence.cs`).
 Label R-01..R-05 = perbaikan dari review, mengikat seperti isi plan lainnya.

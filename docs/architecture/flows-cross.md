@@ -30,14 +30,14 @@ di akhir bagian ini).
 
 | Node | Pekerjaan (satu) | Pemilik |
 | --- | --- | --- |
-| MANIFEST | membaca + memvalidasi `module.json` (identitas) | `module/Citadel.Searcher/Reader.cs` |
-| LAYOUT | membaca + memvalidasi `layout.json` (presentasi, fail-soft) | `module/Citadel.Searcher/Reader.cs` |
-| WATCH | memantau folder runtime, debounce, retry, kepemilikan route | `module/Citadel.Searcher/Watcher.cs` |
-| LOAD | memuat entry assembly ke ALC collectible + instantiate `IModule` | `module/Citadel.Searcher/Loader.cs` |
-| FAILURE | menyatakan bagian mana yang gagal, per folder | `module/Citadel.Searcher/ModuleFailure.cs` |
+| MANIFEST | membaca + memvalidasi `module.json` (identitas) | `core/Citadel.Searcher/Reader.cs` |
+| LAYOUT | membaca + memvalidasi `layout.json` (presentasi, fail-soft) | `core/Citadel.Searcher/Reader.cs` |
+| WATCH | memantau folder runtime, debounce, retry, kepemilikan route | `core/Citadel.Searcher/Watcher.cs` |
+| LOAD | memuat entry assembly ke ALC collectible + instantiate `IModule` | `core/Citadel.Searcher/Loader.cs` |
+| FAILURE | menyatakan bagian mana yang gagal, per folder | `core/Citadel.Searcher/ModuleFailure.cs` |
 | GATE | permukaan tempat core **mendengarkan** registrasi | `core/Citadel.Contract/IModuleGate.cs` |
 | DESCRIPTOR | segala yang shell perlu tahu tentang satu screen, tanpa asal-usul | `core/Citadel.Contract/ModuleDescriptor.cs` |
-| BUILD | referensi, deployment, dan pemeriksaan isolasi citizen | `module/Citizen.targets` |
+| BUILD | referensi, deployment, dan pemeriksaan isolasi citizen | `core/Citizen.targets` |
 
 Satu-satunya wajah publik searcher adalah `Watcher`; `Reader`, `Loader`, dan
 `ModuleManifest` semuanya `internal` (`Watcher.cs:28`, `Reader.cs:20`,
@@ -160,7 +160,7 @@ Initial scan, setiap event watcher, tombol `Update modules`, pemulihan
 | Exit | context di-unload sekali di sini, tidak pernah saat folder dihapus | `Loader.cs:143-169` |
 | Pump macet (network path mati) | `Dispose` menunggu maksimal 2 detik lalu lanjut | `Watcher.cs:147-159` |
 
-### 1.7 Kontrak build citizen (`module/Citizen.targets`)
+### 1.7 Kontrak build citizen (`core/Citizen.targets`)
 
 Inilah yang membuat "tambah screen = tambah folder" benar secara struktural,
 bukan secara niat:
@@ -254,8 +254,8 @@ penegakan compiler (`Citadel.Searcher.csproj:7-11`, `Watcher.cs:23-27`).
   lima.
 - **D7** — definisi "assembly Citadel bersama" ditulis tiga kali dengan tiga
   mekanisme dan tiga isi berbeda.
-- **D1** — `module/` memegang empat peran: citizen, infrastruktur discovery,
-  payload bersama, dan vault kredensial 499 MB.
+- **D1** - `module/` memegang dua peran: citizen dan payload bersama
+  (`sharedLogic`), plus vault kredensial 499 MB. Kernel sudah pindah ke `core/`.
 - **C1/C2** — tepi `Compile Include` dan baseline referensi citizen tidak
   terlihat oleh hook graf dependensi.
 
@@ -518,9 +518,11 @@ Detail yang layak dicatat karena menjelaskan kenapa bentuknya begitu:
   design is wrong — the boundary does not move" (`check-project-refs.mjs:65-66`).
 - Gate Stop **hanya menguji yang ada di `Citadel.slnx`** (17 proyek: 6
   core/setting/searcher/shell + 11 test). Citizen **tidak** ada di slnx
-  (`Citadel.slnx:1-19`, `Module.Blank.csproj:9-11`), jadi `ftf`, `proxy`, dan
-  `blank` tidak dikompilasi gate ini sama sekali; `mangareader` dan `camoprof`
-  terkompilasi hanya karena proyek test-nya me-link sumbernya (§2.8).
+  (`Citadel.slnx:1-19`, `module/blank/Module.Blank.csproj:3-10`), jadi tidak satu pun
+  citizen dikompilasi gate ini; `mangareader` dan `camoprof` terkompilasi hanya
+  karena proyek test-nya me-link sumbernya (§2.8). CI menutup sebagian celah itu
+  dengan langkah `Build citizens` — tetapi hanya lima dari enam citizen, dan tanpa
+  menjalankan test citizen (C6).
 
 **Yang TIDAK dijaga mesin mana pun** — dan di sinilah gejala owner hidup:
 
@@ -562,27 +564,29 @@ Perbandingan commit fitur lain (jumlah file tersentuh):
 | `172f193` | run queue jobs in parallel | 3 |
 | `f132622` | replace downloader browser label with info icon | 2 |
 
-Akar biaya #7 terukur: `tests/Module.Mangareader.Downloader.Tests.csproj`
-memuat **66 entri `Compile Include`**, hanya 2 di antaranya wildcard. Bandingkan:
+Akar biaya #7 sudah hilang. `Module.Mangareader.Downloader.Tests.csproj` sekarang
+memakai glob per folder feature (`Features\Downloader\**`, `Features\Catalog\**`,
+`Features\CatalogMirror\**`, `shareLogic\**`, `Components\**`, `sharedLogic\cs\**`)
+sehingga provider atau feature baru tidak menuntut entri csproj. Angka hari ini:
 
 | Proyek test | entri `Compile Include` | wildcard |
 | --- | --- | --- |
-| `Module.Mangareader.Downloader.Tests` | 66 | 2 |
-| `Module.Mangareader.Reader.Tests` | 46 | 0 |
-| `Module.Mangareader.Library.Tests` | 16 | 0 |
-| `Module.Camoprof.Tests` | 10 | 1 |
+| `Module.Mangareader.Library.Tests` | 26 | 0 |
+| `Module.Mangareader.Downloader.Tests` | 16 | 6 |
+| `Module.Camoprof.Tests` | 11 | 1 |
+| `Module.Proxy.Tests` | 10 | 1 |
 | `Module.Mangareader.History.Tests` | 8 | 0 |
-| `Module.Mangareader.Archive.Tests` | 3 | 1 |
+| `Module.Mangareader.Reader.Tests` | 7 | 2 |
+| `Module.Mangareader.Archive.Tests` | 2 | 1 |
 
-Di sisi lain, tepi sumber yang **memakai** wildcard tidak menuntut edit csproj
-saat file bertambah: `module/sharedLogic/cs/**\*.cs` di-link wildcard oleh
-`Module.Camoprof.csproj:10`, `Module.Mangareader.csproj:10`, dan
-`Module.Mangareader.Downloader.Tests.csproj` (entri terakhir); demikian juga
-`mangareader/shareLogic/Archive/*.cs`. Artinya pola yang benar sudah ada di repo
-yang sama — hanya tidak dipakai untuk feature.
+`Module.Mangareader.Library.Tests` (26 entri, nol wildcard) kini pemegang biaya
+enumerasi manual terbesar. Tepi sumber yang **memakai** wildcard tidak menuntut
+edit csproj saat file bertambah: `module/sharedLogic/cs/**\*.cs` di-link wildcard
+oleh `Module.Camoprof.csproj:10` dan `Module.Mangareader.csproj:10`; demikian juga
+`mangareader/shareLogic/Archive/*.cs`.
 
-→ `CITADEL-VIOLATIONS.md` V5 (biaya enumerasi manual) dan V6 (alasan tertulis
-yang sudah tidak cocok dengan isi).
+→ `CITADEL-VIOLATIONS.md` V5 (biaya enumerasi manual, sisa di Library.Tests) dan
+V6 (alasan tertulis yang sudah tidak cocok dengan isi).
 
 ### 2.9 Yang sudah cocok dengan konsep kernel yuz-ui
 
@@ -598,17 +602,18 @@ yang sudah tidak cocok dengan isi).
 
 ### 2.10 Rujukan register dari slice ini
 
-- **B1** — menambah satu provider menyentuh 9 file; 2 di antaranya manifest
-  build yang harus dirawat tangan (bukti git `21977e5`).
-- **B2** — 149 entri `Compile Include` manual lintas enam proyek test; 66 di
-  antaranya di `Module.Mangareader.Downloader.Tests`.
-- **B3** — registry sumber adalah daftar `new` eksplisit per provider.
-- **A3** — alasan tertulis "Screen XAML is not linked" sudah tidak cocok dengan
-  isinya (lima `Page Include` XAML).
+- **B1** - menambah satu provider menyentuh 9 file pada commit `21977e5`; 2 di
+  antaranya manifest build yang harus dirawat tangan (bukti git `21977e5`). Hari
+  ini baris manifest test-nya sudah hilang karena csproj Downloader memakai glob.
+- **B2** - 80 entri `Compile Include` manual lintas tujuh proyek test; 26 di
+  antaranya di `Module.Mangareader.Library.Tests`, yang masih nol wildcard.
+- **B3** - registry sumber adalah daftar `new` eksplisit per provider.
+- **A3** - alasan tertulis "Screen XAML is not linked" sudah tidak cocok dengan
+  isinya (glob `Page Include` menyeret seluruh XAML Downloader).
 - **C1/C2** — tepi `Compile Include` dan baseline citizen tak terlihat hook.
 - **C3** — FM-1/FM-2/FM-3 tidak dijaga mesin mana pun; di sinilah gejala owner
   hidup.
-- **C6** — gate Stop tidak mengompilasi `ftf`, `proxy`, dan `blank`.
+- **C6** — gate Stop tidak mengompilasi `proxy`, `agentrouter`, dan `blank`.
 - **C8** — hook meloloskan proyek yang belum ada di tabel `ALLOWED`.
 - **D1** — `module/credenz` adalah vault kredensial 499 MB di dalam folder yang
   didokumentasikan sebagai "drop-in screens" (gitignore-nya benar, nol

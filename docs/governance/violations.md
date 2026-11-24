@@ -49,7 +49,7 @@ sejumlah besar batas citadel justru **terkunci mesin dan nol pelanggaran**.
 | A3 | "Screen XAML is not linked", nyata 5 `Page Include` XAML | A | ringan | TERCATAT |
 | A4 | "pairs enforced at launch", nyata Guard hanya memperingatkan | A | ringan | TERCATAT |
 | B1 | Tambah 1 provider = 9 file, 2 di antaranya manifest build | B | **berat** | TERCATAT |
-| B2 | 149 entri `Compile Include` manual lintas 6 proyek test | B | **berat** | TERCATAT |
+| B2 | 80 entri `Compile Include` manual lintas 7 proyek test | B | **berat** | TERCATAT |
 | B3 | Registry sumber = daftar `new` eksplisit per provider | B | sedang | TERCATAT |
 | B4 | `Citizen.targets` hanya dukung satu plugin pyhost; citizen butuh dua → target duplikat | B | sedang | TERCATAT |
 | C1 | `Compile Include` lintas folder tak terlihat hook | C | sedang | TERCATAT |
@@ -57,10 +57,10 @@ sejumlah besar batas citadel justru **terkunci mesin dan nol pelanggaran**.
 | C3 | FM-1/FM-2/FM-3 tak dijaga mesin mana pun | C | **berat** | TERCATAT |
 | C4 | `Rpl` ↔ `Crl` saling import (siklus namespace) | C | sedang | TERCATAT |
 | C5 | Tepi runtime Ui→Setting tak ada di graf compile-time | C | ringan | TERCATAT |
-| C6 | Gate Stop tidak mengompilasi `ftf`, `proxy`, `blank` | C | sedang | TERCATAT |
+| C6 | Gate Stop tidak mengompilasi satu citizen pun; CI melewatkan `yuzvid` | C | sedang | TERCATAT |
 | C7 | State kegagalan update dibangun di dua lapisan | C | ringan | TERCATAT |
 | C8 | Hook meloloskan proyek yang belum ada di tabel `ALLOWED` | C | sedang | TERCATAT |
-| D1 | `module/` memegang empat peran, termasuk vault kredensial 499 MB | D | sedang | TERCATAT |
+| D1 | `module/` memegang dua peran (`sharedLogic` + vault kredensial 499 MB) | D | sedang | TERCATAT |
 | D2 | `PowerSaving.cs` di root proyek, namespace-nya `.Crl` | D | ringan | TERCATAT |
 | D3 | `Tokens.cs` memuat empat tipe publik | D | ringan | TERCATAT |
 | D4 | `Overrides.cs` memegang tiga pekerjaan | D | ringan | TERCATAT |
@@ -137,29 +137,32 @@ daftar di satu tempat; komentar bisa merujuk daftar itu alih-alih menyalin angka
 
 ---
 
-## A3 — "Screen XAML is not linked", nyata lima `Page Include` XAML
+## A3 — "Screen XAML is not linked", nyata seluruh XAML Downloader di-link
 
 **Aturan:** keakuratan alasan tertulis yang dipakai agent berikutnya untuk memutuskan.
 
-Klaim: `tests/Module.Mangareader.Downloader.Tests/…csproj:23-30` — "Screen XAML is
+Klaim: `tests/Module.Mangareader.Downloader.Tests/…csproj:24-31` — "Screen XAML is
 not linked, so these tests cover contracts, persistence, publication and decoding
 rather than rendering. The Comix filter panel is the one control that must come
 along, because the single registry entry constructs it."
 
-Kenyataan: **lima** XAML di-link, bukan satu — `ComixFilterPanel.xaml` (:33),
-`MangaMultiSelectFilter.xaml` (:38), `DrakeScansFilterPanel.xaml`,
-`CucumberMangaFilterPanel.xaml`, dan satu lagi pada jalur FilterSearch. Setiap
-provider baru menambah satu, karena setiap provider membawa panel filternya sendiri
-(lihat B1: commit `21977e5` menambah `CucumberMangaFilterPanel.xaml` sebagai
-`Page Include`).
+Kenyataan: csproj meng-glob **semua** XAML Downloader —
+`<Page Include="..\..\module\mangareader\Features\Downloader\**\*.xaml">` (`:61`).
+Delapan file, empat di antaranya layar penuh: `DownloaderView.xaml`,
+`Catalog/CatalogScreen.xaml`, `ManualUrl/ManualUrlScreen.xaml`,
+`Queue/DownloadListScreen.xaml`; empat sisanya panel filter provider
+(`ComixFilterPanel`, `CucumberMangaFilterPanel`, `DrakeScansFilterPanel`,
+`WeebCentralFilterPanel`).
 
-**Akibat:** pengecualian yang tadinya "satu kontrol" sekarang aturan de-facto
-"setiap panel filter provider ikut di-link". Agent yang membaca komentar itu akan
-menyimpulkan XAML tidak perlu di-link, lalu test-nya gagal konstruksi.
+**Akibat:** pengecualian yang ditulis "satu kontrol" adalah kenyataannya "semua
+XAML". Agent yang membaca komentar itu akan menyimpulkan XAML tidak perlu di-link,
+padahal glob menyeret layar sekaligus. Test tetap lolos karena `UseWPF` aktif dan
+`Compile` glob (`:60`) membawa code-behind-nya, tapi klaim cakupannya salah: test
+ini **mengompilasi** XAML layar, bukan sekadar kontrak dan persistensi.
 
-**Bentuk lurusnya nanti:** tulis aturannya sebagaimana adanya — "XAML screen
-tidak di-link; XAML **kontribusi filter provider** di-link karena registry
-mengkonstruksinya" — atau better, hapus pengecualian dengan membuat registry tidak
+**Bentuk lurusnya nanti:** tulis aturannya sebagaimana adanya — "seluruh XAML
+Downloader di-link lewat glob; test mengompilasi layar tapi tidak menjalankan
+render" — atau better, hapus pengecualian dengan membuat registry tidak
 mengkonstruksi UI (lihat B3).
 
 ---
@@ -204,8 +207,13 @@ Bukti dari riwayat git, bukan perkiraan. Commit `21977e5`
 | 9 | `version.props` | bump rilis | sah |
 
 Jadi dari 9 file: 5 sah (4 feature + 1 test), 1 sah karena dependensi baru, 1 sah
-karena rilis, **2 adalah biaya registrasi manual**. Bila provider tidak butuh
-NuGet baru, biayanya tetap 8 file dengan 2 di antaranya manifest.
+karena rilis, **2 adalah biaya registrasi manual**.
+
+**Biaya hari ini lebih kecil.** csproj test Downloader sudah memakai glob per
+folder feature (`Features\Downloader\**` dll.), jadi baris #7 tidak lagi berlaku:
+provider baru tidak menuntut entri csproj. Yang tersisa adalah #5
+(`MangaSourceRegistry.CreateDefault`) dan #9 (`version.props`), plus
+`ManualUrlProbeRegistry` bila provider mau dukungan manual-URL. Rinciannya di B3.
 
 Skala commit fitur lain untuk perbandingan:
 
@@ -221,57 +229,61 @@ Skala commit fitur lain untuk perbandingan:
 | `172f193` | run queue jobs in parallel | 3 |
 | `f132622` | replace downloader browser label with info icon | 2 |
 
-## B2 — 149 entri `Compile Include` manual lintas enam proyek test
+## B2 — 80 entri `Compile Include` manual lintas tujuh proyek test
 
 Proyek test tidak mereferensikan citizen (citizen tidak ada di `.slnx`), jadi
-mereka **me-link sumbernya file per file**:
+mereka me-link sumbernya ke dalam assembly test. Sebagian lewat glob, sebagian
+masih file per file:
 
 | Proyek test | entri `Compile Include` | wildcard |
 | --- | --- | --- |
-| `Module.Mangareader.Downloader.Tests` | 66 | 2 |
-| `Module.Mangareader.Reader.Tests` | 46 | 0 |
-| `Module.Mangareader.Library.Tests` | 16 | 0 |
-| `Module.Camoprof.Tests` | 10 | 1 |
+| `Module.Mangareader.Library.Tests` | 26 | 0 |
+| `Module.Mangareader.Downloader.Tests` | 16 | 6 |
+| `Module.Camoprof.Tests` | 11 | 1 |
+| `Module.Proxy.Tests` | 10 | 1 |
 | `Module.Mangareader.History.Tests` | 8 | 0 |
-| `Module.Mangareader.Archive.Tests` | 3 | 1 |
-| **total** | **149** | **4** |
+| `Module.Mangareader.Reader.Tests` | 7 | 2 |
+| `Module.Mangareader.Archive.Tests` | 2 | 1 |
+| **total** | **80** | **11** |
 
-Setiap file feature baru = satu entri baru di satu atau lebih csproj test. Inilah
-mesin utama di balik B1 #7.
+Empat proyek (`Downloader`, `Reader`, `Archive`, `Camoprof`) sudah glob per folder
+feature, jadi menambah file di sana tidak menuntut entri csproj. Tiga proyek masih
+manual sepenuhnya: `Library.Tests` (26/0), `History.Tests` (8/0), dan `Proxy.Tests`
+(10/1). **Di situlah** setiap file baru masih berarti satu entri baru.
 
 **Pola yang benar sudah ada di repo yang sama:** tepi sumber yang memakai wildcard
 tidak menuntut edit csproj saat file bertambah —
-`module/sharedLogic/cs/**\*.cs` di-link wildcard oleh `Module.Camoprof.csproj:10`,
-`Module.Mangareader.csproj:10`, dan entri terakhir `Downloader.Tests.csproj`;
-demikian juga `mangareader/shareLogic/Archive/*.cs`
-(`Module.Mangareader.Archive.Tests.csproj:21`). Jadi wildcard terbukti bisa
-dipakai; ia hanya tidak dipakai untuk folder feature.
+`module/sharedLogic/cs/**\*.cs` di-link wildcard oleh `Module.Camoprof.csproj:10`
+dan `Module.Mangareader.csproj:10`, demikian juga
+`mangareader/shareLogic/Archive/*.cs`
+(`Module.Mangareader.Archive.Tests.csproj:21`).
 
-**Kenapa tidak wildcard dari awal?** Alasannya tertulis dan sah sebagian: test
-ingin mengambil sumber murni Downloader **tanpa** XAML screen
-(`Downloader.Tests.csproj:23-30`). Wildcard folder akan menyeret XAML. Tapi
-akibatnya adalah manifest 66 baris yang harus dirawat tangan, dan A3 menunjukkan
-pengecualian XAML-nya sendiri sudah bocor.
+**Kenapa tidak semua wildcard?** Alasannya tertulis dan sah sebagian: test
+Downloader ingin mengambil sumber murni Downloader **tanpa** XAML screen
+(`Downloader.Tests.csproj:24-31`). Itu sudah diselesaikan dengan memisahkan
+`Compile` glob dan `Page` glob (`:60-61`, `:62-63`, `:67-68`).
 
-**Bentuk lurusnya nanti:** pisahkan sumber murni dari sumber ber-XAML **di disk**
-(misalnya `Features/Downloader/Sources/**` = murni, panel filter dipindah ke satu
-folder UI), lalu wildcard per folder. Atau: buat citizen bisa direferensikan
-proyek test tanpa masuk `.slnx` (ProjectReference dari test ke citizen sudah
-dikecualikan hook, `check-project-refs.mjs:41-42`), sehingga 149 entri hilang
-semua. Pilihan kedua menghapus B2 dan A3 sekaligus, dan tidak melanggar GR-1
+**Bentuk lurusnya nanti:** samakan `Library.Tests`, `History.Tests`, dan
+`Proxy.Tests` ke glob per folder, seperti empat proyek lainnya. Atau: buat citizen
+bisa direferensikan proyek test tanpa masuk `.slnx` (ProjectReference dari test ke
+citizen sudah dikecualikan hook, `check-project-refs.mjs:41-42`), sehingga seluruh
+entri hilang. Pilihan kedua menghapus B2 dan A3 sekaligus, dan tidak melanggar GR-1
 karena `tests/` memang bebas.
 
 ## B3 — Registry sumber adalah daftar `new` eksplisit per provider
 
-`Features/Downloader/Sources/MangaSourceRegistry.cs:93-105`: factory
+`Features/Downloader/Sources/MangaSourceRegistry.cs:113-156`: factory
 menulis `var comix = new Comix.ComixSource(client);` lalu
-`var cucumberManga = new CucumberManga.CucumberMangaSource();` dan menyusun daftar
-`MangaSourceRegistration` satu entri per provider, lengkap dengan lambda yang
-mengkonstruksi `FilterContribution` masing-masing.
+`var cucumberManga = new CucumberManga.CucumberMangaSource(client)` (atau
+`(client, transport)` bila proxy tersedia) dan menyusun daftar
+`MangaSourceRegistration` satu entri per provider (`:139-155`), lengkap dengan
+lambda yang mengkonstruksi `FilterContribution` masing-masing.
 
 **Ini sah menurut kontrak:** FM-3 justru menyarankan catalog pattern
 (`SKILL.md:102-114`). Jadi bukan pelanggaran. Tapi inilah satu-satunya bagian
 parent yang **wajib** diedit tiap provider bertambah, dan ia tumbuh linier.
+`ManualUrlProbeRegistry.cs:12-48` adalah titik kedua untuk provider yang mau
+dukungan manual-URL.
 
 **Bandingkan dengan yuz-ui:** di sana child mendaftar karena file-nya ADA
 (glob-by-convention, `D-CONTRACT`), jadi menambah child = menambah file, nol edit
@@ -319,7 +331,7 @@ graf:
 | --- | --- |
 | `module/sharedLogic/cs/**\*.cs` → dikompilasi ke dalam camoprof | `Module.Camoprof.csproj:10` |
 | `module/sharedLogic/cs/**\*.cs` → dikompilasi ke dalam mangareader | `Module.Mangareader.csproj:10` |
-| 149 entri sumber citizen → proyek test | lihat B2 |
+| 80 entri sumber citizen → proyek test | lihat B2 |
 
 Konsekuensi yang layak diketahui owner: karena `sharedLogic/cs` di-include sebagai
 **sumber**, tiap citizen mendapat **salinan tipenya sendiri** di assembly-nya
@@ -414,27 +426,38 @@ scrollbar auto-fade secara diam-diam — tidak ada build atau test yang merah.
 style bersama, bukan default. Murah, dan mengubah kegagalan diam-diam menjadi
 kegagalan yang terlihat.
 
-## C6 — Gate Stop tidak mengompilasi `ftf`, `proxy`, dan `blank`
+## C6 — Gate Stop tidak mengompilasi satu citizen pun, dan CI melewatkan `yuzvid`
 
-`gate-on-stop.mjs:34` menjalankan `dotnet test Citadel.slnx`. `Citadel.slnx:1-19`
-berisi 18 proyek: 6 core/setting/searcher/shell + 12 test. **Tidak ada citizen.**
+`gate-on-stop.mjs:34` menjalankan `dotnet test Citadel.slnx`. `Citadel.slnx` berisi
+17 proyek: 6 core/setting/searcher/shell + 11 test. **Tidak ada citizen.**
 
-| Citizen | Terkompilasi gate Stop? | Lewat mana |
+| Citizen | Gate Stop (hook)? | CI (`ci.yml` "Build citizens")? |
 | --- | --- | --- |
-| `mangareader` | sebagian | 5 proyek test me-link 139 entrinya (B2) |
-| `camoprof` | sebagian | `Module.Camoprof.Tests` me-link 10 entri |
-| `ftf` | **tidak** | tidak ada di slnx, tidak ada test project-nya |
-| `proxy` | **tidak** | tidak ada di slnx, tidak ada test project-nya |
-| `blank` | ya | `Citadel.Uia.csproj:45` mereferensikan `Module.Blank.csproj` |
+| `mangareader` | sebagian — 5 proyek test me-link 139 entrinya (B2) | ya |
+| `camoprof` | sebagian — `Module.Camoprof.Tests` me-link 10 entri | ya |
+| `proxy` | **tidak** — `Module.Proxy.Tests` ada tapi tidak terdaftar di slnx | ya |
+| `agentrouter` | **tidak** — tanpa proyek test C# | ya |
+| `blank` | ya — `Citadel.Uia.csproj:45` mereferensikannya | ya |
+| `yuzvid` | **tidak** | **tidak** — tidak ada di daftar `Build citizens` |
 
-Jadi tiga citizen bisa rusak oleh suntingan agent dan gate Stop tetap hijau.
+Dua akibat yang berbeda, dan yang kedua lebih berbahaya:
+
+1. **Hook Stop tidak melihat citizen sama sekali.** Agent bisa menyunting
+   `module/proxy/**` dan hook tetap hijau. Test-nya pun tidak dijalankan: 8 file di
+   `Module.Proxy.Tests`, termasuk `ProxyLevelBGuardTests`, tidak pernah masuk
+   `dotnet test`.
+2. **CI membangun lima dari enam citizen.** `Module.Yuzvid.csproj` tidak ada di
+   langkah `Build citizens`, jadi satu-satunya citizen yang tidak pernah
+   dikompilasi mesin mana pun adalah `yuzvid` — 26 file cs/xaml, 5.424 baris.
+
 Catatan: ini konsekuensi **sengaja** dari keputusan "citizen tidak masuk slnx"
-(`Module.Blank.csproj:9-11`) yang justru membuat "tambah screen tanpa edit apa pun
-di luar module/" menjadi benar. Trade-off-nya nyata dan belum tercatat di mana pun.
+(`module/blank/Module.Blank.csproj:3-10`) yang justru membuat "tambah screen tanpa
+edit apa pun di luar module/" menjadi benar. Trade-off-nya nyata.
 
-**Bentuk lurusnya nanti:** gate Stop (atau `Build-Release.ps1`) menambahkan satu
-langkah `dotnet build` untuk setiap citizen yang ada di `module/`, tanpa
-memasukkannya ke `.slnx`. Menjaga janji plug-and-play sekaligus menutup lubang ini.
+**Bentuk lurusnya nanti:** tambahkan `module/yuzvid/Module.Yuzvid.csproj` ke langkah
+`Build citizens`, dan jalankan proyek test citizen yang sudah ada
+(`Module.Proxy.Tests`, `Module.Mangareader.Engines.Tests`) sebagai langkah CI
+terpisah — keduanya tidak perlu masuk `.slnx`.
 
 ## C7 — State kegagalan update dibangun di dua lapisan
 
@@ -476,38 +499,35 @@ proyek baru memaksa keputusan sadar di tabel.
 Owner membaca proyek lewat nama folder dan nama file. Kategori ini mencatat tempat
 nama tidak lagi menceritakan isi.
 
-## D1 — `module/` memegang empat peran
+## D1 — `module/` memegang dua peran
 
-`docs/README.md:11` mendefinisikan `module/` sebagai "screen discovery plus
-independently deployable citizen screens" — satu folder, dua pekerjaan, dan
-kenyataannya empat:
+`module/` seharusnya berarti satu hal: screen drop-in. Kenyataannya ia memegang dua:
 
 | Isi `module/` | Peran | Citizen? | Boleh dihapus? |
 | --- | --- | --- | --- |
-| `blank`, `camoprof`, `ftf`, `mangareader`, `proxy` | screen drop-in | ya | ya, bersih |
-| `Citadel.Searcher` | infrastruktur discovery | tidak (tanpa `module.json`) | **tidak** — app runtuh |
+| `blank`, `camoprof`, `agentrouter`, `mangareader`, `proxy`, `yuzvid` | screen drop-in | ya | ya, bersih |
 | `sharedLogic` | payload runtime bersama (cs + python) | tidak | **tidak** |
-| `Citizen.targets` | kontrak build bersama | bukan folder | **tidak** |
-| `credenz` | **vault kredensial 499 MB** (identity.json, password.dat, profil browser) | tidak | bukan kode |
+| `credenz` | **vault kredensial ±499 MB** (identity.json, password.dat, profil browser) | tidak | bukan kode |
 
-Alasan keberadaan searcher di sana tertulis dan masuk akal: "Searching is module
-logic, not core logic, so it lives at module/ root: shared by every screen, owned
-by none" (`Citadel.Searcher.csproj:4-6`).
+Bagian kernel yang dulu tinggal di sini sudah pindah ke `core/` di commit `a313f06`
+(step 13): `Citadel.Searcher` dan `Citizen.targets`. Satu sisa yang masih mekanisme,
+bukan payload, adalah `sharedLogic/pyhost/` — host plugin python; ia di-deploy sebagai
+sibling `module\` justru supaya tidak terlihat sebagai citizen
+(`Citizen.targets:87-94`).
 
 **Soal `credenz`, satu hal yang harus dikatakan jelas:** tidak ada kebocoran.
 `.gitignore:35-45` mengecualikannya dengan hati-hati dan hanya dua file yang
-ter-track git (`module/credenz/README.md`, `google/profiles/.gitkeep`, diverifikasi
-2026-09-11). Tapi 499 MB kredensial hidup dan profil browser nyata berada **di
-dalam folder yang didokumentasikan sebagai tempat screen drop-in**. Konsekuensi
-praktisnya: `Build-Release.ps1` "counts `module\*` directories against citizen
-projects" (`Citizen.targets:90-91`) — perlu diverifikasi di slice 8 apakah
-`credenz` ikut terhitung.
+ter-track git (`module/credenz/README.md`, `google/profiles/.gitkeep`). Tapi 499 MB
+kredensial hidup dan profil browser nyata berada **di dalam folder yang
+didokumentasikan sebagai tempat screen drop-in**. Konsekuensi praktisnya:
+`Build-Release.ps1` menghitung `module\*` sebagai kandidat citizen
+(`Citizen.targets:90-91`), jadi `credenz` ikut terhitung dan dilewati hanya karena
+tidak punya csproj.
 
-**Bentuk lurusnya nanti:** pindahkan infrastruktur (`Citadel.Searcher`,
-`Citizen.targets`, `sharedLogic`) ke folder bernama perannya (`platform/` atau
-`host/`), dan vault ke luar `module/` sama sekali (misalnya `%LOCALAPPDATA%`
-atau folder `vault/` di root). Hasilnya `module/` berarti persis "screen drop-in,
-semuanya boleh dihapus".
+**Bentuk lurusnya nanti:** pindahkan `sharedLogic` ke folder bernama perannya
+(`platform/` atau `host/`), dan vault ke luar `module/` sama sekali (misalnya
+`%LOCALAPPDATA%` atau folder `vault/` di root). Hasilnya `module/` berarti persis
+"screen drop-in, semuanya boleh dihapus".
 
 ## D2 — `PowerSaving.cs` berada di root proyek, namespace-nya `Citadel.Core.Crl`
 
@@ -677,7 +697,7 @@ mendukung itu di lapisan antar-proyek. Yang terverifikasi bersih:
 # Bagian kedua — temuan slice 3 sampai 8
 
 Ditambahkan 2026-09-11 setelah `setting/`, `sharedLogic/`, `mangareader`,
-`camoprof`, `ftf`/`proxy`, `credenz`, `tests/`, dan `tools/` dipetakan.
+`camoprof`, `proxy`, `credenz`, `tests/`, dan `tools/` dipetakan.
 
 ## Indeks bagian kedua
 
@@ -689,10 +709,11 @@ Ditambahkan 2026-09-11 setelah `setting/`, `sharedLogic/`, `mangareader`,
 | A7 | "v2 — not implemented, do not build ahead" untuk kemampuan yang sudah rilis | A | ringan |
 | A8 | `sharedLogic/README.md` drift: kurang `CredenzPath`, `providers/`, `tests/`; salah cakupan deploy | A | ringan |
 | A9 | Lima "behavior pair" ternyata pasangan dictionary+class, bukan code-behind x:Class | A | ringan |
-| A10 | "satu-satunya titik registrasi" vs `ManualUrlProbeRegistry` + csproj test | A | sedang |
+| A10 | "satu-satunya titik registrasi" vs `ManualUrlProbeRegistry` | A | sedang |
 | A11 | Parent mangareader: "never interprets provider behavior" dibantah kodenya sendiri | A | sedang |
 | A12 | "Catalog Mirror composes its own snapshot store" — parent yang mengonstruksi | A | sedang |
 | A13 | "the queue's own answer is returned as-is" — parent menjumlah ulang pencacah | A | sedang |
+| A14 | "raw canonical never exposed through UI" vs `ActiveProxyDisplay` menampilkan endpoint ber-kredensial | A | **berat** |
 | B4 | `Citizen.targets` hanya dukung satu plugin pyhost; mangareader menulis target duplikat | B | sedang |
 | B5 | **Positif:** lapisan python sudah self-registration sejati | B | — |
 | B6 | Biaya tambah feature berbeda jauh: Reader nol edit host, Downloader 2–4 | B | **berat** |
@@ -704,7 +725,7 @@ Ditambahkan 2026-09-11 setelah `setting/`, `sharedLogic/`, `mangareader`,
 | C13 | Siklus import `shareLogic/Archive` ↔ `Features/Rar` | C | **berat** |
 | C14 | Parent mangareader menjangkau 10 internal CatalogMirror + static Downloader | C | **berat** |
 | C15 | Area tanpa cakupan test, termasuk parent module | C | sedang |
-| D9 | `ftf`/`proxy` kerang; pekerjaan python hilang dari git, hanya `.pyc` tersisa | D | **berat** |
+| D9 | sumber python `proxy_plugin` di luar version control (`artifacts/`, bukan repo) | D | sedang |
 | D10 | `PyHost.cs` 595 baris, beberapa pekerjaan termasuk wrapper khusus Google | D | sedang |
 | D11 | `RuntimeSetup.cs` 578 baris, beberapa pekerjaan | D | ringan |
 | D12 | `AppearanceScreen.cs` 629 baris, `GalleryScreen.cs` 456 baris | D | ringan |
@@ -869,17 +890,14 @@ Pola ini sah dan konsisten, tapi berbeda dari yang dibayangkan pembaca dokumen. 
 benar-benar pasangan x:Class: `Button`, `Field`, `PasswordField`, `Toggle`, `Slider`,
 `Table`, `ScrollBar`, `Drawer`, `WindowChrome`.
 
-## A10 — "satu-satunya titik registrasi" padahal ada dua, plus manifest test
+## A10 - "satu-satunya titik registrasi" padahal ada dua
 
-`MangaSourceRegistry.cs:104-107` mengklaim "The one explicit registration point…
+`MangaSourceRegistry.cs:104-107` mengklaim "The one explicit registration point.
 the Downloader parent and Catalog composition are never edited". Benar untuk parent
-dan Catalog. Tapi:
-
-- `ManualUrl/ManualUrlProbeRegistry.cs:10-28` adalah titik registrasi per-provider
-  **kedua**, dan ia menyebut tiga tipe provider konkret (Comix + DrakeScans +
-  DynamicManual, `:2-3,14-25`). DrakeScans membutuhkannya; CucumberManga tidak.
-- csproj test menuntut edit per file (`Downloader.Tests.csproj:93-119` untuk
-  Cucumber/DrakeScans).
+dan Catalog. Tapi `ManualUrl/ManualUrlProbeRegistry.cs:12-48` adalah titik
+registrasi per-provider **kedua**, dan ia menyebut tujuh tipe provider konkret
+(Comix + CucumberManga + DrakeScans + AsuraScans + ThunderScans + WeebCentral +
+DynamicManual, `:2-7,18-45`).
 
 Jadi "satu titik" hanya benar bila lingkupnya dipersempit ke registry sumber.
 
@@ -893,22 +911,51 @@ Dibantah oleh file yang sama: parent **mengonstruksi** `UpdateMatcher` dan
 `UpdateCheckerFeature` (`:79-88`), dan mengimplementasi `ReadConfirmedMapping`
 (`:329-342`) yang membaca store internal Downloader `index.Load().Mappings` (`:333`).
 
-## A12 — "Catalog Mirror composes its own snapshot store" — parent yang mengonstruksi
+## A12 — "Catalog Mirror composes its own snapshot store" — tidak lagi terbukti di kode aktif
 
-Komentar `MangaReaderView.xaml.cs:93-95` menyatakan CatalogMirror mengomposisi
-dirinya lewat proyeksi netral plus snapshot store-nya sendiri. Kenyataannya parent,
-bukan CatalogMirror, yang mengonstruksi setiap internalnya (`:101-169`), termasuk
-`catalogStore.Database` (`:114`).
+Dulu komentar `MangaReaderView.xaml.cs:93-95` menyatakan CatalogMirror mengomposisi
+dirinya lewat proyeksi netral plus snapshot store-nya sendiri, padahal parent yang
+mengonstruksi setiap internalnya.
+
+Keadaan sekarang: CatalogMirror **tidak dipasang** di aplikasi. `MangaReaderView`
+tidak pernah mengonstruksi `CatalogMirrorView` maupun `CatalogSnapshotStore`, dan
+tidak ada `Catalog` tab di `MangaReaderView.xaml`. Yang tersisa hanya seam injeksi
+yang tidak dipanggil siapa pun: `CatalogView.UseContext` (`CatalogView.xaml.cs:23`),
+`CatalogMirrorView.UseContext` (`CatalogMirrorView.xaml.cs:88`) dan
+`CatalogMirrorView.UseFeature` (`:103`). Temuan ini karena itu turun jadi catatan
+seam yatim, bukan pelanggaran komposisi yang bisa direproduksi.
 
 ## A13 — "the queue's own answer is returned as-is" — parent menjumlah ulang
 
-Komentar `MangaReaderView.xaml.cs:216-218`: "the queue's own answer is returned
-as-is … never reinterpreted here." `EnqueueUpdate` (`:349-379`) **menjumlah ulang**
-dua pencacah skip milik queue (`:367-370`).
+Komentar `MangaReaderHandoffs.cs:156-157`: "The queue's own answer is returned
+as-is … never reinterpreted here." `EnqueueUpdate` (`:54-74`) **menjumlah ulang**
+dua pencacah skip milik queue (`:69-74`).
 
 Catatan: `UpdateCheckerFeature.cs:35-37` ("Update Checker never calls a queue
 itself — the composition root supplies the route") **akurat**; yang meleset adalah
 klaim bahwa rute itu tidak menafsirkan ulang.
+
+## A14 - "raw canonical never exposed through UI", nyata ditampilkan mentah
+
+Komentar `shareLogic/ProxyLeaseRegistry.cs:16-21`: "The raw canonical value is
+never exposed through snapshots or UI." Kenyataannya `ProxyEndpoint.Canonical`
+**menyertakan kredensial** - `module/sharedLogic/cs/ProxyPoolContract.cs:130-134`
+menyusunnya sebagai `scheme://user:pass@host:port` - sementara bentuk amannya
+sudah tersedia sebagai `ProxyEndpoint.Masked` (`:165-167`).
+
+`DownloaderPyHostClient.SetOpenedSession` menulis
+`activeLease?.Endpoint.Canonical` ke `_activeProxyDisplay`
+(`Features/Downloader/DownloaderPyHostClient.cs:838`), lalu `CatalogScreen`
+menampilkannya apa adanya di `ActiveProxyText.Text`
+(`Features/Downloader/Catalog/CatalogScreen.xaml.cs:608-613`). Jadi endpoint
+ber-kredensial tampil di layar Catalog.
+
+Klaim yang sama juga dilanggar di `module/proxy/IMPLEMENTATION-PLAN.md:70`
+("Never print authenticated proxy credentials; UI and logs show a masked
+address").
+
+**Bentuk lurusnya nanti:** `ActiveProxyDisplay` memakai `Endpoint.Masked` (atau
+`Server` bila tanpa auth); `Canonical` tetap dipakai sebagai kunci internal saja.
 
 ---
 
@@ -966,7 +1013,8 @@ baru yang harus dirintis — ia pola yang harus dipindah.
 | `mangareader/Features/Downloader/` (provider) | 2–5 file baru + **2 tempat** di `MangaSourceRegistry.cs:108-129` + mungkin `ManualUrlProbeRegistry.cs:10-28` + entri manual csproj test + `version.props` |
 | `mangareader/` (tab tingkat atas) | **2 file parent** wajib diedit (§B7) |
 | `camoprof/` | minimum **2 file** diedit; feature Launcher realistis **4–5 file** |
-| `ftf`/`proxy` | `*View.xaml` + `layout.json` + folder baru (belum ada feature untuk dibandingkan) |
+| `proxy` | `*View.xaml` + `layout.json` + folder baru; parent sudah punya 4 host tab |
+| `agentrouter` | `*View.xaml` + `layout.json` + folder baru |
 
 Reader membuktikan bentuk yang diinginkan owner **sudah mungkin** di codebase ini.
 Perbedaannya bukan teknologi — ia ada atau tidak adanya katalog + host yang
@@ -1120,7 +1168,9 @@ baris) menyebut **nol** tipe feature konkret; keduabelas feature hanya muncul di
 
 | Area | Keadaan |
 | --- | --- |
-| `module/ftf/`, `module/proxy/` | tanpa proyek test, tidak di `.slnx`, CI tidak pernah mengompilasi; pertama kali terkompilasi di `Build-Release.ps1:71-80` |
+| `module/proxy/` | punya 8 file di `Module.Proxy.Tests` (termasuk Level-B guard) tapi proyeknya tidak di `.slnx` — `dotnet test` tidak menjalankannya; kompilasinya ditutup CI langkah `Build citizens` |
+| `module/agentrouter/` | tanpa proyek test C#; hanya guard python yang juga tidak ikut gate |
+| `module/yuzvid/` | 3 file test python (`tests/test_yuzvid_*.py`) yang tidak ikut gate; tidak ada proyek test C#; `Module.Yuzvid.csproj` juga tidak ada di langkah CI `Build citizens` |
 | `module/blank/` | tanpa unit test; hanya dipakai sebagai artefak ter-deploy oleh `Citadel.Uia` (`:32-34`) |
 | **`MangaReaderView.xaml(.cs)` — parent module 412 baris** | **tanpa test**, padahal ia memuat logika availability, aturan tabrakan folder, dan translasi queue (§A11–A13) |
 | `MangaReaderModule.cs`, `MangaTitleCard.xaml(.cs)` | tanpa test |
@@ -1137,45 +1187,28 @@ bertahan — tidak ada yang menguji klaim yang ditulis parent tentang dirinya se
 
 ---
 
-## D9 — `ftf` dan `proxy` kerang, dengan pekerjaan python yang hilang dari git
+## D9 — sumber python `proxy_plugin` di luar version control
 
-Masing-masing **hanya 6 file ter-track** (`git ls-files`): `*Module.cs`,
-`*View.xaml`, `*View.xaml.cs`, `*.csproj`, `layout.json`, `module.json`. Code-behind
-9 baris, hanya `InitializeComponent` (`FtfView.xaml.cs:6-9`, `ProxyView.xaml.cs:6-9`),
-dengan komentar "feature behavior belongs in feature folders" (`:5`) — niatnya benar,
-foldernya kosong.
-
-Folder feature **kosong di git**: `ftf/Backend/`, `ftf/Features/{FaucetRun, GSuite,
-Profiles, Results}/`, `proxy/Features/{Pool, Settings, Sync}/`.
-
-Yang tersisa di disk hanya jejak:
+`module/proxy/Features/Pool/proxy_plugin/` hanya berisi `__pycache__` — nol file
+`.py` di pohon kerja:
 
 ```text
-ftf/Features/FaucetRun/ftf_plugin/__pycache__/adapter.cpython-312.pyc
-ftf/Features/FaucetRun/ftf_plugin/__pycache__/pipeline.cpython-312.pyc
-ftf/Features/FaucetRun/ftf_plugin/tests/__pycache__/test_pipeline.cpython-312-pytest-8.4.1.pyc
 proxy/Features/Pool/proxy_plugin/__pycache__/pool.cpython-312.pyc
 proxy/Features/Pool/proxy_plugin/tests/__pycache__/test_pool.cpython-312-pytest-8.4.1.pyc
-ftf/Features/FaucetRun/.pytest_cache/   proxy/Features/Pool/.pytest_cache/
-obj/Debug/.../Features/GSuite/GSuiteView.g.cs · SettingsView.g.cs · SyncView.g.cs
-artifacts/recovery-ftf-proxy-2.1.3-20260907
+proxy/Features/Pool/.pytest_cache/
 ```
 
-`.py` sumbernya **tidak ada di disk dan tidak pernah ada di riwayat git**
-(`git log --diff-filter=D -- module/ftf module/proxy` kosong). `.gitignore:52-54`
-mengabaikan `__pycache__/`, `*.pyc`, `*.pyo`; `.pytest_cache/` mengabaikan dirinya
-sendiri lewat `.gitignore` buatan pytest. Karena itu **`git status` tampak bersih**.
+Sumbernya ada di `artifacts/recovery-ftf-proxy-2.1.3-20260907/proxy_plugin/`
+(`__init__`, `plugin`, `pool`), dan `artifacts/` di-ignore `.gitignore:5` dengan nol
+file ter-track. Jadi plugin yang dipakai saat ini berada di luar version control —
+bisa dipulihkan, tapi tidak ikut repo.
 
-**Yang perlu owner ketahui:** ada kerja python untuk FTF faucet-pipeline (`adapter`,
-`pipeline`, `test_pipeline`) dan Proxy pool (`pool`, `test_pool`) yang pernah
-dijalankan dan diuji di mesin ini, lalu sumbernya hilang. `.pyc` bisa
-di-dekompilasi sebagian, dan `artifacts/recovery-ftf-proxy-2.1.3-20260907`
-menunjukkan pernah ada upaya pemulihan. Ini bukan kebocoran rahasia — ini **pekerjaan
-yang hilang tanpa jejak di version control**.
+`.gitignore:52-54` mengabaikan `__pycache__/`, `*.pyc`, `*.pyo`; `.pytest_cache/`
+mengabaikan dirinya sendiri lewat `.gitignore` buatan pytest. Karena itu
+**`git status` tampak bersih** walau sumbernya tidak ada.
 
-**Bentuk lurusnya nanti:** (1) putuskan apakah ftf/proxy dilanjutkan atau
-dipensiunkan; (2) bila dilanjutkan, periksa `.pyc` dan folder recovery **sebelum**
-menulis ulang, karena kemungkinan besar isinya bisa dipulihkan; (3) tambahkan aturan
+**Bentuk lurusnya nanti:** (1) salin `proxy_plugin/*.py` dari folder recovery ke
+`module/proxy/Features/Pool/proxy_plugin/` dan commit; (2) tambahkan aturan
 `.gitignore` yang tidak mengabaikan `*.py` di dalam `module/` — sumber python citizen
 adalah kode produksi, dan pola plugin pyhost (`Citizen.targets:196-214`) memang
 mengharapkan `Features/*/<paket>/*.py` ter-commit.
@@ -1401,7 +1434,7 @@ hasilnya lebih spesifik dari dugaan**:
    BUG-1 membuat retry throttling CatalogMirror mati total, dan akar penyebabnya
    adalah dua tipe exception bernama identik hasil duplikasi provider (C12).
 4. **Gejala "banyak file tersentuh" punya tiga sumber berbeda**, bukan satu:
-   enumerasi manual di manifest test (B2, 149 entri), registrasi `new` eksplisit di
+   enumerasi manual di manifest test (B2, 80 entri), registrasi `new` eksplisit di
    registry (B3), dan parent yang meng-hardwire set feature (B7, camoprof §1.1).
 5. **Bentuk yang diinginkan owner sudah terbukti di tiga tempat dalam repo ini**:
    `Reader/` (katalog + host + nol edit untuk feature visual/drawer),
@@ -1409,7 +1442,6 @@ hasilnya lebih spesifik dari dugaan**:
    module discovery (folder hadir = terdaftar). Jadi perbaikan bukan merintis pola
    baru, melainkan **memindahkan pola yang sudah ada** ke lapisan yang belum
    memakainya.
-
 
 ---
 
@@ -1436,7 +1468,6 @@ hasilnya lebih spesifik dari dugaan**:
 - **Belum disentuh:** A1-A13 selain yang disebut, B1-B7, C1-C2, C4-C15 selain yang
   disebut, D1-D26.
 
-
 ### Koreksi framing C14/D22 (2026-09-11, setelah analisa baris-per-baris)
 
 Membaca MangaReaderView.xaml.cs penuh mengubah vonis: lima blok yang semula
@@ -1456,7 +1487,6 @@ kini hanya komposisi + navigasi + lifecycle. Perilaku identik; suite 929 hijau.
 Sisa C14 yang BENAR-BENAR terbuka (bukan bagian plan ini): parent masih
 mengonstruksi seluruh fitur inline tanpa katalog/gate seragam seperti Reader. Itu
 refactor interface besar dan tercatat terpisah, bukan sebagai pelanggaran mendesak.
-
 
 ## KOREKSI BESAR: BUG-1 BUKAN bug (2026-09-11)
 

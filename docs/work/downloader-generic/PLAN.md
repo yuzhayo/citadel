@@ -18,8 +18,8 @@ Referensi eksternal: `C:\VSCODE\ARTEFACT\Suwayomi-Server` (read-only study).
    signature-nya, **tambah situs = 0 file C#, 0 baris registrasi**.
 2. Yang **belum** ada: profil per-situs sebagai **data** (selector/route/header/UA
    dibekukan jadi konstanta di dalam `DynamicManualHtmlParser`).
-3. **Biaya sebenarnya menambah provider ke-6** (terukur): 4 file baru + 2 daftar
-   registrasi + opsional 2–3 file filter + 1 assertion test.registrasi.
+3. **Biaya sebenarnya menambah satu provider** (terukur): 4 file baru + 2 daftar
+   registrasi + opsional 1-3 file filter + 1 assertion test.
 4. **Core Citadel tidak provider-agnostic**: ada 4 cabang `comix` hardcode di
    `DownloadQueueFeature` + `new ComixSource()` di `QueueManifestSession`. Ini
    penyakit yang **Suwayomi tidak punya** (audit grep: 0 branch per-provider di
@@ -45,20 +45,23 @@ Catalog (browse/search) → pilih title → chapter list → pilih chapter
   → staging dibersihkan
 ```
 
-**5 provider terdaftar** (`MangaSourceRegistry.CreateDefault`, L105–150):
+**6 provider terdaftar** (`MangaSourceRegistry.CreateDefault`, L110-156), plus
+satu auxiliary:
 
 | Source | Mekanisme | Parser | Transform | Aktivasi/session |
 |---|---|---|---|---|
-| `comix` | browser pyhost → site Axios (signed/decrypted JSON) | inline di source (1.621 baris) | descramble xorshift | ✅ persistent browser profile, WAF wait, token via interceptor |
-| `cucumber-manga` | WordPress/Madara HTML + AJAX POST | `CucumberMangaHtmlParser` (372) | — | cookie client; tolak CF |
-| `drake-scans` | JSON + Next.js RSC (`?_rsc=1`) | `DrakeScansJsonParser` + `DrakeScansRscParser` (545 total) | — | — |
-| `asura-scans` | API JSON + HTML + XML sitemap | 2 parser (279 total) | — | — |
-| `thunder-scans` | sitemap + HTML + embedded reader JSON | `ThunderScansHtmlParser` + `TitleAdapter` (205 total) | — | — |
-| `manual-url` (auxiliary) | native HTTP GET/POST + HTML generik | `DynamicManualHtmlParser` (238) | — | — |
+| `comix` | browser pyhost → site Axios (signed/decrypted JSON) | inline di source (1.621 baris) | descramble xorshift | persistent browser profile, WAF wait, token via interceptor |
+| `cucumber-manga` | WordPress/Madara HTML + AJAX POST | `CucumberMangaHtmlParser` (372) | - | cookie client; tolak CF |
+| `drake-scans` | JSON + Next.js RSC (`?_rsc=1`) | `DrakeScansJsonParser` + `DrakeScansRscParser` (545 total) | - | - |
+| `asura-scans` | API JSON + HTML + XML sitemap | 2 parser (279 total) | - | - |
+| `thunder-scans` | sitemap + HTML + embedded reader JSON | `ThunderScansHtmlParser` + `TitleAdapter` (205 total) | - | - |
+| `weeb-central` | HTMX server-rendered fragment lewat native HTTP: satu GET `/search/data` untuk browse/search, satu reader fragment memuat seluruh chapter | `WeebCentralHtmlParser` (334) | - | native HTTP saja; tanpa browser session, tanpa `IQueueSourceReadiness` |
+| `manual-url` (auxiliary) | native HTTP GET/POST + HTML generik | `DynamicManualHtmlParser` (238) | - | - |
 
 `manual-url` sengaja **tersembunyi** dari dropdown Catalog (auxiliary source,
-`MangaSourceRegistry.cs:131–149`) tapi bisa di-resolve `FindSource("manual-url")`
-oleh Queue.
+`MangaSourceRegistry.cs:134-136` dikembalikan di daftar auxiliary `:155`) tapi
+bisa di-resolve `FindSource("manual-url")` oleh Queue.
+
 
 ---
 
@@ -92,7 +95,7 @@ Browse/Lookup, tetap queueable, `DynamicManualSource.cs:68–75`).
 ## 3. Jalur URL generic yang SUDAH ada (`manual-url`)
 
 Alur: `Catalog → Manual → tempel URL → ManualUrlFeature.LoadAsync → probes
-(Asura, Thunder, Drake, Cucumber, Comix) → fallback DynamicManualSource →
+(Asura, Thunder, WeebCentral, Drake, Cucumber, Comix) → fallback DynamicManualSource →
 RemoteTitleDetail → Catalog detail → queue → CBZ`.
 
 - `ManualUrlProbeRegistry.cs:13–43` — urutan probe fixed; dynamic **terakhir**.
@@ -121,26 +124,34 @@ signature; **bukan** URL-only universal.
 
 ---
 
-## 4. Biaya menambah provider ke-6 (terukur)
+## 4. Biaya menambah satu provider (terukur)
+
+Angka di bawah diukur ulang pada keadaan enam provider (AsuraScans, Comix,
+CucumberManga, DrakeScans, ThunderScans, WeebCentral). Riset awal 2026-09-25
+menghitung lima provider, jadi angka lama selalu lebih kecil satu.
 
 | Yang | File | Wajib? |
 |---|---|---|
 | Contract/konstanta (id, host, base URL, group, batas) | 1 baru | ya |
 | `IMangaSource` (11 member) | 1 baru (Comix 1.621 baris!) | ya |
-| Parser (JSON/HTML/RSC/embedded) | 1–2 baru | ya |
-| `XManualUrlProbe` (host+path+slug→delegate) | 1 baru | ya |
+| Parser (JSON/HTML/RSC/embedded) | 1-2 baru | ya |
+| `XManualUrlProbe` (host + path + slug → delegate) | 1 baru | ya |
 | Registrasi | `MangaSourceRegistry.CreateDefault` **+** `ManualUrlProbeRegistry.Create` (**2 daftar!**) | ya |
-| Filter contribution | 2–3 baru | opsional |
-| Assertion registry order test | `DrakeScansSourceTests.cs:208–218` | ya |
+| Filter contribution | 1-3 baru | opsional |
+| Assertion registry order test | `DrakeScansSourceTests.cs:208-218` | ya |
 
 Duplikasi terukur:
-- **55 member wajib** (5 source × 11)
-- 5× setup `HttpClient`/proxy transport; 5× `ManifestHash` builder; 5× page-format
-  detector; 5× manifest `Referer` dict; 5× normalisasi+dedup chapter; 5× URL
-  validator; 4× `GetGroupsAsync` singleton; 4× `FindAlternateGroupsAsync` empty;
-  12 helper validasi; 5× `ManualUrlProbe` (algoritmanya identik, hanya beda
-  8–33 baris formatting).
-- 3 source punya advanced-filter UI panel terpisah.
+
+- **66 member wajib** (6 source x 11)
+- 6x setup `HttpClient`/proxy transport; 6x `ManifestHash` builder; 6x page-format
+  detector; 6x manifest `Referer` dict; 6x normalisasi+dedup chapter; 6x URL
+  validator; 5x `GetGroupsAsync` singleton; 5x `FindAlternateGroupsAsync` empty;
+  12 helper validasi; 6x `ManualUrlProbe` (algoritmanya identik, hanya beda
+  formatting).
+- 4 source punya filter contribution sendiri (Comix, CucumberManga, DrakeScans,
+  WeebCentral); 2 di antaranya membawa panel XAML sendiri (Comix, DrakeScans).
+  AsuraScans dan ThunderScans memakai `NoFilterContribution`.
+
 
 ---
 
@@ -305,13 +316,13 @@ tidak bisa jadi data → `strategy: "comix-page-axios"` + `namedStrategy: "comix
 |---|---|---|
 | **Inc 0** | Fix D1 (referer bug) + D2 (hapus 3 state mati) | hygiene, kecil |
 | **Inc 1** | `SiteProfile` schema + loader JSON + `ProfileSource` (strategy `html` saja) | generic path pertama yang datadriven |
-| **Inc 2** | Migrasi 5 provider → JSON; **hapus 5 `ManualUrlProbe`**; 2 daftar registrasi → 1 | tambah situs = 1 file |
+| **Inc 2** | Migrasi 6 provider → JSON; **hapus 6 `ManualUrlProbe`**; 2 daftar registrasi → 1 | tambah situs = 1 file |
 | **Inc 3** | Tambah strategy `json`/`rsc`/`embeddedJson`/`sitemap` | \<80% situs covered |
 | **Inc 4** | Hilangkan D3/D4: generic session factory (`Func<ProxyLease, IMangaSource>`), referer dari manifest | inti benar-benar generik |
 | **Inc 5** | Tier 1: provider module (DLL) via citizen loader | situsmedian tanpa edit app |
 | **Inc 6** | Bookmark store (remote-only, durable) — D7 | sesuai kalimat "di-bookmark" |
 
-Inc 0 dan Inc 4 adalah prasyarat: tanpa Inc 4, menambah provider ke-6 akan
+Inc 0 dan Inc 4 adalah prasyarat: tanpa Inc 4, menambah provider baru akan
 menabrak cabang Comix.
 
 ---

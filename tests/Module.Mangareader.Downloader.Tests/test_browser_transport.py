@@ -59,25 +59,59 @@ class ComixPageReadinessTests(unittest.IsolatedAsyncioTestCase):
             "https://comix.ws/@waf/challenge?return=%2Fbrowse"))
         self.assertFalse(BROWSER_MODULE._is_waf_challenge("https://comix.ws/browse"))
 
-    async def test_bridge_uses_same_origin_env_module_from_current_document(self):
-        page = _BridgePage("https://comix.ws/env-a1b2.js")
+    def test_api_module_accepts_current_build_and_rejects_other_origins(self):
+        url = "https://comix.ws/assets/build/current/dist/apicore-a1b2.js?v=1"
+        self.assertEqual(url, BROWSER_MODULE._valid_api_module_url(
+            "https://comix.ws/browse", url))
+        for invalid in (
+                "https://evil.example/apicore-a1b2.js",
+                "http://comix.ws/apicore-a1b2.js",
+                "https://comix.ws:8443/apicore-a1b2.js",
+                "https://comix.ws/env-a1b2.js",
+                "https://comix.ws/apicore-a1b2.js/other",
+                None):
+            with self.subTest(url=invalid):
+                self.assertIsNone(BROWSER_MODULE._valid_api_module_url(
+                    "https://comix.ws/browse", invalid))
 
-        await BROWSER_MODULE._ensure_bridge(page)
+    async def test_bridge_uses_same_origin_api_module_from_current_document(self):
+        url = "https://comix.ws/assets/build/current/dist/apicore-a1b2.js"
+        page = _BridgePage(url)
+        session = {}
 
-        self.assertIn('import("https://comix.ws/env-a1b2.js")', page.injected)
+        await BROWSER_MODULE._ensure_bridge(page, session)
+
+        self.assertIn('import("' + url + '")', page.injected)
+        self.assertEqual(url, session["api_module_url"])
+
+    async def test_bridge_reuses_module_after_document_replacement(self):
+        url = "https://comix.ws/apicore-a1b2.js"
+        page = _BridgePage(None)
+        session = {"api_module_url": url}
+
+        await BROWSER_MODULE._ensure_bridge(page, session)
+
+        self.assertIn('import("' + url + '")', page.injected)
 
     async def test_bridge_rejects_cross_origin_module_url(self):
-        page = _BridgePage("https://evil.example/env-a1b2.js")
+        page = _BridgePage("https://evil.example/apicore-a1b2.js")
+        clock = types.SimpleNamespace(time=mock.Mock(side_effect=[0, 11]))
 
-        with self.assertRaises(BROWSER_MODULE.PyhostError) as caught:
-            await BROWSER_MODULE._ensure_bridge(page)
+        with mock.patch.object(BROWSER_MODULE.asyncio, "get_running_loop", return_value=clock):
+            with self.assertRaises(BROWSER_MODULE.PyhostError) as caught:
+                await BROWSER_MODULE._ensure_bridge(page, {"api_module_url": page.module_url})
 
         self.assertEqual("API_CLIENT_UNAVAILABLE", caught.exception.code)
+        self.assertEqual("", page.injected)
 
     async def test_headless_challenge_waits_in_same_page(self):
         page = _ChallengePage()
 
-        await BROWSER_MODULE._wait_for_application_page(page, 1234)
+        async def finish_challenge(_delay):
+            page.url = "https://comix.ws/browse"
+
+        with mock.patch.object(BROWSER_MODULE.asyncio, "sleep", side_effect=finish_challenge):
+            await BROWSER_MODULE._wait_for_application_page(page, 1234)
 
         self.assertEqual(1234, page.wait_timeout)
         self.assertEqual("domcontentloaded", page.load_state)
@@ -173,15 +207,17 @@ class ProxyLaunchTests(unittest.IsolatedAsyncioTestCase):
 class _BridgePage:
     url = "https://comix.ws/browse"
 
-    def __init__(self, env_url):
-        self.env_url = env_url
+    def __init__(self, module_url):
+        self.module_url = module_url
         self.injected = ""
         self.present = False
 
-    async def evaluate(self, script):
+    async def evaluate(self, script, *args):
         if "getElementById" in script:
             return self.present
-        return self.env_url
+        if "getEntriesByType" in script:
+            return self.module_url
+        return False
 
     async def add_script_tag(self, *, content):
         self.injected = content
@@ -195,11 +231,8 @@ class _ChallengePage:
         self.wait_timeout = None
         self.load_state = None
 
-    async def wait_for_url(self, predicate, *, timeout):
-        self.wait_timeout = timeout
-        self.url = "https://comix.ws/browse"
-        if not predicate(self.url):
-            raise AssertionError("application URL was rejected")
+    async def evaluate(self, script):
+        return self.url.startswith("https://comix.ws/@waf/")
 
     async def wait_for_load_state(self, state, *, timeout):
         self.load_state = state

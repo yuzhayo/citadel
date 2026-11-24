@@ -6,9 +6,12 @@ drop-in screens from `module/`.
 
 ## Working structure
 
-- `core/` — application runtime, shell, navigation, tokens, and shared contract.
+- `core/` — application runtime, shell, navigation, tokens, shared contract,
+  screen discovery (`Citadel.Searcher`), and the citizen build contract
+  (`Citizen.targets`).
 - `setting/` — built-in settings screens and reusable UI components.
-- `module/` — screen discovery plus independently deployable citizen screens.
+- `module/` — independently deployable citizen screens plus the shared payload they
+  compile in (`sharedLogic/`).
 - `tests/` — Core, UI, and UIA coverage.
 - `tools/` and `.github/workflows/` — packaging, CI, and release automation.
 
@@ -42,6 +45,30 @@ current operational baseline.
 - `operations/` — release and smoke procedures.
 - `work/` — active, scoped work plans and checklists.
 - `history/` — dated plans, audits, research, reports, and imported harness notes.
+
+### Filename aliases used inside the documents
+
+Documents in `architecture/` and `governance/` were written before this tree was
+flattened, so they cite their siblings by uppercase legacy names. The names are
+not paths — this table is the translation. When you see a `CITADEL-*.md`
+reference, look it up here.
+
+| Cited name | Actual file |
+| --- | --- |
+| `CITADEL-STRUCTURE.md` | `architecture/structure.md` |
+| `CITADEL-INVENTORY.md` | `architecture/inventory.md` |
+| `CITADEL-KERNEL-MAP.md` | `architecture/kernel-map.md` |
+| `CITADEL-FLOWS-CROSS.md` | `architecture/flows-cross.md` |
+| `CITADEL-FLOWS-CORE.md` | `architecture/flows-core.md` |
+| `CITADEL-FLOWS-SETTING.md` | `architecture/flows-setting.md` |
+| `CITADEL-FLOWS-SHAREDLOGIC.md` | `architecture/flows-sharedlogic.md` |
+| `CITADEL-FLOWS-MANGAREADER.md` | `architecture/flows-mangareader.md` |
+| `CITADEL-FLOWS-CITIZENS.md` | `architecture/flows-citizens.md` |
+| `CITADEL-VIOLATIONS.md` | `governance/violations.md` |
+| `CITADEL-TASK-BRIEF.md` | `governance/task-brief.md` |
+| `CITADEL-RESTRUCTURE-PLAN.md` | `governance/restructure-plan.md` |
+| `SMOKE-CHECKLIST.md` | `operations/smoke-checklist.md` |
+| `REPORT-catalog-mirror-handoff-2026-09-08.md` | `history/2026/reports/catalog-mirror-handoff.md` |
 
 Historical material is retained for traceability only. Verify current behavior
 from source and the architecture/contract documents before relying on it.

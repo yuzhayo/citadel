@@ -1,4 +1,9 @@
-# CamoProf Add Profile — todo (kontrak puzzle-block, docs/work/camoprof-add-profile/PLAN.md)
+# CamoProf Add Profile - todo (kontrak puzzle-block, docs/work/camoprof-add-profile/PLAN.md)
+
+Status: 6 butir implementasi tercentang. 10 butir sisa adalah **verifikasi live
+smoke** (satu jendela, login operator, auto-relog, cancel/close, tidak ada secret
+di log, tidak ada proses yatim). Tidak ada catatan hasil smoke di repo, jadi
+jangan dibaca sebagai lulus.
 
 ## Bongkar menara + adapter tipis
 

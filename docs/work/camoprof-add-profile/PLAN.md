@@ -1,4 +1,9 @@
-# Add Profile — kontrak final (puzzle-block)
+# Add Profile - kontrak final (puzzle-block)
+
+Status: kode sudah ada di `module/camoprof/Features/AddProfile/` (6 file) dan
+`ProfileActions/ProfileActionsFeature.cs`; adapter tipis di atas blok generik
+sesuai kontrak di bawah. Butir live-smoke di `TODO.md` **tidak** punya bukti
+tertulis di repo ini - perlakukan sebagai belum diverifikasi, bukan gagal.
 
 ## Prinsip
 

@@ -93,8 +93,9 @@ operasi yang sama: matikan lifetime.
 `AnimationManager.cs:2`, `Animation.cs:2`); `Citadel.Shell` (`App.xaml.cs:6`,
 `Router.cs:6`, `ModuleGate.cs:4`, `MainWindow.xaml.cs:8`, `LayoutApplier.cs:6`,
 `SettingsWindow.xaml.cs:4`, `BuiltInRoute.cs:3`); `setting/Screens` (6 layar);
-**setiap citizen** (`BlankModule.cs:3`, `CamoprofModule.cs:3`, `FtfModule.cs:3`,
-`ProxyModule.cs:3`, `MangaReaderModule.cs:3`, `MangaReaderView.xaml.cs:7`); dan
+**setiap citizen** (`BlankModule.cs:3`, `CamoprofModule.cs:3`,
+`AgentrouterModule.cs:3`, `ProxyModule.cs:3`, `MangaReaderModule.cs:3`,
+`MangaReaderView.xaml.cs:7`); dan
 tests. Inilah alasan teknis kenapa `Citadel.Contract` menarik Core (D6): kontrak
 citizen memakai `Lifetime` di tanda tangannya.
 

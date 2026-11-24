@@ -1,6 +1,6 @@
 # Manga Reader — Offline Catalog dan Standalone Download Queue
 
-Status: **implementation plan only**. Dokumen ini bukan izin implementasi, version bump, commit, push, atau release.
+Status: **implemented — P0-P5 dan P7 dieksekusi; P6 live smoke belum dicatat.** Dokumen ini tetap bukan izin version bump, commit, push, atau release.
 
 ## 0. Yuzskill contract
 

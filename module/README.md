@@ -38,15 +38,18 @@ work once installed.
 ```
 module/
   README.md            this file
-  Citizen.targets      shared build logic — every screen imports it
-  Citadel.Searcher/    finds screens and tells the gate
-  blank/               the minimal living screen — copy this
+  blank/               the minimal living screen - copy this
     module.json          identity: title/icon/route/order/entry/type
     layout.json          editable slots
-    BlankModule.cs       the IModule implementation — the only face
+    BlankModule.cs       the IModule implementation - the only face
     BlankView.xaml(.cs)  the screen
-    Module.Blank.csproj  imports ../Citizen.targets and declares nothing else
+    Module.Blank.csproj  imports ../../core/Citizen.targets and declares nothing else
+  sharedLogic/         payload compiled into screens (cs/) + pyhost (python)
 ```
+
+The build contract (`core/Citizen.targets`) and the discovery engine
+(`core/Citadel.Searcher/`) live in `core/`, not here. `module/` holds screens and
+the shared payload they compile in — nothing that the app needs in order to start.
 
 `Citadel.Screen/` is **reserved and stays empty**. Git cannot
 track an empty directory, so the folder is not created; this paragraph is the
@@ -270,9 +273,12 @@ The runtime boundary is:
 1. **A screen folder is self-contained.** Delete it and only that screen goes.
 2. **Components come from `setting/`**; *how* they behave here is declared here.
 3. **No component contains screen-specific logic.**
-4. **Shared-by-all-screens code goes to `module/` root**, never into a sibling
-   screen's folder.
+4. **Shared-by-all-screens payload goes to `module/` root** (`sharedLogic/`), never
+   into a sibling screen's folder.
 
-Law 4 is why `Citizen.targets` sits here rather than inside `blank/`: it is shared
-by every screen and owned by none. Law 1 is why that matters — a shared build file
-inside one screen's folder would make deleting that folder break the others.
+Law 4 is why `sharedLogic/` sits at the root rather than inside `blank/`: it is
+shared by every screen and owned by none. Law 1 is why that matters — a shared
+source file inside one screen's folder would make deleting that folder break the
+others. The build contract follows the same reasoning and therefore lives one level
+up, in `core/Citizen.targets`: it is build machinery every screen imports, not
+payload any screen compiles in.

@@ -1,4 +1,4 @@
-## Keadaan 2026-09-11: seluruh slice SELESAI
+## Keadaan cakupan
 
 Slice 1–8 (dokumentasi per wilayah) dan slice 9 (sintesis) selesai. Deliverable di
 `docs/`:
@@ -11,7 +11,7 @@ Slice 1–8 (dokumentasi per wilayah) dan slice 9 (sintesis) selesai. Deliverabl
 | `CITADEL-FLOWS-SETTING.md` | gudang komponen bersama · persistensi preferensi · LayoutEditor/preset · layar setting · audit klaim |
 | `CITADEL-FLOWS-SHAREDLOGIC.md` | jembatan pyhost · self-registration plugin python · flow AddProfile 20 langkah |
 | `CITADEL-FLOWS-MANGAREADER.md` | Reader · Downloader · parent module · Library · History · CatalogMirror · shareLogic · **BUG-1** |
-| `CITADEL-FLOWS-CITIZENS.md` | camoprof · ftf · proxy · blank · credenz · tests · tools/rilis |
+| `CITADEL-FLOWS-CITIZENS.md` | camoprof · proxy · agentrouter · blank · credenz · tests · tools/rilis |
 | `CITADEL-VIOLATIONS.md` | register: bagian pertama (slice 1–2) + bagian kedua (slice 3–8) + diagnosis diperbarui |
 | `CITADEL-KERNEL-MAP.md` | pemetaan kernel/plugin/children · tiga pola terbukti · urutan pelurusan |
 
@@ -19,22 +19,24 @@ Isi register: **1 BUG** (defek nyata) · **13 A** (klaim tertulis yang tidak lag
 benar) · **7 B** (biaya perubahan terukur, termasuk 1 entri positif) · **15 C**
 (batas yang tidak dijaga mesin) · **26 D** (ketegangan struktur & navigasi).
 
-### Koreksi fakta terhadap inventaris awal
+### Fakta dasar repo
 
-- **CatalogMirror BUKAN WIP.** Sudah ter-commit: `8a772b6 feat(mangareader): add
-  independent offline catalog`, disusul `cf04cb8 test(mangareader): align catalog
-  schema expectations`. `REPORT-catalog-mirror-handoff-2026-09-08.md` adalah keadaan
-  per tanggal itu, bukan WIP yang harus dikejar.
-- **Working tree bersih** kecuali `docs/`. HEAD: `7fb0b13 Persist shared UI preferences`.
-- **`Citadel.slnx` berisi 17 proyek** (6 core/setting/searcher/shell + 11 test),
-  bukan 18. **Tidak ada citizen di dalamnya** — konsekuensinya register C6.
+- **CatalogMirror sudah ter-commit** (`8a772b6`, disusul `cf04cb8`), bukan WIP.
+- **`Citadel.slnx` berisi 17 proyek** (6 core/setting/searcher/shell + 11 test).
+  **Tidak ada citizen di dalamnya** — konsekuensinya register C6.
 - **`module/credenz` bukan citizen**: tanpa csproj, tanpa `module.json`;
   `Reader.IsCitizenFolder` melewatinya tanpa kegagalan.
-- **`module/ftf` dan `module/proxy` kerang**: masing-masing hanya 6 file ter-track,
-  folder feature kosong di git, hanya `.pyc` dan hantu `obj/` yang tersisa → D9.
-- **`module/mangareader/Features/` punya empat feature**, bukan dua: Catalog,
-  CatalogMirror, Downloader, Rar. `Library/` punya dua sub-feature: Grouping,
-  UpdateChecker.
+- **`module/proxy`** 27 file ter-track: `Features/{Pool, Sync, Webshare, Settings}`
+  + `sharedLogic/` (`ProxyPoolStore`, `ProxySettings`, `AtomicTextFile`),
+  `ProxyView.xaml.cs` 66 baris. `tests/Module.Proxy.Tests` berisi 8 file test
+  termasuk `ProxyLevelBGuardTests`, tapi **tidak ada di `Citadel.slnx`**.
+  `Features/Pool/proxy_plugin/` hanya menyisakan `__pycache__` (0 file `.py`);
+  sumbernya ada di `artifacts/recovery-ftf-proxy-2.1.3-20260907/proxy_plugin/`
+  → D9.
+- **`module/agentrouter`** 31 file ter-track, 3 feature (`Claim`, `Proxy`,
+  `Shortcuts`), tanpa proyek test C#, guard python tidak ikut gate.
+- **`module/mangareader/Features/` punya empat feature**: Catalog, CatalogMirror,
+  Downloader, Rar. `Library/` punya dua sub-feature: Grouping, UpdateChecker.
 
 
 ---
@@ -44,7 +46,7 @@ benar) · **7 B** (biaya perubahan terukur, termasuk 1 entri positif) · **15 C*
 | Flow | Pemilik dugaan awal | Status |
 | --- | --- | --- |
 | Kontrak citizen publik (empat tipe) | core/Citadel.Contract | SELESAI — `CITADEL-FLOWS-CROSS.md` §1.1, §1.9; register D6, A1, D7 |
-| Pencarian & pemuatan module (manifest, watcher, failure) | module/Citadel.Searcher | SELESAI — `CITADEL-FLOWS-CROSS.md` §1 |
+| Pencarian & pemuatan module (manifest, watcher, failure) | core/Citadel.Searcher | SELESAI - `CITADEL-FLOWS-CROSS.md` §1 |
 | Katalog & registrasi module ke shell | core/Citadel.Shell | SELESAI — `CITADEL-FLOWS-CROSS.md` §2.4 |
 | Shell lifecycle & composition root | core/Citadel.Shell | SELESAI — `CITADEL-FLOWS-CROSS.md` §2.2; `CITADEL-FLOWS-CORE.md` §3.1 |
 | Runtime inti (token, navigation, tray) | core/Citadel.Core | SELESAI — `CITADEL-FLOWS-CORE.md` §1, §3.2 |
@@ -77,7 +79,7 @@ benar) · **7 B** (biaya perubahan terukur, termasuk 1 entri positif) · **15 C*
 | ISettingHost + ShellSettingHost (jembatan Setting↔Shell) | setting/ + core/Citadel.Shell | SELESAI — §4 |
 | Hook `check-project-refs.mjs` (graf dependensi, memblokir) | .agents/hooks | SELESAI — `CITADEL-FLOWS-CROSS.md` §2.7 |
 | Hook `gate-on-stop.mjs` (test saat turn berakhir, melaporkan) | .agents/hooks | SELESAI — §2.7 |
-| `Citadel.slnx` (18 proyek; citizen tidak termasuk) | root | SELESAI — §2.7, register C6 |
+| `Citadel.slnx` (17 proyek; citizen tidak termasuk) | root | SELESAI — §2.7, register C6 |
 
 ## module/mangareader
 
@@ -113,24 +115,28 @@ benar) · **7 B** (biaya perubahan terukur, termasuk 1 entri positif) · **15 C*
 | sharedLogic milik module | camoprof/sharedLogic | SELESAI |
 | View composition CamoprofView | camoprof/ | SELESAI |
 
-## module/ftf
+## module/agentrouter
 
-| Flow | Pemilik dugaan awal | Status |
+| Flow | Pemilik | Status |
 | --- | --- | --- |
-| Backend | ftf/Backend | SELESAI |
-| Feature FaucetRun | ftf/Features/FaucetRun | SELESAI |
-| Feature GSuite | ftf/Features/GSuite | SELESAI |
-| Feature Profiles | ftf/Features/Profiles | SELESAI |
-| Feature Results | ftf/Features/Results | SELESAI |
-| View composition FtfView | ftf/ | SELESAI |
+| Feature Claim | agentrouter/Features/Claim | ada — `IAgentRouterClaimService`, pyhost client |
+| Feature Proxy | agentrouter/Features/Proxy | ada |
+| Feature Shortcuts | agentrouter/Features/Shortcuts | ada — pointer ke profil CamoProf |
+| sharedLogic (ShortcutCatalog, ProfileIdentity, credential store) | agentrouter/sharedLogic | ada |
+| Guard arsitektur | agentrouter/tests | ada, python — **tidak** ikut gate |
+
+Tidak ada proyek test C#. Citizen ini **belum punya flow document** — cakupan
+dokumentasi untuknya masih terbuka.
 
 ## module/proxy
 
 | Flow | Pemilik dugaan awal | Status |
 | --- | --- | --- |
-| Feature Pool | proxy/Features/Pool | SELESAI |
+| Feature Pool | proxy/Features/Pool | SELESAI — `proxy_plugin/` hanya `__pycache__`; sumber di `artifacts/` |
 | Feature Settings | proxy/Features/Settings | SELESAI |
 | Feature Sync | proxy/Features/Sync | SELESAI |
+| Feature Webshare | proxy/Features/Webshare | SELESAI — di luar cakupan `IMPLEMENTATION-PLAN.md:7` |
+| sharedLogic (store/settings/atomic file) | proxy/sharedLogic | SELESAI |
 | View composition ProxyView | proxy/ | SELESAI |
 
 ## module/credenz
@@ -161,8 +167,8 @@ benar) · **7 B** (biaya perubahan terukur, termasuk 1 entri positif) · **15 C*
 | Flow | Pemilik dugaan awal | Status |
 | --- | --- | --- |
 | Template module blank | module/blank | SELESAI — `CITADEL-FLOWS-CROSS.md` §1.8 |
-| Searcher: loader/watcher/reader/manifest/failure | module/Citadel.Searcher | SELESAI — `CITADEL-FLOWS-CROSS.md` §1.1–§1.6 |
-| Citizen.targets (kontrak build module) | module/Citizen.targets | SELESAI — `CITADEL-FLOWS-CROSS.md` §1.7; pelanggaran V3 |
+| Searcher: loader/watcher/reader/manifest/failure | core/Citadel.Searcher | SELESAI — `CITADEL-FLOWS-CROSS.md` §1.1–§1.6 |
+| Citizen.targets (kontrak build module) | core/Citizen.targets | SELESAI — `CITADEL-FLOWS-CROSS.md` §1.7 |
 
 ## tests/ dan tools/
 
@@ -172,7 +178,8 @@ benar) · **7 B** (biaya perubahan terukur, termasuk 1 entri positif) · **15 C*
 | Citadel.Ui.Tests | tests/ | SELESAI |
 | Citadel.Uia + Citizen + Citizen.Dependency | tests/ | SELESAI |
 | Module.Camoprof.Tests | tests/ | SELESAI |
-| Module.Mangareader.{Archive,Downloader,History,Library,Reader}.Tests | tests/ | SELESAI |
+| Module.Mangareader.{Archive,Downloader,Engines,History,Library,Reader}.Tests | tests/ | SELESAI |
+| Module.Proxy.Tests (8 file, termasuk Level-B guard) | tests/ | SELESAI — **tidak** ada di `Citadel.slnx` |
 | Packaging & release (Build-Release.ps1, workflows) | tools/, .github/workflows | SELESAI |
 
 ## Yang tersisa di luar cakupan dokumentasi ini
@@ -184,19 +191,22 @@ Dicatat jujur supaya "tanpa tertinggal" tidak berarti "tanpa batas".
 | `docs/history/2026/` | plan/audit/spec/report terdahulu; dibaca sebagai **niat sejarah**, perilaku diverifikasi dari kode |
 | `.agents/skills/` | hanya dua kontrak Citadel yang di-version-kan; skill generik lokal tidak termasuk repo |
 | `docs/work/`, `docs/history/2026/hermes/` | plan aktif Add Profile dan satu arsip plan harness; tidak lagi menjadi folder root terpisah |
-| Isi `artifacts/recovery-ftf-proxy-2.1.3-20260907` | **unverified** — hanya keberadaannya yang dicatat; relevan untuk memulihkan D9 |
+| Isi `artifacts/recovery-ftf-proxy-2.1.3-20260907` | 71 file, termasuk `proxy_plugin/{__init__,plugin,pool}.py` — sumber plugin python `module/proxy` yang tidak ada di git. `artifacts/` di-ignore `.gitignore:5` |
 | `.qoder/settings.json` + `settings.local.json` | dibaca untuk menemukan dua hook; tidak dipetakan lebih jauh |
 | Perilaku runtime nyata (app dijalankan) | **tidak ada verifikasi live/visual**. Seluruh dokumentasi berbasis kode + git, sesuai batas read-only pada brief |
 | Isi `module/credenz` (identity.json, password.dat, profil browser) | **sengaja tidak dibuka**. Hanya nama, jumlah, dan siapa yang membaca/menulis path-nya yang dicatat |
 
 ## Cara melanjutkan bila session baru
 
-1. Baca `CITADEL-TASK-BRIEF.md`.
+1. Baca `governance/task-brief.md`.
 2. Baca dokumen ini — status cakupan ada di sini.
-3. Baca `CITADEL-STRUCTURE.md` §9 untuk diagnosis, lalu `CITADEL-VIOLATIONS.md`
-   bagian "Ringkasan diagnosis (diperbarui)".
-4. Bila owner memerintahkan perbaikan: mulai dari `CITADEL-KERNEL-MAP.md` §8
+3. Baca `architecture/structure.md` §9 untuk diagnosis, lalu
+   `governance/violations.md` bagian "Ringkasan diagnosis (diperbarui)".
+4. Bila owner memerintahkan perbaikan: mulai dari `architecture/kernel-map.md` §8
    (urutan berbasis kerusakan yang sudah terjadi), **bukan** dari urutan abjad register.
-5. BUG-1 adalah satu-satunya defek fungsional yang ditemukan; ia didokumentasikan
-   dengan rantai bukti enam mata rantai di `CITADEL-FLOWS-MANGAREADER.md` §14 dan
-   `CITADEL-VIOLATIONS.md`. Belum ada perbaikan yang dilakukan — fase ini read-only.
+5. **BUG-1 belum bisa diklaim selesai.** Fix-nya sempat dibuat lalu di-revert di
+   `30dd644` ("reverts my BUG-1 'fix'") untuk memulihkan safety net throttle.
+   Keadaan kode 2026-11-22: `CatalogMirrorSyncFeature.cs` punya 7 `catch`, enam
+   mem-publish `Failed(...)`, satu sengaja menelan dan didokumentasikan sebagai
+   best-effort (`:427-430`). Rantai bukti asalnya di
+   `architecture/flows-mangareader.md` §14.
